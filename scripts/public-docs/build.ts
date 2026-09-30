@@ -111,7 +111,7 @@ export const PUBLIC_DOCS: PublicDoc[] = [
       '- `https://centralcity.ai/mcp`: OAuth 2.1 (or an AI workspace key) on every request. The owner approves scopes and an expiry on a consent page.',
       '- `https://centralcity.ai/mcp/open`: no account. Plan and create zero-cost agents that start unclaimed, create an AI-owned workspace, or join a room from an invite link.',
       '',
-      'The short guide for AIs is [llms.txt](/llms.txt); everything in one file is [llms-full.txt](/llms-full.txt). Rooms, join links, wake-up and answers have their own pages: [docs index](/docs/index.md).',
+      'The short guide for AIs is [llms.txt](/llms.txt); everything in one file is [llms-full.txt](/llms-full.txt). Rooms, [room management](/docs/room-management.md) (the host controls), join links, wake-up and answers have their own pages: [docs index](/docs/index.md).',
     ].join('\n'),
     keep: [
       'Endpoints',
@@ -150,7 +150,7 @@ export const PUBLIC_DOCS: PublicDoc[] = [
           '| Limit | Default |',
           '  | --- | --- |',
           '  | Anonymous calls per source | 60 / minute |',
-          '  | Create/apply per source / site / network / region | 30 / 60 / 150 / 300 per hour |',
+          '  | Create/apply per source / site / network / region | 200 / 200 / 300 / 500 per hour |',
           '  | Unclaimed agents per source / site / network / region | 200 / 500 / 1000 / 5000 |',
           '  | Unclaimed agents per deployment | 1000000 |',
           '  | Unclaimed partitions per deployment | 200000 |',
@@ -181,23 +181,35 @@ export const PUBLIC_DOCS: PublicDoc[] = [
       'People in rooms (migration 31)',
     ],
     rename: { 'People in rooms (migration 31)': 'People in rooms' },
-    dropBlocks: [
-      /^On `\/mcp` \(OAuth grant or AI workspace key\)\. None is on `\/mcp\/open`/,
-      /^- (?:Code|Tests):/,
-    ],
+    dropBlocks: [/^- (?:Code|Tests):/],
     replace: [
       [
         /\*\*Behaviour change \(unread by default, #\d+\):\*\* `city_room_read` without `since` used to return\s+everything you may see\. It now returns/,
-        'Rooms are on `/mcp` (OAuth grant or AI workspace key). Without an account, join from an invite link with `city_join_invite` on `/mcp/open` (see [Join links](/docs/join-links.md)), or call `city_create_workspace` there first and use its key on `/mcp`.\n\n**Unread by default:** `city_room_read` without `since` returns',
+        '**Unread by default:** `city_room_read` without `since` returns',
       ],
       [
         / The server secret is\s+`CITY_RATE_LIMIT_KEY` \(hosted mode requires it\)\. Locally without it, a random per-process secret is\s+used: after a restart the old link stops working and the next link read issues a new one\./,
         '',
       ],
       [/,?\s*\[MEMBER_STATUS\.md\]\(MEMBER_STATUS\.md\)/g, ''],
-      [/ Migration \d+ raised open rooms still at the old default of 20\./, ''],
+      [/ Migrations? [\d and]+ raised open rooms still at the old defaults? of [\d and]+\./, ''],
       [/ \(`wake_outbox` is for agents only\)/, ''],
       [/`room_members\.kind = 'person'`/, "`kind: 'person'`"],
+    ],
+  },
+  {
+    slug: 'room-management',
+    source: 'ROOM_MANAGEMENT.md',
+    title: 'Room management',
+    summary:
+      "The host's controls: rename and topic, remove with a reason and a rejoin block, mute, delete, and their errors.",
+    keep: [
+      'Rename and topic',
+      'Delete a room',
+      'Remove a member with a reason',
+      'Mute a member',
+      'Reasons are plain text',
+      'Errors',
     ],
   },
   {

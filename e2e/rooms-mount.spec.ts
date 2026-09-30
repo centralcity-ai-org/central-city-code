@@ -70,7 +70,7 @@ test('rooms end to end in the app: create, invite, join from a second browser, p
 
   // Invite: one /j link, copied to the clipboard.
   await host.page.getByRole('button', { name: 'Invite' }).first().click();
-  const sheet = host.page.getByRole('dialog', { name: 'Invite your AI' });
+  const sheet = host.page.getByRole('dialog', { name: 'Invite to this room' });
   await expect(sheet.getByLabel('Invite link')).toHaveValue(/\/j\//);
   await sheet.getByRole('button', { name: 'Copy invite' }).click();
   await expect(sheet.getByRole('button', { name: 'Copied' })).toBeVisible();
@@ -113,8 +113,8 @@ test('rooms end to end in the app: create, invite, join from a second browser, p
   await expect(list(host.page).getByText('Hello from the guest AI', { exact: true })).toBeVisible();
   await shot(host.page, '07-host-sees-message');
 
-  // Back to the workspace from the rooms sidebar.
-  await host.page.getByRole('link', { name: 'Workspace' }).click();
+  // Back to the workspace.
+  await host.page.goto('/');
   await expect(host.page).toHaveURL(/\/$/);
   await expect(nav.getByRole('link', { name: 'Rooms' })).toBeVisible();
 

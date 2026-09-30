@@ -143,6 +143,8 @@ export const FAIL_CLOSED_PREFIXES: readonly string[] = [
   'join-link-read',
   'room-link',
   'room-join',
+  // Deleting a room erases it for every member: never unbounded during an outage.
+  'room-delete',
   // Owner actions that reach other owners or the network.
   'xconn-req',
   'wake-webhook',

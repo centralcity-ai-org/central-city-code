@@ -3,12 +3,7 @@ import { Check, Copy, LoaderCircle, X } from 'lucide-react';
 import { withRoomDeadline, type History, type JoinLink, type Room, type RoomsClient } from './api';
 import { describe } from './useRoomThread';
 // How an outside AI joins with the link: one wording, shared with the Connect page.
-import {
-  CHATGPT_ADMIN_NOTE,
-  ROOM_INVITE_CLIENTS,
-  ROOM_INVITE_FIRST_TIME,
-  roomInviteCopyLine,
-} from '../shell/roomInvite';
+import { CHATGPT_ADMIN_NOTE, ROOM_INVITE_CLIENTS, roomInviteCopyLine } from '../shell/roomInvite';
 
 /** Members are polled while the sheet is open, for at most 10 minutes. */
 const MEMBER_POLL_MS = 3_000;
@@ -254,7 +249,7 @@ export function InviteSheet({
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div
-        className="rm-sheet"
+        className="rm-sheet rm-invite"
         role="dialog"
         aria-modal="true"
         aria-labelledby="rm-invite-title"
@@ -262,13 +257,13 @@ export function InviteSheet({
         ref={dialog}
       >
         <div className="rm-sheet-head">
-          <h2 id="rm-invite-title">Invite your AI</h2>
+          <h2 id="rm-invite-title">Invite to this room</h2>
           <button type="button" className="rm-icon" aria-label="Close" onClick={onClose}>
             <X size={18} aria-hidden="true" />
           </button>
         </div>
-        <p className="rm-muted">
-          Copy the link and paste it into your AI. It joins this room as a member.
+        <p className="rm-muted rm-instruction">
+          Paste the link into your AI. New AI? <a href="/#connect">Connect your AI</a> first.
         </p>
         {error ? (
           <div className="rm-inline-error" role="alert">
@@ -289,13 +284,13 @@ export function InviteSheet({
               value={link.url}
               onFocus={(event) => event.currentTarget.select()}
             />
-            <button type="button" className="rm-primary" onClick={() => void copy()}>
+            <button type="button" className="rm-primary rm-copy" onClick={() => void copy()}>
               {copied ? (
                 <Check size={16} aria-hidden="true" />
               ) : (
                 <Copy size={16} aria-hidden="true" />
               )}
-              {copied ? 'Copied' : 'Copy invite'}
+              <span>{copied ? 'Copied' : 'Copy invite'}</span>
             </button>
             {notice ? (
               <p className="rm-meta" role="status">
@@ -312,94 +307,15 @@ export function InviteSheet({
             </span>
             {link.code ? (
               <p className="rm-meta">
-                Inviting a person? Give them the code{' '}
-                <strong className="rm-code">{link.code}</strong>. They enter it under Rooms → Join a
-                room.
+                People join with the code <strong className="rm-code">{link.code}</strong>
               </p>
             ) : null}
-            {/* Primary action first (Copy right under the link); the how-to follows. */}
-            <p className="rm-instruction">
-              {ROOM_INVITE_FIRST_TIME} <a href="/#connect">Connect your AI</a>
-            </p>
           </>
         ) : error ? null : (
           <p className="rm-muted" role="status">
             <LoaderCircle className="spin" size={14} aria-hidden="true" /> Creating your link…
           </p>
         )}
-        <label className="rm-check">
-          <input
-            type="checkbox"
-            checked={history === 'full'}
-            disabled={historyBusy}
-            onChange={(event) => void changeHistory(event.target.checked ? 'full' : 'from_join')}
-          />
-          <span>New members can read earlier messages</span>
-        </label>
-        {historyError ? (
-          <p className="rm-inline-error" role="alert">
-            {historyError}
-          </p>
-        ) : history === 'full' ? (
-          <p className="rm-meta">People and AIs who join can read the whole conversation.</p>
-        ) : null}
-        <label className="rm-check">
-          <input
-            type="checkbox"
-            checked={people.join}
-            onChange={(event) => void changePeople({ ...people, join: event.target.checked })}
-          />
-          <span>People can join as themselves</span>
-        </label>
-        <label className="rm-check">
-          <input
-            type="checkbox"
-            checked={people.bringAi}
-            onChange={(event) => void changePeople({ ...people, bringAi: event.target.checked })}
-          />
-          <span>Members can bring their own AI</span>
-        </label>
-        {peopleError ? (
-          <p className="rm-inline-error" role="alert">
-            {peopleError}
-          </p>
-        ) : null}
-        {room.member_cap !== undefined ? (
-          <form
-            className="rm-check"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveCap();
-            }}
-          >
-            <label>
-              <span>Members allowed (people and AIs, up to 100) </span>
-              <input
-                className="rm-input rm-cap"
-                type="number"
-                inputMode="numeric"
-                min={Math.max(2, room.member_count)}
-                max={100}
-                value={cap}
-                onChange={(event) => setCap(event.target.value)}
-              />
-            </label>
-            <button type="submit" className="rm-quiet">
-              Save
-            </button>
-            {capNote ? (
-              <span className="rm-meta" role="status">
-                {capNote}
-              </span>
-            ) : null}
-          </form>
-        ) : null}
-        <details className="rm-disclosure">
-          <summary>Which AI apps work?</summary>
-          <p>
-            {ROOM_INVITE_CLIENTS} {CHATGPT_ADMIN_NOTE}
-          </p>
-        </details>
         <p
           className={`rm-status${joined ? ' done' : waiting === 'pulse' ? ' pulse' : ''}`}
           aria-live="polite"
@@ -421,53 +337,137 @@ export function InviteSheet({
         ) : null}
         <details className="rm-disclosure">
           <summary>More options</summary>
-          {expires ? <p className="rm-muted">Link expires {expires.toLocaleString()}.</p> : null}
-          {link ? (
-            confirmRevoke ? (
+          <div className="rm-invite-options">
+            <label className="rm-check">
+              <input
+                type="checkbox"
+                checked={history === 'full'}
+                disabled={historyBusy}
+                onChange={(event) =>
+                  void changeHistory(event.target.checked ? 'full' : 'from_join')
+                }
+              />
+              <span>New members can read earlier messages</span>
+            </label>
+            {historyError ? (
+              <p className="rm-inline-error" role="alert">
+                {historyError}
+              </p>
+            ) : history === 'full' ? (
+              <p className="rm-meta">People and AIs who join can read the whole conversation.</p>
+            ) : null}
+            <label className="rm-check">
+              <input
+                type="checkbox"
+                checked={people.join}
+                onChange={(event) => void changePeople({ ...people, join: event.target.checked })}
+              />
+              <span>People can join as themselves</span>
+            </label>
+            <label className="rm-check">
+              <input
+                type="checkbox"
+                checked={people.bringAi}
+                onChange={(event) =>
+                  void changePeople({ ...people, bringAi: event.target.checked })
+                }
+              />
+              <span>Members can bring their own AI</span>
+            </label>
+            {peopleError ? (
+              <p className="rm-inline-error" role="alert">
+                {peopleError}
+              </p>
+            ) : null}
+            {room.member_cap !== undefined ? (
+              <form
+                className="rm-check"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveCap();
+                }}
+              >
+                {/* The limit comes from the room (the server sets the ceiling per account). */}
+                <label>
+                  <span>Member limit (people and AIs) </span>
+                  <input
+                    className="rm-input rm-cap"
+                    type="number"
+                    inputMode="numeric"
+                    min={Math.max(2, room.member_count)}
+                    value={cap}
+                    onChange={(event) => setCap(event.target.value)}
+                  />
+                </label>
+                <button type="submit" className="rm-quiet">
+                  Save
+                </button>
+                {capNote ? (
+                  <span className="rm-meta" role="status">
+                    {capNote}
+                  </span>
+                ) : null}
+              </form>
+            ) : null}
+            {expires ? <p className="rm-meta">Link expires {expires.toLocaleString()}.</p> : null}
+            {link ? (
+              confirmRevoke ? (
+                <div className="rm-confirm">
+                  <span className="rm-confirm-text">
+                    Anyone holding this link can no longer join with it.
+                  </span>
+                  <span className="rm-confirm-actions">
+                    <button
+                      type="button"
+                      className="rm-danger"
+                      disabled={busy}
+                      onClick={() => void revoke()}
+                    >
+                      Revoke link
+                    </button>
+                    <button
+                      type="button"
+                      className="rm-quiet"
+                      onClick={() => setConfirmRevoke(false)}
+                    >
+                      Cancel
+                    </button>
+                  </span>
+                </div>
+              ) : (
+                <button type="button" className="rm-quiet" onClick={() => setConfirmRevoke(true)}>
+                  Revoke this link
+                </button>
+              )
+            ) : null}
+            {confirmNew ? (
               <div className="rm-confirm">
-                <span>Anyone holding this link can no longer join with it.</span>
-                <button
-                  type="button"
-                  className="rm-danger"
-                  disabled={busy}
-                  onClick={() => void revoke()}
-                >
-                  Revoke link
-                </button>
-                <button type="button" className="rm-quiet" onClick={() => setConfirmRevoke(false)}>
-                  Cancel
-                </button>
+                <span className="rm-confirm-text">The old link stops working.</span>
+                <span className="rm-confirm-actions">
+                  <button
+                    type="button"
+                    className="rm-danger"
+                    disabled={busy}
+                    onClick={() => void makeNew()}
+                  >
+                    {busy ? 'Making a new link…' : 'Make a new link'}
+                  </button>
+                  <button type="button" className="rm-quiet" onClick={() => setConfirmNew(false)}>
+                    Cancel
+                  </button>
+                </span>
               </div>
             ) : (
-              <button type="button" className="rm-quiet" onClick={() => setConfirmRevoke(true)}>
-                Revoke this link
+              <button type="button" className="rm-quiet" onClick={() => setConfirmNew(true)}>
+                Make a new link
               </button>
-            )
-          ) : null}
-          {confirmNew ? (
-            <div className="rm-confirm">
-              <span>The old link stops working.</span>
-              <button
-                type="button"
-                className="rm-danger"
-                disabled={busy}
-                onClick={() => void makeNew()}
-              >
-                {busy ? 'Making a new link…' : 'Make a new link'}
-              </button>
-              <button type="button" className="rm-quiet" onClick={() => setConfirmNew(false)}>
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button type="button" className="rm-quiet" onClick={() => setConfirmNew(true)}>
-              Make a new link
-            </button>
-          )}
+            )}
+            <p className="rm-meta">
+              {ROOM_INVITE_CLIENTS} {CHATGPT_ADMIN_NOTE}
+            </p>
+          </div>
         </details>
-        <p className="rm-meta">
-          Anyone with this link can join this room. They can't see anything else in your account.
-        </p>
+        <p className="rm-meta">Anyone with this link can join this room, and nothing else.</p>
       </div>
     </div>
   );

@@ -158,7 +158,9 @@ async function setup(t: { after: (fn: () => Promise<unknown>) => void }) {
     },
   });
   const row = { agent_id: responderAgent } as Claimed;
-  const handle = (budgetMs = 30_000) => delivery.handle(row, Date.now() + budgetMs);
+  // The deadline is on the same fake clock the delivery reads (clock: () => now). A wall-clock deadline
+  // (Date.now()) drifted from `now` by the real setup time, so a slow run gave the B5 case enough budget.
+  const handle = (budgetMs = 30_000) => delivery.handle(row, now + budgetMs);
   const reply = async (mention = 1) =>
     (
       await db.query<Record<string, unknown>>(

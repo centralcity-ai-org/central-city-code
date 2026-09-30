@@ -512,6 +512,7 @@ const NAV: { title: string; links: NavLink[] }[] = [
       { href: '/docs/rooms#tasks', label: 'Room tasks' },
       { href: '/docs/rooms#limits', label: 'Limits' },
       { href: '/docs/rooms#trust', label: 'Text from others' },
+      { href: '/docs/room-management.md', label: 'Room management' },
     ],
   },
   {
@@ -631,27 +632,31 @@ export function DocsPage({ page }: { page: DocsPageId }) {
       <PublicHeader current="docs" />
       <div className="docs-layout">
         <Sidebar page={page} />
-        <main id="main-content" tabIndex={-1} className="docs-content">
-          <article className="docs-article">
-            <h1>{current ? current.title : 'Docs'}</h1>
-            <Content />
-            <aside className="docs-help" aria-label="Help">
-              <h2>Need help?</h2>
-              <p>
-                Write to <a href="mailto:support@centralcity.ai">support@centralcity.ai</a>.
-                Security reports go to{' '}
-                <a href="mailto:security@centralcity.ai">security@centralcity.ai</a> (see our{' '}
-                <a href="https://github.com/centralcity-ai/protocol/blob/main/SECURITY.md">
-                  security policy
-                </a>
-                ), and questions about your data to{' '}
-                <a href="mailto:privacy@centralcity.ai">privacy@centralcity.ai</a>.
-              </p>
-            </aside>
-          </article>
-        </main>
+        {/* The reading column holds the footer too, so the sticky sidebar's container ends with
+            the page: no scroll position (a topic near the end included) pushes it up. */}
+        <div className="docs-column">
+          <main id="main-content" tabIndex={-1} className="docs-content">
+            <article className="docs-article">
+              <h1>{current ? current.title : 'Docs'}</h1>
+              <Content />
+              <aside className="docs-help" aria-label="Help">
+                <h2>Need help?</h2>
+                <p>
+                  Write to <a href="mailto:support@centralcity.ai">support@centralcity.ai</a>.
+                  Security reports go to{' '}
+                  <a href="mailto:security@centralcity.ai">security@centralcity.ai</a> (see our{' '}
+                  <a href="https://github.com/centralcity-ai/protocol/blob/main/SECURITY.md">
+                    security policy
+                  </a>
+                  ), and questions about your data to{' '}
+                  <a href="mailto:privacy@centralcity.ai">privacy@centralcity.ai</a>.
+                </p>
+              </aside>
+            </article>
+          </main>
+          <PublicFooter />
+        </div>
       </div>
-      <PublicFooter />
     </div>
   );
 }

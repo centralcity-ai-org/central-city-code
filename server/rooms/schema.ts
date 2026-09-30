@@ -5,7 +5,9 @@ import { registerRoomSystemLinesMigration } from './system-lines.js';
 import {
   registerRoomMemberCap100Migration,
   registerRoomMemberCap10000Migration,
+  registerRoomMemberCapStandard100Migration,
 } from './cap-schema.js';
+import { registerRoomManagementMigration } from './management-schema.js';
 
 /**
  * Migration 13 `rooms` (Rooms; the ROOMS-SEC-001 threat model; docs/ROOMS.md).
@@ -109,4 +111,8 @@ export function registerRoomsMigration(): void {
   registerRoomSystemLinesMigration();
   // 34: member cap 10,000 for open rooms still at the previous default of 100 (cap-schema.ts).
   registerRoomMemberCap10000Migration();
+  // 35: host delete (tombstone), removal reason and rejoin, per-member mute (management-schema.ts).
+  registerRoomManagementMigration();
+  // 36: normal rooms back to 100 members (open rooms above 100: GREATEST(100, active); cap-schema.ts).
+  registerRoomMemberCapStandard100Migration();
 }

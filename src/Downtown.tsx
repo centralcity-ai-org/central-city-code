@@ -144,13 +144,9 @@ const DISTRICTS: DistrictCard[] = [
     number: 7,
     area: 'Reference implementation',
     title: 'The Central City application',
-    repos: [],
+    repos: ['centralcity-ai/central-city-code'],
     summary:
-      'The full application in a clean-history public repository, published in phase 3 of the open-source rollout.',
-    status: (data) => {
-      const reference = data.districts.find((item) => item.id === 'reference');
-      return reference ? statusLabel[reference.status] : 'Planned';
-    },
+      'The full application in a clean-history public repository: server, console, OAuth, MCP and A2A, with rooms and the protocol.',
   },
 ];
 

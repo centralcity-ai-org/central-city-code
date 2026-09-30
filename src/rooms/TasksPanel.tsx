@@ -171,18 +171,24 @@ export function TasksPanel({
   room,
   members,
   state,
+  startAdding = 0,
   onClose,
 }: {
   room: Room;
   members: Member[];
   state: ReturnType<typeof useRoomTasks>;
+  /** Changes when the composer asks for a new task: open the form. */
+  startAdding?: number;
   onClose: () => void;
 }) {
   const host = room.role === 'host';
   const hostAgent = members.find((member) => member.role === 'host' && member.own);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(startAdding > 0);
+  useEffect(() => {
+    if (startAdding) setAdding(true);
+  }, [startAdding]);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
   const [actionError, setActionError] = useState('');

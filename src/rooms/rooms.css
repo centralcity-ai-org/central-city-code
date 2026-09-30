@@ -164,6 +164,11 @@
 .rm-close-drawer {
   display: none;
 }
+/* The drawer button ("Open menu") exists only under 900 px; desktop has the sidebar's own
+   collapse control. */
+.rm-menu {
+  display: none;
+}
 .rm-label {
   margin: var(--space-4) var(--space-2) 0;
   color: var(--text-muted);
@@ -257,28 +262,6 @@
   display: flex;
   flex-direction: column;
 }
-.rm-room-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: var(--header-h);
-  padding: 0 var(--space-5);
-  border-bottom: 1px solid var(--border);
-  background: var(--canvas);
-}
-.rm-menu {
-  display: none;
-}
-.rm-room-title {
-  flex: 1;
-  min-width: 0;
-}
-.rm-room-title h1 {
-  font: var(--type-heading);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .rm-banner {
   margin: 0;
   padding: var(--space-2) var(--space-5);
@@ -336,12 +319,6 @@
   margin: 0 auto;
   padding: var(--space-5) var(--space-5) var(--space-4);
 }
-.rm-notice {
-  margin: 0 0 var(--space-4);
-  color: var(--text-muted);
-  font: var(--type-meta);
-  text-align: center;
-}
 .rm-older {
   display: flex;
   justify-content: center;
@@ -380,53 +357,6 @@
   display: inline-block;
   max-width: 100%;
   overflow-wrap: break-word;
-}
-.rm-message {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  max-width: 85%;
-  margin-top: var(--space-3);
-}
-.rm-message.grouped {
-  margin-top: 0;
-}
-.rm-message.own {
-  align-self: flex-end;
-  align-items: flex-end;
-}
-.rm-byline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-2);
-  align-items: baseline;
-  margin-bottom: var(--space-1);
-  color: var(--text-muted);
-  font: var(--type-meta);
-}
-.rm-byline strong {
-  color: var(--text);
-  font-weight: 600;
-}
-.rm-bubble {
-  display: grid;
-  gap: var(--space-2);
-  min-width: 0;
-  max-width: 100%;
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-m);
-  background: var(--surface);
-  border: 1px solid var(--border);
-}
-.rm-message.own .rm-bubble {
-  background: var(--accent-tint);
-  border-color: transparent;
-}
-.rm-message.sending .rm-bubble {
-  opacity: 0.6;
-}
-.rm-message.failed .rm-bubble {
-  border-color: var(--error);
 }
 .rm-sending,
 .rm-failed {
@@ -520,67 +450,6 @@
 }
 
 /* Composer */
-.rm-composer {
-  width: min(var(--content-max), calc(100% - 2 * var(--space-4)));
-  margin: 0 auto var(--space-4);
-  display: grid;
-  gap: var(--space-2);
-}
-.rm-post-as {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--text-muted);
-  font: var(--type-meta);
-}
-.rm-post-as select {
-  min-height: 32px;
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-s);
-  background: var(--surface);
-  color: var(--text);
-}
-.rm-compose-row {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-l);
-  background: var(--surface);
-  box-shadow: var(--elev-1);
-}
-.rm-compose-row:focus-within {
-  border-color: var(--focus);
-}
-.rm-compose-row textarea {
-  flex: 1;
-  min-height: 40px;
-  padding: var(--space-2) 0;
-  border: 0;
-  outline: none;
-  resize: none;
-  background: none;
-  color: var(--text);
-  font: 400 16px/24px var(--font-sans);
-}
-.rm-send {
-  flex: none;
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: var(--radius-full);
-  background: var(--primary);
-  color: var(--on-primary);
-  cursor: pointer;
-}
-.rm-send:disabled {
-  background: var(--surface-sunken);
-  color: var(--text-muted);
-}
 .rm-compose-note {
   margin: 0;
   color: var(--text-muted);
@@ -619,33 +488,12 @@
 }
 
 /* Members panel */
-.rm-panel {
-  width: 300px;
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-left: 1px solid var(--border);
-  background: var(--surface);
-  overflow-y: auto;
-}
 .rm-members {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: var(--space-2);
-}
-.rm-members li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-2);
-}
-.rm-members li > div {
-  display: grid;
-  min-width: 0;
 }
 /* Member status: a dot plus a text label (never colour only); shape differs too.
    (.rm-status is the Invite sheet's live join line.) */
@@ -693,12 +541,74 @@
   gap: var(--space-2);
   justify-items: start;
 }
+.rm-leave > .rm-confirm {
+  justify-self: stretch;
+}
+/* Inline confirmation (Remove, Close room, Leave, new link): a short question, then a small
+   danger button and a quiet Cancel. Compact, wraps on a phone, never covers the text. */
 .rm-confirm {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+  color: var(--text);
   font: var(--type-meta);
+}
+.rm-confirm-text {
+  flex: 1 1 12ch;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.rm-confirm-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+.rm-confirm .rm-danger,
+.rm-confirm .rm-quiet {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.rm-confirm .rm-danger {
+  border-color: var(--error);
+  background: var(--error-tint);
+  color: var(--error);
+}
+.rm-confirm .rm-danger:hover:not(:disabled) {
+  background: var(--error);
+  color: var(--surface);
+}
+
+/* Invite sheet: one line of explanation, the link and Copy, the rest behind More options. */
+.rm-invite .rm-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: center;
+}
+.rm-invite .rm-code {
+  color: var(--text);
+  font-size: 12px;
+}
+.rm-invite-options {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  padding-bottom: var(--space-2);
+}
+.rm-invite-options > .rm-confirm {
+  justify-self: stretch;
+}
+.rm-invite .rm-check {
+  min-height: 32px;
 }
 
 /* Sheets (Invite, New room) */
@@ -870,22 +780,6 @@
     inset: 0;
     z-index: 14;
     background: var(--backdrop);
-  }
-  .rm-room-head {
-    padding: 0 var(--space-2);
-    gap: var(--space-1);
-  }
-  .rm-panel {
-    position: fixed;
-    inset: 0 0 0 auto;
-    z-index: 15;
-    width: min(320px, 90vw);
-  }
-  .rm-column {
-    padding: var(--space-4) var(--space-3);
-  }
-  .rm-message {
-    max-width: 92%;
   }
   .rm-backdrop {
     place-items: end stretch;
@@ -1061,15 +955,584 @@
   overflow-wrap: anywhere;
 }
 
-/* Four header actions must leave room for the room name on a phone: labels become icons
-   (the buttons keep their accessible names). */
-@media (max-width: 480px) {
+/* Room page: top bar, document-style thread, floating composer, side panels, Connect AI.
+   Design tokens only; the room uses the system font stack at its own compact sizes. */
+.rm-room {
+  --font-sans: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --type-ui: 500 14px/20px var(--font-sans);
+  --type-meta: 400 12px/18px var(--font-sans);
+  --type-heading: 500 15px/22px var(--font-sans);
+  --type-body: 400 15px/1.6 var(--font-sans);
+  font: var(--type-body);
+}
+.rm-room button,
+.rm-room input,
+.rm-room select,
+.rm-room textarea {
+  font-family: var(--font-sans);
+}
+.rm-room button {
+  font: var(--type-ui);
+}
+
+/* Top bar: Room list on the left, room actions on the right. */
+.rm-room-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--header-h);
+  padding: var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--border);
+  background: var(--canvas);
+}
+.rm-crumbs {
+  flex: 1;
+  min-width: 0;
+}
+.rm-crumbs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  white-space: nowrap;
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  font: var(--type-ui);
+  text-decoration: none;
+}
+.rm-crumbs a:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+.rm-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+.rm-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.rm-outline:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+.rm-outline[aria-expanded='true'] {
+  border-color: var(--accent-border);
+  background: var(--accent-tint);
+}
+.rm-room-head .rm-primary {
+  min-height: 36px;
+}
+.rm-icon-btn {
+  width: 36px;
+  padding: 0;
+}
+.rm-count,
+.rm-task-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font: var(--type-meta);
+  font-weight: 500;
+  text-align: center;
+}
+.rm-more {
+  position: relative;
+}
+.rm-more-menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 12;
+  min-width: 220px;
+  display: grid;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--surface-raised);
+  box-shadow: var(--elev-2);
+}
+.rm-more-menu button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.rm-more-menu button:hover,
+.rm-more-menu button:focus-visible {
+  background: var(--surface-sunken);
+}
+
+/* The safety notice: a small pill above the thread. */
+.rm-notice {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto var(--space-4);
+  padding: var(--space-1) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font: var(--type-meta);
+  text-align: center;
+}
+.rm-day {
+  align-items: center;
+  gap: var(--space-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+.rm-day::before,
+.rm-day::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Messages read like a document: avatar, byline, body. No bubbles. */
+.rm-message {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  column-gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+.rm-message.grouped {
+  margin-top: var(--space-1);
+}
+.rm-message > :not(.rm-avatar) {
+  grid-column: 2;
+}
+.rm-avatar {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--accent-tint);
+  color: var(--text);
+  font: var(--type-ui);
+  flex: none;
+  user-select: none;
+}
+.rm-avatar[hidden] {
+  display: inline-grid;
+  visibility: hidden;
+  height: 0;
+}
+.rm-avatar[data-kind='person'] {
+  background: var(--surface-sunken);
+}
+.rm-byline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+  min-height: 24px;
+  margin-bottom: 2px;
+  color: var(--text-muted);
+  font: var(--type-meta);
+}
+.rm-byline strong {
+  color: var(--text);
+  font: var(--type-ui);
+  font-weight: 500;
+}
+.rm-byline time {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.rm-role,
+.rm-person {
+  display: inline-block;
+  margin: 0;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font: var(--type-meta);
+  text-transform: capitalize;
+}
+.rm-bubble {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text);
+  font: var(--type-body);
+}
+/* Your own messages: a grey bubble on the right, no avatar or byline; others stay a document. */
+.rm-message.own {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.rm-message.own.grouped {
+  margin-top: var(--space-2);
+}
+.rm-own-bubble {
+  max-width: 75%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--bg-surface-hover);
+}
+.rm-own-time {
+  color: var(--text-muted);
+  font: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+.rm-message.sending .rm-bubble {
+  opacity: 0.6;
+}
+.rm-message.failed .rm-bubble {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--error);
+}
+
+/* Composer: a floating card at the bottom of the thread. */
+.rm-composer {
+  width: min(var(--content-max), calc(100% - 2 * var(--space-4)));
+  margin: 0 auto var(--space-4);
+  display: grid;
+  gap: var(--space-2);
+}
+.rm-compose-card {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--elev-2);
+}
+.rm-compose-card:focus-within {
+  border-color: var(--focus);
+}
+.rm-post-as {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: var(--space-2);
+  padding: 2px 2px 2px var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font: var(--type-meta);
+  /* One compact line: "Post as <name> ▾"; a long name truncates, never wraps the label. */
+  max-width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+}
+.rm-post-as > span {
+  flex: none;
+  white-space: nowrap;
+}
+.rm-post-as select {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 24ch;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text);
+  font: var(--type-meta);
+  font-weight: 500;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.rm-compose-row {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+}
+.rm-compose-row textarea {
+  flex: 1;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-1);
+  border: 0;
+  outline: none;
+  resize: none;
+  background: none;
+  color: var(--text);
+  /* 16px keeps phones from zooming the page on focus. */
+  font: 400 16px/24px var(--font-sans);
+}
+@media (min-width: 900px) {
+  .rm-compose-row textarea {
+    font-size: 15px;
+  }
+}
+.rm-compose-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.rm-tools-spacer {
+  flex: 1;
+}
+.rm-tool {
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.rm-tool:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+.rm-send {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--primary);
+  color: var(--on-primary);
+  cursor: pointer;
+}
+.rm-send:disabled {
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+
+/* Side panels (Members, Tasks, Code). */
+.rm-panel {
+  width: 340px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-left: 1px solid var(--border);
+  background: var(--canvas);
+  overflow-y: auto;
+}
+.rm-panel .rm-sheet-head {
+  margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.rm-panel .rm-sheet-head h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.rm-members li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.rm-members li > div {
+  flex: 1;
+  display: grid;
+  min-width: 0;
+}
+.rm-members .rm-avatar {
+  grid-row: auto;
+}
+/* A member's Remove confirmation sits on its own line under the member. */
+.rm-members li > .rm-confirm {
+  flex: 1 0 100%;
+  display: flex;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+.rm-members strong {
+  font: var(--type-ui);
+}
+.rm-members .rm-person {
+  margin-left: var(--space-1);
+}
+
+/* Connect AI sheet. */
+.rm-sheet.rm-connect {
+  width: min(560px, 100%);
+}
+.rm-connect-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.rm-connect-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--surface-sunken);
+  font: var(--type-ui);
+  font-weight: 400;
+}
+.rm-connect-card p {
+  margin: 0;
+}
+.rm-connect-card code,
+.rm-copy-line code {
+  font: var(--type-mono);
+}
+.rm-connect-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.rm-connect-name .rm-role {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+  text-transform: none;
+}
+.rm-copy-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  min-width: 0;
+}
+.rm-copy-line code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.rm-copy-line .copy-control {
+  flex: none;
+}
+.rm-copy-line .copy-button {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  font: var(--type-ui);
+}
+.rm-connect-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.rm-connect-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  color: var(--link);
+  font: var(--type-ui);
+}
+.rm-connect-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* Tablet and phone: panels become sheets; the top bar keeps icons where space is short. */
+@media (max-width: 899px) {
+  .rm-room-head {
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-1);
+  }
+  .rm-panel {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 15;
+    width: min(360px, 92vw);
+    box-shadow: var(--elev-3);
+  }
+  .rm-column {
+    padding: var(--space-4) var(--space-3);
+  }
+}
+@media (max-width: 599px) {
   .rm-room-head .rm-head-label {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
-    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
     white-space: nowrap;
+  }
+  .rm-head-actions {
+    gap: var(--space-1);
+  }
+  .rm-room-head .rm-outline,
+  .rm-room-head .rm-primary {
+    min-height: 40px;
+    padding: 0 var(--space-2);
+  }
+  .rm-crumbs a {
+    min-height: 40px;
+    padding: 0 var(--space-1);
+  }
+  .rm-panel {
+    inset: auto 0 0 0;
+    width: 100%;
+    max-height: 85dvh;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    border-radius: var(--radius-l) var(--radius-l) 0 0;
+  }
+  .rm-message {
+    grid-template-columns: 28px minmax(0, 1fr);
+    column-gap: var(--space-2);
+  }
+  .rm-avatar {
+    width: 28px;
+    height: 28px;
+  }
+  .rm-composer {
+    width: calc(100% - 2 * var(--space-2));
+    margin-bottom: var(--space-2);
   }
 }

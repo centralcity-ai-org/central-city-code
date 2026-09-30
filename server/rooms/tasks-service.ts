@@ -1,7 +1,13 @@
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import type { Database, Transaction as Tx } from '../database.js';
 import { iso, type StoredAgent, type Workspace } from '../model.js';
-import { RoomError, roomNotFound, type RoomPrincipal } from './service.js';
+import {
+  RoomError,
+  refuseIfMuted,
+  roomDeleted,
+  roomNotFound,
+  type RoomPrincipal,
+} from './service.js';
 import { memberStatuses, touchMembers } from './member-status.js';
 import { ROOM_LIMITS } from './contract.js';
 import { lineTitle, memberLabel, postSystemLine } from './system-lines.js';
@@ -394,6 +400,15 @@ export function createRoomTasks(d: TaskDependencies): RoomTasks {
   async function membership(q: Pick<Tx, 'query'>, roomRef: string, operatorId: string) {
     const room = await findRoom(q, roomRef);
     if (!room) roomNotFound();
+    // A deleted room (migration 35): 410 for its host and former members, 404 for anyone else.
+    if ((room as { deleted_at?: unknown }).deleted_at != null) {
+      const former = await q.query(
+        'SELECT 1 FROM room_members WHERE room_id=$1 AND owner_id=$2 LIMIT 1',
+        [room!.id, operatorId],
+      );
+      if (former.rows.length || room!.host_owner_id === operatorId) roomDeleted();
+      roomNotFound();
+    }
     const agents = await liveAgents(q, operatorId);
     const members = (
       await q.query<MemberRow>(
@@ -791,6 +806,8 @@ export function createRoomTasks(d: TaskDependencies): RoomTasks {
       const { room, members } = await membership(tx, values.room_id, p.operatorId);
       const agent = actingAgent(members, values.agent_id);
       writeGuards(room, agent);
+      // The host muted this owner (migration 35): no task writes either.
+      await refuseIfMuted(tx, room.id, p.operatorId);
       const attachmentIds = [...new Set(values.attachment_ids ?? [])];
       await assertAttachmentsReady(tx, room.id, attachmentIds);
       const prior = (
@@ -912,6 +929,8 @@ export function createRoomTasks(d: TaskDependencies): RoomTasks {
       const { room, members } = await membership(tx, values.room_id, p.operatorId);
       const agent = actingAgent(members, values.agent_id);
       writeGuards(room, agent);
+      // The host muted this owner (migration 35): no task writes either.
+      await refuseIfMuted(tx, room.id, p.operatorId);
       await lockRoom(tx, room.id);
       // A removed or access-expired holder is released first, so this claim can
       // take the task over in its single UPDATE below.
@@ -1023,6 +1042,7 @@ export function createRoomTasks(d: TaskDependencies): RoomTasks {
         const { room } = await membership(tx, values.room_id, p.operatorId);
         if (room.closed_at !== null)
           refuse(409, 'room_closed', 'The room is closed; its tasks are read-only.');
+        await refuseIfMuted(tx, room.id, p.operatorId);
         await releaseInvalidHolders(tx, room, values.task_id);
         const ttlMs = (values.ttl_minutes ?? limits.claimTtlMinutesDefault) * 60_000;
         const graceMs = graceForTtl(ttlMs);
@@ -1150,6 +1170,7 @@ export function createRoomTasks(d: TaskDependencies): RoomTasks {
         const { room } = await membership(tx, values.room_id, p.operatorId);
         if (room.closed_at !== null)
           refuse(409, 'room_closed', 'The room is closed; its tasks are read-only.');
+        await refuseIfMuted(tx, room.id, p.operatorId);
         await lockRoom(tx, room.id);
         await releaseInvalidHolders(tx, room, values.task_id);
         const holder = (

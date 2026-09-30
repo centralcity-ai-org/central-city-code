@@ -8,11 +8,14 @@ import { MESSAGE_LIMITS, messagePartsSchema, type MessagePart } from '../messagi
  */
 export const ROOM_LIMITS = {
   /**
-   * Default and maximum active members per room, people and AIs together (10,000, for example
-   * for stress tests). A deployment may lower both (CITY_LIMIT_ROOM_MEMBERS_MAX and
-   * CITY_LIMIT_ROOM_MEMBERS_DEFAULT, server/limits.ts); 10,000 is the protocol ceiling.
+   * Active members per room, people and AIs together (standard rooms): a room
+   * holds up to memberCapStandard (100, also the default). Only hosts approved as stress-test
+   * operators (CITY_STRESS_TEST_OPERATORS, server/stress-allowlist.ts) may set up to
+   * memberCapMax (10,000, the protocol ceiling). A deployment may lower the maximum and the
+   * default (CITY_LIMIT_ROOM_MEMBERS_MAX and CITY_LIMIT_ROOM_MEMBERS_DEFAULT, server/limits.ts).
    */
-  memberCapDefault: 10_000,
+  memberCapDefault: 100,
+  memberCapStandard: 100,
   memberCapMax: 10_000,
   /**
    * Members per city_room_members page (default and maximum). Every room of up to 500 members
@@ -44,6 +47,8 @@ export const ROOM_LIMITS = {
   linkTtlHoursMax: 720,
   pageSize: 100,
   defaultPageSize: 50,
+  /** Room deletions (every attempt, right name or not) per owner per hour. */
+  deletesPerOwnerPerHour: 10,
 } as const;
 export type RoomLimits = { -readonly [K in keyof typeof ROOM_LIMITS]: number };
 
@@ -78,11 +83,15 @@ const label = (max: number) =>
     .max(max)
     .refine((value) => !/[\u0000-\u001f\u007f]/.test(value), 'No control characters.');
 
+/** A room name and topic, as at creation (renames use the same rules). */
+const roomNameSchema = label(80);
+const roomTopicSchema = z.string().trim().max(280);
+
 export const createRoomToolInput = z
   .object({
     agent_id: agentId.describe('Your agent that hosts the room and posts in it.'),
-    name: label(80).describe('Room name, shown to people and AIs holding the link.'),
-    topic: z.string().trim().max(280).optional().describe('Optional topic (plain text).'),
+    name: roomNameSchema.describe('Room name, shown to people and AIs holding the link.'),
+    topic: roomTopicSchema.optional().describe('Optional topic (plain text).'),
     slug: slugSchema.optional(),
     member_cap: z
       .number()
@@ -91,7 +100,7 @@ export const createRoomToolInput = z
       .max(ROOM_LIMITS.memberCapMax)
       .optional()
       .describe(
-        `Maximum active members, people and AIs together, including the host (default ${ROOM_LIMITS.memberCapDefault.toLocaleString('en-US')}, maximum ${ROOM_LIMITS.memberCapMax.toLocaleString('en-US')}).`,
+        `Maximum active members, people and AIs together, including the host: up to ${ROOM_LIMITS.memberCapStandard} (default ${ROOM_LIMITS.memberCapDefault}); larger, up to ${ROOM_LIMITS.memberCapMax.toLocaleString('en-US')}, only for approved operators.`,
       ),
     link_ttl_hours: z
       .number()
@@ -106,7 +115,9 @@ export const createRoomToolInput = z
       .min(1)
       .max(ROOM_LIMITS.memberCapMax)
       .optional()
-      .describe('Joins one link admits (default: unlimited up to the member cap).'),
+      .describe(
+        `Joins one link admits (default: unlimited up to the member cap): up to ${ROOM_LIMITS.memberCapStandard} (larger for approved operators).`,
+      ),
     history: z
       .enum(['from_join', 'full'])
       .optional()
@@ -278,8 +289,28 @@ export const roomMembersToolInput = z
       ),
   })
   .strict();
+/** Fields shared by city_room_remove and the console remove route. */
+export const roomRemoveFields = {
+  reason: z
+    .string()
+    .max(200)
+    .optional()
+    .describe(
+      'Optional reason (at most 200 characters), shown only to the removed member, never in the thread.',
+    ),
+  block_rejoin: z
+    .boolean()
+    .optional()
+    .describe(
+      'true (default): the removed owner cannot rejoin this room with any link. false: it may rejoin with a live invite link.',
+    ),
+};
 export const roomRemoveToolInput = z
-  .object({ room_id: roomRefSchema, agent_id: agentId.describe('Member agent to remove.') })
+  .object({
+    room_id: roomRefSchema,
+    agent_id: agentId.describe('Member agent to remove.'),
+    ...roomRemoveFields,
+  })
   .strict();
 export const roomCloseToolInput = z.object({ room_id: roomRefSchema }).strict();
 export const roomLeaveToolInput = z
@@ -305,6 +336,8 @@ export const roomUpdateToolInput = z
       .describe(
         "false: members' AIs no longer answer automatically when @mentioned in this room (hosted responders). true: allowed (the default).",
       ),
+    name: roomNameSchema.optional().describe('New room name (a line in the thread says so).'),
+    topic: roomTopicSchema.optional().describe('New topic, or "" to clear it.'),
   })
   // Both optional: an update without either field changes nothing (changed: false).
   .strict();
@@ -312,6 +345,29 @@ export const roomUpdateToolInput = z
 /** Host console: the member cap, people and AIs together (never below today's members, at least 2). */
 export const roomMemberCapInput = z
   .object({ member_cap: z.number().int().min(2).max(ROOM_LIMITS.memberCapMax) })
+  .strict();
+
+/** Host console (PATCH /api/rooms/:room): rename the room and/or change its topic. */
+export const roomRenameInput = z
+  .object({ name: roomNameSchema.optional(), topic: roomTopicSchema.optional() })
+  .strict()
+  .refine((v) => v.name !== undefined || v.topic !== undefined, {
+    message: 'Pass name or topic.',
+  });
+/** Host console (DELETE /api/rooms/:room): the current room name, typed exactly. */
+export const roomDeleteInput = z.object({ confirm_name: z.string().max(200) }).strict();
+/** Host console remove (POST /api/rooms/:room/members/:agentId/remove). */
+export const roomRemoveBody = z.object(roomRemoveFields).strict();
+/**
+ * Host console (POST /api/rooms/:room/mute): mute or unmute one member. A muted member's owner
+ * cannot post in the room (it still reads); the optional reason is shown only to that owner.
+ */
+export const roomMuteInput = z
+  .object({
+    agent_id: agentId.describe('The member to mute or unmute (any member but the host).'),
+    muted: z.boolean(),
+    reason: z.string().max(200).optional(),
+  })
   .strict();
 
 /** The room tools (F4 §0), in contract order. */
@@ -352,6 +408,10 @@ export interface RoomView {
   /** Host console only (migration 31): people may join as themselves; members may bring their AI. */
   people_may_join?: boolean;
   members_may_bring_ai?: boolean;
+  /** Console only (migration 35): the host muted the viewer here (it cannot post; it still reads). */
+  muted?: boolean;
+  /** Console only, with muted: the host's reason (untrusted text), or null. */
+  mute_reason?: string | null;
   /** The host allows hosted responders; true unless the host turned them off. */
   responders_allowed: boolean;
   /** Members that answer automatically when @mentioned, and the provider that receives room text. */

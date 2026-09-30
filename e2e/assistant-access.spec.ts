@@ -7,12 +7,12 @@ test('owner grants assistant agent creation, downloads config and revokes it', a
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/#signin');
-  // #signin opens in sign-in mode once the session check answers; switch to registration and
-  // wait for it, instead of branching on an instant isVisible() snapshot.
+  // #signin opens in Sign in mode, or in Sign up mode on a server with no account yet (this spec
+  // run on its own). The Sign up tab works in both, so the spec does not depend on test order.
   await expect(page.getByLabel('Account name')).toBeVisible();
-  const createOne = page.getByRole('button', { name: 'Create an account', exact: true });
-  await expect(createOne).toBeVisible();
-  await createOne.click();
+  const signUp = page.getByRole('tab', { name: 'Sign up', exact: true });
+  await signUp.click();
+  await expect(signUp).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('button', { name: 'Create account', exact: true })).toBeVisible();
   await page.getByLabel('Account name').fill(`Assistant-${randomUUID().slice(0, 8)}`);
   await page.getByLabel('Password', { exact: true }).fill(`Synthetic-${randomUUID()}`);

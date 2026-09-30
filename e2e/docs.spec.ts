@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 /* The docs site: /docs and its three pages. */
 const PAGES = [
@@ -99,6 +99,133 @@ test('the v8 sidebar: categories, section links that land on real headings, sear
   // People's pages name no tools, not even in the sidebar.
   await search.fill('');
   await expect(nav).not.toContainText('city_');
+});
+
+test('the Rooms group links the Room management page, served as Markdown', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/docs/rooms');
+  const rooms = page
+    .getByRole('navigation', { name: 'Docs' })
+    .getByRole('group', { name: 'Rooms' });
+  await expect(rooms.getByRole('link', { name: 'Room management', exact: true })).toHaveAttribute(
+    'href',
+    '/docs/room-management.md',
+  );
+  const doc = await request.get('/docs/room-management.md');
+  expect(doc.ok()).toBe(true);
+  expect(doc.headers()['content-type']).toContain('text/markdown');
+  const text = await doc.text();
+  expect(text).toContain('# Room management');
+  for (const fact of ['city_room_update', 'city_room_remove', 'confirm_name', 'room_deleted'])
+    expect(text, fact).toContain(fact);
+});
+
+/** The sidebar's box in the viewport, and the document scroll once a smooth scroll has settled. */
+async function sidebarBox(page: Page) {
+  // Whole pixels: the last scroll step at the end of a page can be a fraction of a pixel.
+  return page.locator('.docs-sidebar').evaluate((element) => {
+    const { x, y, width, height } = element.getBoundingClientRect();
+    return {
+      x: Math.round(x),
+      y: Math.round(y),
+      width: Math.round(width),
+      height: Math.round(height),
+    };
+  });
+}
+async function settledScroll(page: Page) {
+  let last = -1;
+  await expect
+    .poll(async () => {
+      const now = await page.evaluate(() => scrollY);
+      const settled = now === last;
+      last = now;
+      return settled;
+    })
+    .toBe(true);
+  return last;
+}
+/** Layout shifts (not scrolling) recorded from now on; read with window.__docsShifts. */
+async function watchLayoutShifts(page: Page) {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    // Let pending frames paint first; their shifts are reported late and belong to earlier steps.
+    for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
+    const start = performance.now();
+    const shifts: number[] = [];
+    (window as unknown as { __docsShifts: number[] }).__docsShifts = shifts;
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries())
+        if (entry.startTime >= start) shifts.push((entry as unknown as { value: number }).value);
+    }).observe({ type: 'layout-shift' });
+  });
+}
+const layoutShifts = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __docsShifts: number[] }).__docsShifts);
+
+test('1440 px: a topic click scrolls only the reading column; the sidebar stays put', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/docs/rooms');
+  await expect(page.getByRole('heading', { level: 1, name: 'Rooms' })).toBeVisible();
+  await watchLayoutShifts(page);
+  const nav = page.getByRole('navigation', { name: 'Docs' });
+  const before = await sidebarBox(page);
+  // Topics near the end of the page used to push the sticky sidebar up under the header.
+  for (const [topic, id] of [
+    ['Limits', 'limits'],
+    ['Text from others', 'trust'],
+    ['Members', 'members'],
+    ['Room tasks', 'tasks'],
+  ] as const) {
+    await nav.getByRole('link', { name: topic, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/docs/rooms#${id}$`));
+    await settledScroll(page);
+    await expect(page.locator(`main h2[id="${id}"]`)).toBeInViewport();
+    expect(await sidebarBox(page), topic).toEqual(before);
+    // The search at the top of the sidebar is still in view.
+    await expect(page.getByRole('searchbox', { name: 'Search the docs' })).toBeInViewport();
+  }
+  // Only the reading column moved: the page itself scrolled, the sidebar did not.
+  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
+  expect(await layoutShifts(page)).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  // At the very end of the page, the sidebar is still where it was.
+  await page.evaluate(() =>
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'instant' }),
+  );
+  expect(await sidebarBox(page)).toEqual(before);
+});
+
+test('390 px: the mobile row of pages keeps working and nothing shifts', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/docs/start');
+  await expect(page.getByRole('heading', { level: 1, name: 'Connect your AI' })).toBeVisible();
+  const nav = page.getByRole('navigation', { name: 'Docs' });
+  const before = await sidebarBox(page);
+  // A page in the row: the next page opens at the top with the row in the same place.
+  await nav.getByRole('link', { name: 'Rooms', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Rooms' })).toBeInViewport();
+  expect(await sidebarBox(page)).toEqual(before);
+  await expect(nav.locator('[aria-current="page"]')).toHaveText('Rooms');
+  // A section found by search: its heading scrolls into view; the row itself doesn't move on
+  // the page (it scrolls away with the text, as before) and nothing shifts.
+  // (Typing grows the row with the matching sections; the watch starts after that.)
+  await page.getByRole('searchbox', { name: 'Search the docs' }).fill('limits');
+  await expect(nav.getByRole('link')).toHaveText(['Limits']);
+  await watchLayoutShifts(page);
+  const typed = await sidebarBox(page);
+  await nav.getByRole('link', { name: 'Limits', exact: true }).click();
+  await expect(page).toHaveURL(/\/docs\/rooms#limits$/);
+  const scrolled = await settledScroll(page);
+  await expect(page.locator('main h2[id="limits"]')).toBeInViewport();
+  const after = await sidebarBox(page);
+  expect({ ...after, y: after.y + Math.round(scrolled) }).toEqual(typed);
+  expect(await layoutShifts(page)).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 test('dark mode uses dark surfaces', async ({ page }) => {

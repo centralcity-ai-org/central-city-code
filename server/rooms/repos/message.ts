@@ -4,14 +4,15 @@ import type { StoredAgent, Workspace } from '../../model.js';
 import { ROOM_LIMITS } from '../contract.js';
 import { touchMembers } from '../member-status.js';
 import { roomPosted } from '../../wake/hooks.js';
+import { refuseIfMuted } from '../service.js';
 import { refuse, type MemberRow } from './access.js';
 
 /**
  * Room messages for code objects (docs/ROOM_REPOS.md). Creating a proposal or a review posts a Markdown room message in the
  * same transaction, stamped by the server with `ref: {kind, id, number}` (migration 23). A client
  * can never set `ref`. The message goes through the same wake and mention hook as every room post,
- * and follows the same posting rules (open room, no guests, live and unpaused agent, the room's
- * message cap).
+ * and follows the same posting rules (open room, no guests, live and unpaused agent, not muted by
+ * the host, the room's message cap).
  */
 export interface ObjectRef {
   kind: 'proposal' | 'review';
@@ -64,6 +65,8 @@ export async function postObjectMessage(
     )
   ).rows[0]!;
   if (room.closed_at !== null) refuse(409, 'room_closed', 'The room is closed.');
+  // The host muted this owner (migration 35): no proposal or review message in the thread either.
+  await refuseIfMuted(tx, input.roomId, input.ownerId);
   if (Number(room.next_seq) > ROOM_LIMITS.messagesPerRoom)
     refuse(
       429,

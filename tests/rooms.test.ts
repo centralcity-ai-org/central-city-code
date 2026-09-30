@@ -131,7 +131,7 @@ test('F4 §0 lifecycle: create, join by link across owners, post, read with per-
   assert.equal(created.room.slug, 'central-city-core');
   assert.equal(created.room.role, 'host');
   assert.equal(created.room.member_count, 1);
-  assert.equal(created.room.member_cap, 10_000);
+  assert.equal(created.room.member_cap, 100);
   // Default 'full': an AI invited later reads the conversation so far.
   assert.equal(created.room.history, 'full');
   assert.equal(created.room.url, 'http://localhost/r/central-city-core');

@@ -664,3 +664,71 @@ test('claim refuses done/cancelled/in_review with 409 task_not_claimable', async
     assert.equal(eventsAfter, eventsBefore);
   }
 });
+
+test('an owner the host muted cannot create, claim, renew or post a result; it may release', async (t) => {
+  const { app, tasks, a, b, member, roomId } = await roomFixture(t);
+  const made = await tasks.create(p(a.id), {
+    room_id: roomId,
+    title: 'Shared work',
+    idempotency_key: randomUUID(),
+  });
+  const other = await tasks.create(p(a.id), {
+    room_id: roomId,
+    title: 'Other work',
+    idempotency_key: randomUUID(),
+  });
+  const claimed = await tasks.claim(p(b.id), {
+    room_id: roomId,
+    task_id: made.task.id,
+    agent_id: member,
+    ttl_minutes: 30,
+    idempotency_key: randomUUID(),
+  });
+  // The host mutes the member (migration 35; the route is covered in room-management tests).
+  await app.city.db.query(
+    "UPDATE room_members SET muted_at=$3, mute_reason='Slow down' WHERE room_id=$1 AND agent_id=$2",
+    [roomId, member, Date.now()],
+  );
+  const refusals = [
+    tasks.create(p(b.id), { room_id: roomId, title: 'Muted task', idempotency_key: randomUUID() }),
+    tasks.claim(p(b.id), {
+      room_id: roomId,
+      task_id: other.task.id,
+      agent_id: member,
+      idempotency_key: randomUUID(),
+    }),
+    tasks.renew(p(b.id), {
+      room_id: roomId,
+      task_id: made.task.id,
+      claim_token: claimed.claim_token,
+      ttl_minutes: 60,
+    }),
+    tasks.result(p(b.id), {
+      room_id: roomId,
+      task_id: made.task.id,
+      claim_token: claimed.claim_token,
+      evidence: { kind: 'proposal', ref: 'proposal-7', revision: 'rev-3' },
+    }),
+  ];
+  for (const run of refusals) {
+    const error = await failsCode(run, 'muted_in_room');
+    assert.equal(error.statusCode, 403);
+    assert.deepEqual(error.details, { reason: 'Slow down' });
+    assert.match(error.message ?? '', /Slow down/);
+  }
+  const listed = await tasks.list(p(a.id), { room_id: roomId });
+  assert.equal((listed as { tasks: unknown[] }).tasks.length, 2, 'no task was created');
+  // Handing the work back is allowed.
+  const released = await tasks.release(p(b.id), {
+    room_id: roomId,
+    task_id: made.task.id,
+    claim_token: claimed.claim_token,
+  });
+  assert.equal(released.released, true);
+  // The host's writes are never muted.
+  await tasks.create(p(a.id), {
+    room_id: roomId,
+    title: 'Host task',
+    idempotency_key: randomUUID(),
+  });
+});

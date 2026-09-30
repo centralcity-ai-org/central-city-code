@@ -53,7 +53,7 @@ test('signed out: Invite your AI → /invite → sign in → my room with its li
   await expect(page).toHaveURL(/\/rooms\/[A-Za-z0-9_-]+$/, { timeout: 20_000 });
   await expect(page.getByRole('heading', { level: 1, name: 'My first room' })).toBeVisible();
   // Step 4: the room opens with its Invite sheet: copy the link.
-  const sheet = page.getByRole('dialog', { name: 'Invite your AI' });
+  const sheet = page.getByRole('dialog', { name: 'Invite to this room' });
   await expect(sheet).toBeVisible();
   const link = await sheet.getByLabel('Invite link').inputValue();
   expect(link).toMatch(/\/j\/[A-Za-z0-9_-]+$/);
@@ -130,7 +130,7 @@ test('signed in: /invite asks before creating a first room, then opens it for in
   await create.click();
   await expect(page).toHaveURL(/\/rooms\/[A-Za-z0-9_-]+$/, { timeout: 20_000 });
   await expect(page.getByRole('heading', { level: 1, name: 'My first room' })).toBeVisible();
-  await expect(page.getByRole('dialog', { name: 'Invite your AI' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Invite to this room' })).toBeVisible();
   // With a room, /rooms#invite opens it again directly: no second room.
   const first = page.url();
   await page.goto('/rooms#invite');
@@ -152,17 +152,27 @@ test('at 360 px the room list is reachable without an open room (no dead end)', 
     ).status(),
   ).toBe(201);
   await page.goto('/rooms');
-  await expect(page.getByRole('heading', { level: 1, name: 'No rooms yet' })).toBeVisible();
-  const open = page.getByRole('button', { name: 'Open rooms' });
+  // No rooms yet: /rooms is the overview with its empty state, never a dead end.
+  await expect(page.getByRole('heading', { level: 1, name: 'Your rooms' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No rooms yet' })).toBeVisible();
+  const open = page.getByRole('button', { name: 'Open menu' });
   await expect(open).toBeVisible();
   await open.click();
   const drawer = page.getByRole('navigation', { name: 'Rooms' });
-  await expect(drawer.getByRole('link', { name: /Workspace/ })).toBeInViewport();
+  await expect(drawer.getByRole('link', { name: 'Workspace', exact: true })).toBeInViewport();
+  await expect(drawer.getByRole('link', { name: 'Room list', exact: true })).toBeInViewport();
+  await expect(drawer.getByRole('button', { name: 'New room' })).toBeInViewport();
+  await expect(drawer.getByRole('button', { name: 'Join a room' })).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  // Desktop keeps the list in the sidebar, so the button is hidden there.
-  await page.setViewportSize({ width: 1440, height: 900 });
   await page.keyboard.press('Escape');
+  await expect(drawer).not.toBeInViewport();
+  // Desktop shows the sidebar itself: no drawer button is needed to reach the rooms.
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/rooms');
-  await expect(page.getByRole('heading', { level: 1, name: 'No rooms yet' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Open rooms' })).toBeHidden();
+  await expect(page.getByRole('heading', { level: 1, name: 'Your rooms' })).toBeVisible();
+  await expect(drawer).toBeInViewport();
+  await expect(drawer.getByRole('link', { name: 'Workspace', exact: true })).toBeVisible();
+  await expect(drawer.getByRole('link', { name: 'Room list', exact: true })).toBeVisible();
+  await expect(drawer.getByRole('button', { name: 'New room' })).toBeVisible();
+  await expect(drawer.getByRole('button', { name: 'Join a room' })).toBeVisible();
 });

@@ -31,6 +31,12 @@ async function register(page: Page, name: string) {
 }
 
 test('public pages show no tool names, JSON or idempotency', async ({ page, browser }) => {
+  // /api/public/stats is sent with stale-while-revalidate, and the ticker, Downtown and the verify
+  // page all read it. From the browser cache Chromium then starts a background revalidation that
+  // never reports "finished", so each one pins a connection: networkidle and later loads stall
+  // (lazy pages sat on "Opening Central City") until the test timed out. A route turns off the
+  // HTTP cache for this page (Playwright), so every read is a plain request that completes.
+  await page.route('**/api/public/stats', (route) => route.continue());
   // Not the first account, so the landing page shows its normal state.
   const setup = await browser.newContext();
   await setup.request.post('/api/auth/register', {
@@ -161,7 +167,7 @@ test('the console, its dialogs and the rooms show no tool names, JSON or idempot
   await expect(page.getByRole('heading', { level: 1, name: 'Plain room' })).toBeVisible();
   await expectPlain(page, 'room');
   await page.getByRole('button', { name: 'Invite', exact: true }).first().click();
-  const sheet = page.getByRole('dialog', { name: 'Invite your AI' });
+  const sheet = page.getByRole('dialog', { name: 'Invite to this room' });
   const link = await sheet.getByLabel('Invite link').inputValue();
   await expectPlain(page, 'Invite sheet');
   await sheet.getByRole('button', { name: 'Close' }).click();

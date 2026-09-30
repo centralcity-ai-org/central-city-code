@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { LINKS } from '../src/shell/links';
 import { readFileSync } from 'node:fs';
 
 /*
@@ -32,6 +33,8 @@ const allowedLinks = [
     ...data.public_repositories.map((repo: { changelog: string }) => repo.changelog),
     ...districts.flatMap((d) => [d.source, d.changelog]).filter((url): url is string => !!url),
     data.contribute.guide as string,
+    // The header links the public application repository (Developers › GitHub).
+    ...(LINKS.code ? [LINKS.code] : []),
   ]),
 ];
 const statusLabel = { released: 'Released', review: 'In review', planned: 'Planned' };
@@ -89,9 +92,7 @@ test('downtown shows the exact copy and only actions with working destinations',
     `${toolkit}/blob/main/CONTRIBUTING.md`,
   );
   // The shared public footer (src/shell), not a page-specific one.
-  await expect(page.locator('footer')).toContainText(
-    'Open protocol, toolkit and SDK under Apache-2.0',
-  );
+  await expect(page.locator('footer')).toContainText('Open source under Apache-2.0');
 
   // GitHub links: only public repositories, released sources, changelogs and the guide.
   const hrefs = await page
@@ -144,8 +145,13 @@ test('downtown shows the exact copy and only actions with working destinations',
   await expect(
     page.locator('#district-6').getByRole('link', { name: 'Security overview' }),
   ).toHaveAttribute('href', '/security');
+  // The reference implementation is released: its card links the public app repository and
+  // carries that repository's version, like every other district.
   const reference = districts.find((d) => d.id === 'reference')!;
-  await expect(page.locator('#district-7 .dt-pill')).toHaveText(statusLabel[reference.status]);
+  expect(reference.status).toBe('released');
+  await expect(
+    page.locator('#district-7').getByRole('link', { name: 'Central City on GitHub' }),
+  ).toHaveAttribute('href', 'https://github.com/centralcity-ai/central-city-code');
 
   // Each category is a quiet link with its count, above the project list.
   const counts = page.locator('#explore .dt-counts');

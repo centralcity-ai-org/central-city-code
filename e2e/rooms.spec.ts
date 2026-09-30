@@ -447,13 +447,11 @@ test('host Invite sheet: one /j link, copy, live join status; members get no Inv
   await page.goto(`/rooms/${room.id}`);
   await expect(page.getByRole('heading', { name: 'This room is quiet' })).toBeVisible();
   await page.getByRole('button', { name: 'Invite' }).first().click();
-  const sheet = page.getByRole('dialog', { name: 'Invite your AI' });
+  const sheet = page.getByRole('dialog', { name: 'Invite to this room' });
   const field = sheet.getByLabel('Invite link');
   await expect(field).toHaveValue(/^https?:\/\/[^/]+\/j\/[A-Za-z0-9_-]{43}$/);
-  // Plain words only: connect the AI app once, then paste the link (no addresses or tools).
-  await expect(sheet).toContainText(
-    'First time? Connect your AI app to Central City once, and when it asks, allow it to join rooms and create an agent.',
-  );
+  // Plain words only, one short line: paste the link; a new AI connects first (no addresses).
+  await expect(sheet).toContainText('Paste the link into your AI. New AI? Connect your AI first.');
   await expect(sheet.getByRole('link', { name: 'Connect your AI' })).toHaveAttribute(
     'href',
     '/#connect',
@@ -514,7 +512,9 @@ test('Invite sheet: "New members can read earlier messages" shows and changes th
   const page = await host.context.newPage();
   await page.goto(`/rooms/${room.id}`);
   await page.getByRole('button', { name: 'Invite' }).first().click();
-  const sheet = page.getByRole('dialog', { name: 'Invite your AI' });
+  const sheet = page.getByRole('dialog', { name: 'Invite to this room' });
+  // Room settings sit behind "More options" (the sheet stays minimal).
+  await sheet.getByText('More options').click();
   const toggle = sheet.getByRole('checkbox', { name: 'New members can read earlier messages' });
   const notice = sheet.getByText('People and AIs who join can read the whole conversation.');
   await expect(toggle).toBeChecked();
@@ -578,18 +578,18 @@ test('the shell can open a room with the Invite sheet already open (#73)', async
   const host = await account(browser, 'Host');
   const room = await hostRoom(host);
   const page = await host.context.newPage();
-  await page.goto('/rooms');
+  await page.goto(`/rooms/${room.id}`);
   await expect(page.getByRole('heading', { name: 'Launch plan', level: 1 })).toBeVisible();
   // What the shell's "Invite your AI" does: push the room with { invite: true }.
   await page.evaluate((id) => {
     history.pushState({ invite: true }, '', `/rooms/${id}`);
     location.reload();
   }, room.id);
-  await expect(page.getByRole('dialog', { name: 'Invite your AI' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Invite to this room' })).toBeVisible();
   await page.getByRole('button', { name: 'Close' }).click();
   await page.reload(); // opened once: the state was cleared
   await expect(page.getByRole('heading', { name: 'Launch plan', level: 1 })).toBeVisible();
-  await expect(page.getByRole('dialog', { name: 'Invite your AI' })).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'Invite to this room' })).toHaveCount(0);
 });
 
 test('lost and failed sends: a refresh reconciles the server copy, Retry posts once; closed rooms are read-only (#31)', async ({
@@ -743,11 +743,123 @@ test('mobile: the sidebar is a drawer and nothing scrolls sideways', async ({ br
     message(page, 'A message that is long enough to wrap on a phone screen.'),
   ).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Rooms' })).not.toBeInViewport();
-  await page.getByRole('button', { name: 'Open rooms' }).click();
+  await page.getByRole('button', { name: 'Open menu' }).click();
   await expect(page.getByRole('navigation', { name: 'Rooms' })).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
+});
+
+test('own messages are a grey bubble on the right; everyone else stays left, document style', async ({
+  browser,
+}) => {
+  const host = await account(browser, 'Host');
+  const room = await hostRoom(host, 'Bubble room');
+  const guest = await account(browser, 'Guest');
+  await join(guest, room, 'Guest agent');
+  await post(guest, room.id, { text: 'A note from the guest.' });
+  await post(host, room.id, { text: 'My own note.' });
+  const page = await host.context.newPage();
+  await page.goto(`/rooms/${room.id}`);
+  const mine = list(page).getByTestId('room-message').filter({ hasText: 'My own note.' });
+  const theirs = list(page)
+    .getByTestId('room-message')
+    .filter({ hasText: 'A note from the guest.' });
+  await expect(mine).toBeVisible();
+  await expect(mine.locator('.rm-own-bubble')).toHaveCount(1);
+  await expect(mine.locator('.rm-byline, .rm-avatar')).toHaveCount(0);
+  await expect(theirs.locator('.rm-own-bubble')).toHaveCount(0);
+  await expect(theirs.locator('.rm-byline')).toContainText('Guest agent');
+  const [thread, own, other] = await Promise.all([
+    list(page).boundingBox(),
+    mine.locator('.rm-own-bubble').boundingBox(),
+    theirs.locator('.rm-bubble').boundingBox(),
+  ]);
+  expect(thread!.x + thread!.width - (own!.x + own!.width)).toBeLessThanOrEqual(2);
+  expect(own!.width).toBeLessThan(thread!.width * 0.8);
+  expect(other!.x - thread!.x).toBeLessThan(thread!.width / 4);
+});
+
+test('room top bar: Room list link, Connect AI and Invite, no pinned bar, no composer hint', async ({
+  browser,
+}) => {
+  const host = await account(browser, 'Host');
+  const room = await hostRoom(host, 'Top bar room');
+  await post(host, room.id, { text: 'First note in the room.' });
+  const page = await host.context.newPage();
+  await page.goto(`/rooms/${room.id}`);
+  await expect(message(page, 'First note in the room.')).toBeVisible();
+  const head = page.locator('.rm-room-head');
+  const roomList = head.getByRole('link', { name: 'Room list', exact: true });
+  await expect(roomList).toBeVisible();
+  await expect(roomList).toHaveAttribute('href', '/rooms');
+  await expect(head.getByRole('button', { name: 'Connect AI' })).toBeVisible();
+  await expect(head.getByRole('button', { name: 'Invite', exact: true })).toBeVisible();
+  // Exactly one filled button; the room name is a heading for assistive technology only.
+  await expect(head.locator('.rm-primary')).toHaveCount(1);
+  await expect(page.getByRole('heading', { level: 1, name: 'Top bar room' })).toHaveCount(1);
+  const title = await head.locator('h1').boundingBox();
+  expect(title && title.width <= 1 && title.height <= 1).toBe(true);
+  // No pinned bar; the safety notice stays.
+  await expect(page.getByText(/pinned/i)).toHaveCount(0);
+  await expect(
+    page.getByText("Messages here come from other people's AIs.", { exact: false }),
+  ).toBeVisible();
+  // The composer has no hint text; Enter still sends.
+  const composer = page.getByRole('form', { name: 'Message composer' });
+  await expect(composer).not.toContainText(/Enter to send|Markdown supported|Shift\s*\+\s*Enter/i);
+  const box = composer.getByLabel('Message', { exact: true });
+  await composer.getByRole('button', { name: 'Mention a member' }).click();
+  await expect(box).toHaveValue('@');
+  await expect(page.getByRole('listbox', { name: 'Mention a member' })).toBeVisible();
+  await box.fill('');
+  await composer.getByRole('button', { name: 'Insert code block' }).click();
+  await expect(box).toHaveValue('```\n\n```');
+  await box.fill('Sent with Enter.');
+  await box.press('Enter');
+  await expect(message(page, 'Sent with Enter.')).toBeVisible();
+  // The "…" menu opens the members panel (room settings live there).
+  await head.getByRole('button', { name: 'More room actions' }).click();
+  await page.getByRole('menuitem', { name: 'Room settings', exact: true }).click();
+  await expect(page.getByRole('complementary', { name: 'Members' })).toBeVisible();
+  await roomList.click();
+  await expect(page).toHaveURL(/^https?:\/\/[^/]+\/rooms$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Your rooms' })).toBeVisible();
+});
+
+test('Connect AI sheet shows the real connection address and commands', async ({ browser }) => {
+  const host = await account(browser, 'Host');
+  const room = await hostRoom(host, 'Connect room');
+  const page = await host.context.newPage();
+  await page.goto(`/rooms/${room.id}`);
+  await page.getByRole('button', { name: 'Connect AI' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Connect your AI' });
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toContainText('Bring your own AI into this room.');
+  // A local server: the Connect page's one-click address is this origin's /mcp.
+  const endpoint = `${APP}/mcp`;
+  await expect(
+    sheet.getByText(`claude mcp add --transport http central-city ${endpoint}`, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    sheet.getByText(`codex mcp add central-city --url ${endpoint}`, { exact: true }),
+  ).toBeVisible();
+  await expect(sheet.getByRole('link', { name: 'Add to Cursor' })).toHaveAttribute(
+    'href',
+    /^cursor:\/\/anysphere\.cursor-deeplink\/mcp\/install\?name=central-city&config=/,
+  );
+  await expect(sheet.getByRole('link', { name: 'All connection options' })).toHaveAttribute(
+    'href',
+    '/#connect',
+  );
+  // Nothing invented: no bridge addresses, sockets or custom GPTs.
+  await expect(sheet).not.toContainText(/wss?:\/\/|bridge|Custom GPT/i);
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  // The host continues to the room's invite link.
+  await page.getByRole('button', { name: 'Connect AI' }).click();
+  await sheet.getByRole('button', { name: 'Get the invite link' }).click();
+  await expect(page.getByLabel('Invite link')).toHaveValue(/\/j\//);
 });
 
 test('screenshots: room, invite sheet and join screen at 1440 and 390, light and dark', async ({
@@ -771,19 +883,31 @@ test('screenshots: room, invite sheet and join screen at 1440 and 390, light and
     ],
   });
   await post(host, room.id, { text: 'Looks good. I will take the invite sheet.' });
-  const page = await host.context.newPage();
+  const shots = process.env.SCREENSHOTS_DIR || 'test-results';
   for (const scheme of ['light', 'dark'] as const)
     for (const width of [1440, 390]) {
+      // The harness has no theme script: set the theme attribute the shell would set.
+      const page = await host.context.newPage();
       await page.addInitScript((theme) => localStorage.setItem('cc-theme', theme), scheme);
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
       await page.goto(`/rooms/${room.id}`);
       await expect(message(page, 'Looks good. I will take the invite sheet.')).toBeVisible();
-      await page.screenshot({ path: `test-results/rooms-${width}-${scheme}.png` });
+      await page.evaluate((theme) => (document.documentElement.dataset.theme = theme), scheme);
+      await page.screenshot({ path: `${shots}/rooms-${width}-${scheme}.png` });
+      await page.getByRole('button', { name: /^Members, / }).click();
+      await expect(page.getByRole('complementary', { name: 'Members' })).toBeVisible();
+      await page.screenshot({ path: `${shots}/rooms-members-${width}-${scheme}.png` });
+      await page.getByRole('button', { name: 'Close members' }).click();
+      await page.getByRole('button', { name: 'Connect AI' }).click();
+      await expect(page.getByRole('dialog', { name: 'Connect your AI' })).toBeVisible();
+      await page.screenshot({ path: `${shots}/rooms-connect-${width}-${scheme}.png` });
+      await page.keyboard.press('Escape');
       if (width === 1440 && scheme === 'light') {
-        await page.getByRole('button', { name: 'Invite' }).click();
+        await page.getByRole('button', { name: 'Invite', exact: true }).click();
         await expect(page.getByLabel('Invite link')).toHaveValue(/\/j\//);
-        await page.screenshot({ path: `test-results/rooms-invite-${width}-${scheme}.png` });
+        await page.screenshot({ path: `${shots}/rooms-invite-${width}-${scheme}.png` });
       }
+      await page.close();
     }
   const joiner = await account(browser, 'Sam');
   await joiner.context.clearCookies();
@@ -791,5 +915,5 @@ test('screenshots: room, invite sheet and join screen at 1440 and 390, light and
   await joinPage.setViewportSize({ width: 390, height: 844 });
   await joinPage.goto(`/r/${room.slug}#${room.token}`);
   await expect(joinPage.getByRole('button', { name: 'Sign in to join' })).toBeVisible();
-  await joinPage.screenshot({ path: 'test-results/rooms-join-390-light.png' });
+  await joinPage.screenshot({ path: `${shots}/rooms-join-390-light.png` });
 });

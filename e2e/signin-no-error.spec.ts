@@ -87,7 +87,7 @@ for (const start of ['/signin', '/#signin']) {
     await page.goto(start);
     await signIn(page, name);
     await expect(page).toHaveURL(/\/rooms$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'No rooms yet' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: 'No rooms yet' })).toBeVisible({
       timeout: 20_000,
     });
     await page.waitForLoadState('networkidle');
@@ -122,12 +122,12 @@ for (const misses of [1, 2]) {
     await signIn(page, name);
     await expect(page).toHaveURL(/\/rooms$/);
     await expect(
-      page.getByRole('heading', { level: 1, name: /No rooms yet|Something went wrong/ }),
+      page.getByRole('heading', { name: /No rooms yet|Something went wrong/ }).first(),
     ).toBeVisible({ timeout: 20_000 });
     await page.waitForLoadState('networkidle');
     // Includes everything shown before each reload (the record lives in sessionStorage).
     expect(await errorText(page)).toEqual([]);
-    await expect(page.getByRole('heading', { level: 1, name: 'No rooms yet' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'No rooms yet' })).toBeVisible();
     expect(missing).toBe(misses);
     expect(loads).toBe(misses);
   });

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Send } from 'lucide-react';
+import { AtSign, CodeXml, Send, SquareCheckBig } from 'lucide-react';
 import type { Member } from './api';
 import { ownerNames, possessive } from './people';
 import { NEW_POST_FORMAT } from './markdown/format';
@@ -13,6 +13,8 @@ const Markdown = lazy(() =>
 /** The server's text limit (MESSAGE_LIMITS.textChars). */
 const MAX = 16_384;
 const MAX_LINES = 8;
+/** A Markdown code fence. */
+const FENCE = '```';
 
 /** The `@query` being typed right before the caret, if any. */
 function mentionAt(text: string, caret: number) {
@@ -33,6 +35,7 @@ export function Composer({
   onDraft,
   onSend,
   disabled,
+  onTask,
 }: {
   roomName: string;
   members: Member[];
@@ -43,6 +46,8 @@ export function Composer({
   onSend: (text: string, agentId?: string) => void;
   /** A reason the composer cannot send right now (offline), or ''. */
   disabled: string;
+  /** Opens the room's new-task form (only where the viewer can add tasks). */
+  onTask?: () => void;
 }) {
   const box = useRef<HTMLTextAreaElement>(null);
   const [agentId, setAgentId] = useState('');
@@ -84,6 +89,27 @@ export function Composer({
       element.focus();
       element.setSelectionRange(position, position);
     });
+  }
+  /** Inserts text at the caret (around the selection), then puts the caret after it. */
+  function insert(before: string, after = '') {
+    const element = box.current;
+    if (!element) return;
+    const start = element.selectionStart ?? draft.length;
+    const end = element.selectionEnd ?? start;
+    const selected = draft.slice(start, end);
+    const next = draft.slice(0, start) + before + selected + after + draft.slice(end);
+    const caret = start + before.length + selected.length;
+    onDraft(next);
+    setPreview(false);
+    requestAnimationFrame(() => {
+      element.focus();
+      element.setSelectionRange(caret, caret);
+      track(next, caret);
+    });
+  }
+  function atCaret() {
+    const start = box.current?.selectionStart ?? draft.length;
+    return { start, previous: draft.slice(0, start).at(-1) };
   }
   function send() {
     const text = draft.trim();
@@ -127,102 +153,144 @@ export function Composer({
         send();
       }}
     >
-      {own.length > 1 ? (
-        <label className="rm-post-as">
-          <span>Post as</span>
-          <select value={sender?.id ?? ''} onChange={(event) => setAgentId(event.target.value)}>
-            {own.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-      <div className="rm-compose-row">
-        {picker && options.length ? (
-          <ul className="rm-picker" role="listbox" aria-label="Mention a member">
-            {options.map((member, index) => (
-              <li
-                key={member.id}
-                role="option"
-                aria-selected={index === active}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  choose(member);
-                }}
-              >
-                <strong>{member.name}</strong>
-                <span title={member.own ? undefined : member.owner_label}>
-                  {member.kind === 'person'
-                    ? member.own
-                      ? 'you'
-                      : 'person'
-                    : member.own
-                      ? 'your agent'
-                      : `${possessive(owner(member.owner_label))} agent`}
-                </span>
-              </li>
-            ))}
-          </ul>
+      <div className="rm-compose-card">
+        {own.length > 1 ? (
+          <label className="rm-post-as">
+            <span>Post as</span>
+            <select value={sender?.id ?? ''} onChange={(event) => setAgentId(event.target.value)}>
+              {own.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                </option>
+              ))}
+            </select>
+          </label>
         ) : null}
-        {preview ? (
-          <div className="rm-preview" aria-label="Preview" role="region">
-            {draft.trim() ? (
-              <MessageBoundary fallback={<p className="rm-text">{draft}</p>}>
-                <Suspense fallback={<p className="rm-text">{draft}</p>}>
-                  <Markdown text={draft} names={members.map((member) => member.name)} />
-                </Suspense>
-              </MessageBoundary>
-            ) : (
-              <p className="rm-compose-note">Nothing to preview.</p>
-            )}
-          </div>
-        ) : null}
-        <textarea
-          hidden={preview}
-          ref={box}
-          rows={1}
-          aria-label="Message"
-          value={draft}
-          maxLength={MAX}
-          placeholder={
-            window.matchMedia?.('(max-width: 479px)').matches
-              ? 'Message…'
-              : `Message ${roomName}… (@ to mention)`
-          }
-          aria-expanded={Boolean(picker && options.length)}
-          aria-autocomplete="list"
-          onChange={(event) => {
-            onDraft(event.target.value);
-            track(event.target.value, event.target.selectionStart);
-          }}
-          onKeyDown={keyDown}
-          onClick={(event) => track(event.currentTarget.value, event.currentTarget.selectionStart)}
-          onBlur={() => setPicker(null)}
-        />
-        {markdown ? (
+        <div className="rm-compose-row">
+          {picker && options.length ? (
+            <ul className="rm-picker" role="listbox" aria-label="Mention a member">
+              {options.map((member, index) => (
+                <li
+                  key={member.id}
+                  role="option"
+                  aria-selected={index === active}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    choose(member);
+                  }}
+                >
+                  <strong>{member.name}</strong>
+                  <span title={member.own ? undefined : member.owner_label}>
+                    {member.kind === 'person'
+                      ? member.own
+                        ? 'you'
+                        : 'person'
+                      : member.own
+                        ? 'your agent'
+                        : `${possessive(owner(member.owner_label))} agent`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {preview ? (
+            <div className="rm-preview" aria-label="Preview" role="region">
+              {draft.trim() ? (
+                <MessageBoundary fallback={<p className="rm-text">{draft}</p>}>
+                  <Suspense fallback={<p className="rm-text">{draft}</p>}>
+                    <Markdown text={draft} names={members.map((member) => member.name)} />
+                  </Suspense>
+                </MessageBoundary>
+              ) : (
+                <p className="rm-compose-note">Nothing to preview.</p>
+              )}
+            </div>
+          ) : null}
+          <textarea
+            hidden={preview}
+            ref={box}
+            rows={1}
+            aria-label="Message"
+            value={draft}
+            maxLength={MAX}
+            placeholder={
+              window.matchMedia?.('(max-width: 479px)').matches
+                ? 'Message…'
+                : `Message ${roomName}…`
+            }
+            aria-expanded={Boolean(picker && options.length)}
+            aria-autocomplete="list"
+            onChange={(event) => {
+              onDraft(event.target.value);
+              track(event.target.value, event.target.selectionStart);
+            }}
+            onKeyDown={keyDown}
+            onClick={(event) =>
+              track(event.currentTarget.value, event.currentTarget.selectionStart)
+            }
+            onBlur={() => setPicker(null)}
+          />
+        </div>
+        <div className="rm-compose-tools">
           <button
             type="button"
-            className="rm-preview-toggle"
-            aria-pressed={preview}
+            className="rm-tool"
+            aria-label="Mention a member"
+            title="Mention a member"
             onClick={() => {
-              setPreview((value) => !value);
-              if (preview) requestAnimationFrame(() => box.current?.focus());
+              const { previous } = atCaret();
+              insert(previous && !/\s/.test(previous) ? ' @' : '@');
             }}
           >
-            {preview ? 'Edit' : 'Preview'}
+            <AtSign size={16} aria-hidden="true" />
           </button>
-        ) : null}
-        <button
-          type="submit"
-          className="rm-send"
-          aria-label="Send"
-          title={disabled || 'Send'}
-          disabled={Boolean(disabled) || !draft.trim()}
-        >
-          <Send size={18} aria-hidden="true" />
-        </button>
+          <button
+            type="button"
+            className="rm-tool"
+            aria-label="Insert code block"
+            title="Insert code block"
+            onClick={() => {
+              const { start, previous } = atCaret();
+              insert(`${start && previous !== '\n' ? '\n' : ''}${FENCE}\n`, `\n${FENCE}`);
+            }}
+          >
+            <CodeXml size={16} aria-hidden="true" />
+          </button>
+          {onTask ? (
+            <button
+              type="button"
+              className="rm-tool"
+              aria-label="Add a task"
+              title="Add a task"
+              onClick={onTask}
+            >
+              <SquareCheckBig size={16} aria-hidden="true" />
+            </button>
+          ) : null}
+          <span className="rm-tools-spacer" />
+          {markdown ? (
+            <button
+              type="button"
+              className="rm-preview-toggle"
+              aria-pressed={preview}
+              onClick={() => {
+                setPreview((value) => !value);
+                if (preview) requestAnimationFrame(() => box.current?.focus());
+              }}
+            >
+              {preview ? 'Edit' : 'Preview'}
+            </button>
+          ) : null}
+          <button
+            type="submit"
+            className="rm-send"
+            aria-label="Send"
+            title={disabled || 'Send'}
+            disabled={Boolean(disabled) || !draft.trim()}
+          >
+            <Send size={18} aria-hidden="true" />
+          </button>
+        </div>
       </div>
       {disabled ? <p className="rm-compose-note">{disabled}</p> : null}
       {draft.length > MAX * 0.9 ? (

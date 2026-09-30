@@ -8,7 +8,10 @@ export interface CityLimits {
   /** Account registrations per client address (IPv6 /64) per 15-minute window. */
   registrationsPerWindow: number;
   agentsPerWorkspace: number;
-  /** Largest member cap a room may have, people and AIs together (at most 10,000). */
+  /**
+   * Largest member cap a room may have, people and AIs together (at most 10,000). Ordinary hosts
+   * are held to 100 (ROOM_LIMITS.memberCapStandard); only approved stress-test operators reach this.
+   */
   roomMembersMax: number;
   /** Member cap of a new room that names none (never above roomMembersMax). */
   roomMembersDefault: number;
@@ -103,7 +106,7 @@ export const DEFAULT_LIMITS: Readonly<CityLimits> = Object.freeze({
   registrationsPerWindow: 10,
   agentsPerWorkspace: 100,
   roomMembersMax: 10_000,
-  roomMembersDefault: 10_000,
+  roomMembersDefault: 100,
   connectionsPerWorkspace: 500,
   jobsPerWorkspace: 1000,
   activeJobsPerWorkspace: 10,

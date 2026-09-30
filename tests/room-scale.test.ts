@@ -6,7 +6,7 @@ import { createApp } from '../server/app.js';
 import { ROOM_LIMITS } from '../server/rooms/contract.js';
 
 /**
- * Rooms up to 10,000 members: a PGlite load test. A room with member_cap 10,000 is filled with
+ * Rooms up to 10,000 members (approved operators only): a PGlite load test. A room with member_cap 10,000 is filled with
  * bulk SQL (synthetic operators, workspaces and member rows), then posting, @mentioning, reading
  * and listing members must each stay within a generous budget, the members list paginates, and
  * a join at the cap is refused with room_full.
@@ -21,6 +21,8 @@ const MEMBERS = Math.min(
   ROOM_LIMITS.memberCapMax,
 );
 const BUDGET_MS = Number(process.env.ROOM_SCALE_BUDGET_MS ?? 2000);
+/** Close and history switches notify every member's owner: budget 10 s (ROOM_SCALE_CLOSE_BUDGET_MS). */
+const CLOSE_BUDGET_MS = Number(process.env.ROOM_SCALE_CLOSE_BUDGET_MS ?? 10_000);
 const ORIGIN = 'https://centralcity.ai';
 const headers = {
   'content-type': 'application/json',
@@ -79,6 +81,17 @@ test(`a room of ${MEMBERS} members: post, mention, read and list stay fast; the 
   };
 
   const host = await account('Scale host');
+  // Rooms above 100 members are for approved operators (CITY_STRESS_TEST_OPERATORS, read at call
+  // time): the scale host is one.
+  const hostId = (
+    await db.query<{ id: string }>('SELECT id FROM operators WHERE name=$1', ['Scale host'])
+  ).rows[0]!.id;
+  const operatorsBefore = process.env.CITY_STRESS_TEST_OPERATORS;
+  process.env.CITY_STRESS_TEST_OPERATORS = hostId;
+  t.after(() => {
+    if (operatorsBefore === undefined) delete process.env.CITY_STRESS_TEST_OPERATORS;
+    else process.env.CITY_STRESS_TEST_OPERATORS = operatorsBefore;
+  });
   const created = await call('POST', '/api/rooms', host.cookie, {
     name: 'Scale room',
     agent_id: host.agentId,
@@ -202,4 +215,100 @@ test(`a room of ${MEMBERS} members: post, mention, read and list stay fast; the 
   );
   assert.equal(joined.statusCode, 409, joined.body);
   assert.equal(joined.json().code, 'room_full');
+
+  // Host settings and close notify every member's owner (one workspace each here): they run as
+  // a short room transaction plus chunked notices and must finish within CLOSE_BUDGET_MS.
+  const eventsOf = async (ownerId: string) =>
+    (
+      await db.query<{ events: Array<{ type: string; message: string }> }>(
+        "SELECT data->'events' AS events FROM workspaces WHERE operator_id=$1",
+        [ownerId],
+      )
+    ).rows[0]!.events;
+  const slow = async <T>(label: string, run: () => Promise<T>) => {
+    const start = performance.now();
+    const result = await run();
+    const ms = Math.round(performance.now() - start);
+    t.diagnostic(`${label}: ${ms} ms`);
+    assert.ok(ms < CLOSE_BUDGET_MS, `${label} took ${ms} ms (budget ${CLOSE_BUDGET_MS} ms)`);
+    return result;
+  };
+  const fromJoin = await slow('history from_join', () =>
+    call('POST', `/api/rooms/${room.id}/settings`, host.cookie, { history: 'from_join' }),
+  );
+  assert.equal(fromJoin.statusCode, 200, fromJoin.body);
+  // Members who joined under from_join see only later messages; switching to full opens them all.
+  await db.query(
+    "UPDATE room_members SET visible_from_seq=2, last_read_seq=2 WHERE room_id=$1 AND role='member'",
+    [room.id],
+  );
+  const full = await slow('history full', () =>
+    call('POST', `/api/rooms/${room.id}/settings`, host.cookie, { history: 'full' }),
+  );
+  assert.equal(full.statusCode, 200, full.body);
+  assert.equal(full.json().changed, true);
+  assert.equal(
+    Number(
+      (
+        await db.query<{ n: string }>(
+          'SELECT count(*) AS n FROM room_members WHERE room_id=$1 AND visible_from_seq>0',
+          [room.id],
+        )
+      ).rows[0]!.n,
+    ),
+    0,
+    'every member can read the whole conversation',
+  );
+  const last = `scale-owner-${others}`;
+  for (const owner of ['scale-owner-1', last])
+    assert.ok(
+      (await eventsOf(owner)).some((event) => event.type === 'room.history_changed'),
+      `${owner} learns that earlier messages are readable`,
+    );
+  // One owner already holds the full 1,000-event window: the notice replaces the oldest event.
+  await db.query(
+    `UPDATE workspaces SET data = jsonb_set(data, '{events}', (SELECT jsonb_agg(jsonb_build_object(
+       'id', 'old-' || i, 'type', 'old', 'message', 'old', 'agentId', NULL, 'jobId', NULL,
+       'createdAt', '2026-01-01T00:00:00.000Z')) FROM generate_series(1, 1000) AS i))
+     WHERE operator_id='scale-owner-1'`,
+  );
+  const closed = await slow('close', () =>
+    call('POST', `/api/rooms/${room.id}/close`, host.cookie),
+  );
+  assert.equal(closed.statusCode, 200, closed.body);
+  assert.equal(closed.json().closed, true);
+  for (const owner of ['scale-owner-1', last])
+    assert.ok(
+      (await eventsOf(owner)).some((event) => event.type === 'room.closed'),
+      `${owner} learns that the room closed`,
+    );
+  const window = await eventsOf('scale-owner-1');
+  assert.equal(window.length, 1000, 'the event window stays at 1,000');
+  assert.equal((window[0] as { id?: string }).id, 'old-2', 'the oldest event makes room');
+  const notice = window.at(-1) as unknown as {
+    id: string;
+    type: string;
+    agentId: string | null;
+    jobId: string | null;
+    createdAt: string;
+  };
+  assert.equal(notice.type, 'room.closed');
+  const firstAgent = (
+    await db.query<{ agent_id: string }>(
+      "SELECT agent_id FROM room_members WHERE room_id=$1 AND owner_id='scale-owner-1'",
+      [room.id],
+    )
+  ).rows[0]!.agent_id;
+  assert.equal(notice.agentId, firstAgent, "the notice names the owner's member agent");
+  assert.equal(notice.jobId, null);
+  assert.match(notice.id, /^[0-9a-f-]{36}$/);
+  assert.ok(!Number.isNaN(Date.parse(notice.createdAt)));
+  const hostOwner = (
+    await db.query<{ host_owner_id: string }>('SELECT host_owner_id FROM rooms WHERE id=$1', [
+      room.id,
+    ])
+  ).rows[0]!.host_owner_id;
+  assert.ok((await eventsOf(hostOwner)).some((event) => event.type === 'room.closed'));
+  const again = await call('POST', `/api/rooms/${room.id}/close`, host.cookie);
+  assert.equal(again.json().closed, false, 'closing twice is a no-op');
 });

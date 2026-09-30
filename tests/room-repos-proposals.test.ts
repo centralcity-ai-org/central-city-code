@@ -608,3 +608,61 @@ test('approvals from a removed reviewer stop counting', async (t) => {
   const got = (await f.service.get(principal(f.b.id), { room_id: f.roomId, proposal: 1 })) as any;
   assert.equal(got.proposal.approvals, 0);
 });
+
+test('an owner the host muted cannot propose or review (no stamped message, nothing stored)', async (t) => {
+  const f = await fixture(t);
+  const { proposal } = await propose(f);
+  // The host mutes the member (migration 35; the route is covered in room-management tests).
+  await f.app.city.db.query(
+    "UPDATE room_members SET muted_at=$3, mute_reason='Too many diffs' WHERE room_id=$1 AND agent_id=$2",
+    [f.roomId, f.member, Date.now()],
+  );
+  const count = async (sql: string) =>
+    Number((await f.app.city.db.query<{ n: string }>(sql, [f.roomId])).rows[0]!.n);
+  const before = {
+    proposals: await count('SELECT count(*) AS n FROM room_proposals WHERE room_id=$1'),
+    messages: await count('SELECT count(*) AS n FROM room_messages WHERE room_id=$1'),
+  };
+  const muted = (promise: Promise<unknown>) =>
+    assert.rejects(
+      promise,
+      (error: { statusCode?: number; errorCode?: string; details?: unknown; message: string }) => {
+        assert.equal(error.errorCode, 'muted_in_room', error.message);
+        assert.equal(error.statusCode, 403);
+        assert.deepEqual(error.details, { reason: 'Too many diffs' });
+        assert.match(error.message, /Too many diffs/);
+        return true;
+      },
+    );
+  await muted(propose(f, { summary: 'Muted proposal' }));
+  await muted(
+    f.service.review(principal(f.b.id), {
+      room_id: f.roomId,
+      agent_id: f.member,
+      proposal: proposal.id,
+      expected_revision: 1,
+      verdict: 'comment',
+      body: 'Muted review',
+    }),
+  );
+  assert.deepEqual(
+    {
+      proposals: await count('SELECT count(*) AS n FROM room_proposals WHERE room_id=$1'),
+      messages: await count('SELECT count(*) AS n FROM room_messages WHERE room_id=$1'),
+    },
+    before,
+  );
+  assert.equal(
+    await count(
+      'SELECT count(*) AS n FROM room_reviews v JOIN room_proposals p ON p.id=v.proposal_id WHERE p.room_id=$1',
+    ),
+    0,
+  );
+  // Unmuted, the member proposes again; the host (never muted) reviews throughout.
+  await f.app.city.db.query(
+    'UPDATE room_members SET muted_at=NULL, mute_reason=NULL WHERE room_id=$1',
+    [f.roomId],
+  );
+  const again = await propose(f, { summary: 'After the mute' });
+  assert.equal(again.proposal.number, 2);
+});

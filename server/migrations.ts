@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Database } from './database.js';
+import type { Database, Transaction } from './database.js';
 
 /**
  * Versioned, forward-only schema migrations. Each migration runs once, in version order,
@@ -11,7 +11,22 @@ export interface Migration {
   version: number;
   name: string;
   sql: string;
+  /**
+   * Optional counts measured just before `sql` runs, in the same transaction, and written as one
+   * structured log line (`event`), so a data migration shows what it changed in the runtime logs
+   * without anyone reading the database. Counts only: never ids or other row data. Not part of the
+   * checksum.
+   */
+  report?: {
+    event: string;
+    measure(tx: Pick<Transaction, 'query'>): Promise<Record<string, number>>;
+  };
 }
+
+/** Where migration reports go: one JSON line on stdout (Vercel runtime logs). */
+export type MigrationLog = (event: string, fields: Record<string, number>) => void;
+const logMigration: MigrationLog = (event, fields) =>
+  console.info(JSON.stringify({ event, ...fields }));
 
 /** Shared with the previous ad-hoc startup DDL so old and new instances serialize. */
 export const SCHEMA_LOCK_KEY = 1128485465;
@@ -264,6 +279,7 @@ export async function runMigrations(
   applyPending: boolean = process.env.VERCEL !== '1' ||
     process.env.VERCEL_ENV === 'production' ||
     (process.env.VERCEL_ENV === 'preview' && process.env.CITY_PREVIEW_DB_ISOLATED === '1'),
+  log: MigrationLog = logMigration,
 ): Promise<{ applied: number[] }> {
   const ordered = [...migrations].sort((a, b) => a.version - b.version);
   if (new Set(ordered.map((item) => item.version)).size !== ordered.length)
@@ -300,6 +316,9 @@ export async function runMigrations(
     const applied: number[] = [];
     for (const migration of ordered) {
       if (done.has(migration.version)) continue;
+      const report = migration.report
+        ? { event: migration.report.event, fields: await migration.report.measure(tx) }
+        : null;
       await tx.exec(migration.sql);
       await tx.query(
         'INSERT INTO schema_migrations(version,name,applied_at,checksum) VALUES($1,$2,$3,$4)',
@@ -311,6 +330,8 @@ export async function runMigrations(
         ],
       );
       applied.push(migration.version);
+      // Logged once the migration is recorded; the transaction commits right after the loop.
+      if (report) log(report.event, report.fields);
     }
     return { applied };
   });

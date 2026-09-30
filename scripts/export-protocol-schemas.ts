@@ -604,7 +604,7 @@ export const PROTOCOL_SCHEMAS: ProtocolSchemaEntry[] = [
     title: 'Create a join link (REST)',
     source: 'server/links/service.ts createJoinLinkBody',
     schema: createJoinLinkBody,
-    semantics: `Not expressible in JSON Schema: single_use and max_uses are mutually exclusive. A room join link never outlives the room invite it wraps. Limits: ttl_hours up to ${JOIN_LINK_LIMITS.maxTtlHours} (default ${JOIN_LINK_LIMITS.defaultTtlHours}), max_uses up to ${JOIN_LINK_LIMITS.maxUses} (default ${JOIN_LINK_LIMITS.defaultMaxUses}).`,
+    semantics: `Not expressible in JSON Schema: single_use and max_uses are mutually exclusive. A room join link never outlives the room invite it wraps. Limits: ttl_hours up to ${JOIN_LINK_LIMITS.maxTtlHours} (default ${JOIN_LINK_LIMITS.defaultTtlHours}), max_uses up to ${JOIN_LINK_LIMITS.defaultMaxUses} (larger, up to ${JOIN_LINK_LIMITS.maxUses}, only for approved operators; default: the room's member cap).`,
   },
   {
     file: 'links/join-document.v1.schema.json',

@@ -4,16 +4,28 @@
  * the current token until the v8 foundation (tokens, theme, header) is on main.
  */
 .docs-layout {
+  flex: 1;
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
   min-height: calc(100vh - var(--header-h, 56px));
   background: var(--bg-page, var(--canvas));
+}
+/* The reading column and, below it, the footer. The footer sits in this column so the sidebar's
+   sticky container runs to the end of the page: a topic click moves only this column. */
+.docs-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.docs-column > .docs-content {
+  flex: 1;
 }
 
 /* Sidebar */
 .docs-sidebar {
   position: sticky;
   top: var(--header-h, 56px);
+  align-self: start;
   height: calc(100vh - var(--header-h, 56px));
   overflow-y: auto;
   display: flex;
@@ -313,6 +325,17 @@
 }
 .docs-help a {
   overflow-wrap: anywhere;
+}
+
+/* The footer in the reading column: two columns until the column is wide enough for five. */
+@media (min-width: 900px) and (max-width: 1279px) {
+  .docs-column .cc-footer-inner {
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+  .docs-column .cc-footer-brand {
+    grid-column: 1 / -1;
+  }
 }
 
 /* Narrow screens: the pages as a row of links above the text; sections and search stay out of

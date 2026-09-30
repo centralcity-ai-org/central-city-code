@@ -8,13 +8,13 @@ import './shell.css';
 
 export type PublicPage = 'home' | 'connect' | 'signin' | 'downtown' | 'rooms' | 'docs' | 'notfound';
 
-/** The "Developer" section: the public code and the protocol district (Docs is in the main nav). */
+/** The "Developers" section: the public code on GitHub and the protocol district (Docs is in the main nav). */
 function developerLinks() {
   if (!LINKS.code) return null;
   return (
     <>
       <a href={LINKS.code} target="_blank" rel="noopener">
-        Central City Code
+        GitHub
         <span className="visually-hidden"> (opens in a new tab)</span>
       </a>
       <a href={LINKS.protocol}>Protocol</a>
@@ -23,7 +23,7 @@ function developerLinks() {
 }
 
 /**
- * "Developer" in the wide header: a disclosure button (aria-expanded) that shows a short list
+ * "Developers" in the wide header: a disclosure button (aria-expanded) that shows a short list
  * of links. Escape closes it and returns focus to the button; a click or focus outside closes
  * it; choosing a link closes it.
  */
@@ -63,7 +63,7 @@ function DeveloperMenu() {
         aria-controls={panelId}
         onClick={() => setOpen((value) => !value)}
       >
-        Developer
+        Developers
       </button>
       <div
         id={panelId}
@@ -81,9 +81,9 @@ function DeveloperMenu() {
 
 /**
  * The Central City public header (v8 Design System):
- * Existing logo lockup, Downtown, Docs, a "Developer" disclosure (Central City Code, Docs,
+ * Existing logo lockup, Downtown, Docs, a "Developers" disclosure (GitHub, Docs,
  * Protocol), quiet "Sign in", primary "Invite your AI", and theme toggle.
- * Under 900 px the nav (with a labelled Developer group), Sign in and theme toggle move into an
+ * Under 900 px the nav (with a labelled Developers group), Sign in and theme toggle move into an
  * accessible drawer menu;
  * the primary action and logo stay visible at every viewport.
  */
@@ -236,7 +236,7 @@ export function PublicHeader({ current }: { current: PublicPage }) {
             {LINKS.code ? (
               <div className="cc-header-menu-group" role="group" aria-labelledby={`${menuId}-dev`}>
                 <span id={`${menuId}-dev`} className="cc-header-menu-group-title">
-                  Developer
+                  Developers
                 </span>
                 {developerLinks()}
               </div>

@@ -447,6 +447,14 @@ async function createDatabaseApp(
       ...(code !== 500 && typeof errorCode === 'string' ? { code: errorCode } : {}),
       // Machine-actionable manifest issues (autonomy routes) accompany the message.
       ...(code !== 500 && Array.isArray(issues) ? { issues } : {}),
+      // Room facts for the caller (removed_from_room: the host's reason, may_rejoin).
+      // Room task errors keep their REST shape (their details travel over MCP only).
+      ...(code !== 500 &&
+      error instanceof RoomError &&
+      error.constructor === RoomError &&
+      error.details !== undefined
+        ? { details: error.details }
+        : {}),
     });
   });
   const limiter: RateLimiter =
@@ -593,6 +601,40 @@ async function createDatabaseApp(
     });
     for (const id of changed) notify(id);
     return result;
+  }
+  /**
+   * Appends one event to many workspaces in one statement (a room change told to up to 10,000
+   * member owners), with the same 1,000-event window as model.ts event(). Rows are locked in
+   * sorted order first, as mutateMany does, so it cannot deadlock with it.
+   */
+  async function appendEvents(
+    entries: ReadonlyArray<{ operatorId: string; agentId: string | null }>,
+    type: string,
+    message: string,
+    time: number,
+  ): Promise<void> {
+    if (!entries.length) return;
+    const ids = entries.map((entry) => entry.operatorId);
+    const changed = await db.transaction(async (tx) => {
+      await tx.query(
+        'SELECT 1 FROM workspaces WHERE operator_id = ANY($1::text[]) ORDER BY operator_id FOR UPDATE',
+        [ids],
+      );
+      return (
+        await tx.query<{ operator_id: string }>(
+          `UPDATE workspaces w SET data = jsonb_set(w.data, '{events}',
+              (CASE WHEN jsonb_array_length(COALESCE(w.data->'events', '[]'::jsonb)) >= 1000
+                    THEN (w.data->'events') - 0 ELSE COALESCE(w.data->'events', '[]'::jsonb) END)
+              || jsonb_build_array(jsonb_build_object('id', gen_random_uuid()::text, 'type', $3::text,
+                   'message', $4::text, 'agentId', n.agent_id, 'jobId', NULL, 'createdAt', $5::text)))
+            FROM unnest($1::text[], $2::text[]) AS n(operator_id, agent_id)
+            WHERE w.operator_id = n.operator_id
+            RETURNING w.operator_id`,
+          [ids, entries.map((entry) => entry.agentId), type, message, iso(time)],
+        )
+      ).rows;
+    });
+    for (const row of changed) notify(row.operator_id);
   }
   async function optionalOperator(request: FastifyRequest): Promise<Operator | null> {
     const token = request.cookies.cc_session;
@@ -1260,6 +1302,7 @@ async function createDatabaseApp(
     agentsPerWorkspace: caps.agentsPerWorkspace,
     mutate,
     mutateMany,
+    appendEvents,
   });
   registerRoomRoutes(app, { rooms, owner, originOf });
   // Room tasks (docs/ROOM_TASKS.md): limits are charged before its transactions.

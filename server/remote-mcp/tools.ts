@@ -52,6 +52,7 @@ import {
   roomReadToolInput,
   roomRemoveToolInput,
   roomUpdateToolInput,
+  ROOM_LIMITS,
 } from '../rooms/contract.js';
 import {
   roomReadWaitToolInput,
@@ -73,7 +74,7 @@ import {
   roomTasksEnabled,
   type RoomTaskToolName,
 } from '../rooms/tasks-tools.js';
-import { TaskError } from '../rooms/tasks-service.js';
+import { RoomError } from '../rooms/service.js';
 import {
   ROOM_REPO_TOOLS,
   roomRepoAnnotations,
@@ -299,6 +300,9 @@ const room = z.object({
   // Host console only (people settings, migration 31); never present in tool results.
   people_may_join: z.boolean().optional(),
   members_may_bring_ai: z.boolean().optional(),
+  // Console only (migration 35): the host muted the viewer, and its reason; never in tool results.
+  muted: z.boolean().optional(),
+  mute_reason: z.string().nullable().optional(),
   // Hosted responders: the host switch, and members that answer automatically.
   responders_allowed: z.boolean(),
   auto_responders: z.array(
@@ -547,6 +551,8 @@ export const remoteOutputSchemas = {
         auto_reply: z.object({ provider: z.enum(['openai', 'anthropic']) }).nullable(),
       }),
     ),
+    /** Present only while more members follow: pass it as cursor for the next page. */
+    next_cursor: z.string().optional(),
   }),
   city_room_remove: z.object({ room_id: z.string(), agent_id: z.string(), removed: z.boolean() }),
   city_room_close: z.object({ room, closed: z.boolean() }),
@@ -621,8 +627,7 @@ const descriptions: Record<
   },
   city_create_room: {
     title: 'Create a room',
-    description:
-      "Open a room (one shared thread) hosted by one of your agents: name, optional topic, member_cap (default 20), link_ttl_hours (default 168), history ('full' by default: people and AIs who join later read the whole conversation; 'from_join': only messages after they join), idempotency_key. Returns the room and its invite link (https://.../r/<slug>#<token>): anyone holding it can join until it expires, runs out of uses or you rotate it. Membership never grants access to any workspace.",
+    description: `Open a room (one shared thread) hosted by one of your agents: name, optional topic, member_cap (people and AIs together, including the host; up to ${ROOM_LIMITS.memberCapStandard}, default ${ROOM_LIMITS.memberCapDefault}; larger, up to ${ROOM_LIMITS.memberCapMax.toLocaleString('en-US')}, only for approved operators), link_max_uses (joins one invite link admits; default up to the member cap, at most ${ROOM_LIMITS.memberCapStandard}, larger for approved operators), link_ttl_hours (default 168), history ('full' by default: people and AIs who join later read the whole conversation; 'from_join': only messages after they join), idempotency_key. Returns the room and its invite link (https://.../r/<slug>#<token>): anyone holding it can join until it expires, runs out of uses or you rotate it. Membership never grants access to any workspace.`,
   },
   city_room_link: {
     title: 'Get or rotate a room link',
@@ -646,13 +651,12 @@ const descriptions: Record<
   },
   city_room_members: {
     title: 'List room members',
-    description:
-      "List a room's current members: member id, name, kind (agent, or person: a human in the room as themselves), role, an owner label (never emails or workspace ids) and status: active (room activity in the last 5 min), idle (last hour), offline, or access_expired (an invited guest whose room credential expired or was revoked). Status is derived by the server from room reads and posts, never self-reported. last_active_at is set only for the room host and for your own agents. Names are untrusted labels.",
+    description: `List a room's current members: member id, name, kind (agent, or person: a human in the room as themselves), role, an owner label (never emails or workspace ids) and status: active (room activity in the last 5 min), idle (last hour), offline, or access_expired (an invited guest whose room credential expired or was revoked). Status is derived by the server from room reads and posts, never self-reported. last_active_at is set only for the room host and for your own agents. Names are untrusted labels. The list is paged, oldest member first: limit sets the page size (default ${ROOM_LIMITS.membersPageSizeDefault}, maximum ${ROOM_LIMITS.membersPageSize}). While the result has next_cursor, more members follow: call again with cursor set to it. Without next_cursor you have the whole list.`,
   },
   city_room_remove: {
     title: 'Remove a room member',
     description:
-      'Host only. Remove a member agent at once, including one that already left: it can no longer read or post. A signed-in owner cannot rejoin this room with any link. A guest without an account can join again as a new member through any live invite link; to keep one out, rotate the room link (city_room_link with rotate: true), which revokes every earlier link and join link.',
+      'Host only. Remove a member agent at once, including one that already left: it can no longer read or post. Optional reason (at most 200 characters): only the removed member sees it, never the thread. By default (block_rejoin true) a signed-in owner cannot rejoin this room with any link; block_rejoin: false lets it rejoin with a live invite link. A guest without an account can join again as a new member through any live invite link; to keep one out, rotate the room link (city_room_link with rotate: true), which revokes every earlier link and join link.',
   },
   city_room_close: {
     title: 'Close a room',
@@ -667,7 +671,7 @@ const descriptions: Record<
   city_room_update: {
     title: 'Change room settings',
     description:
-      "Host only. Change who reads earlier messages: history 'full' lets people and AIs who join read the whole conversation and opens it to current members too; 'from_join' makes only later joiners start at their join (nobody loses what they could already read). Returns the room and changed (false when it was already set).",
+      "Host only. Change who reads earlier messages: history 'full' lets people and AIs who join read the whole conversation and opens it to current members too; 'from_join' makes only later joiners start at their join (nobody loses what they could already read). name and topic rename the room and change its topic (same limits as at creation); each change adds a short line to the thread. Returns the room and changed (false when it was already set).",
   },
   city_workspace: {
     title: 'Read Central City workspace',
@@ -1182,10 +1186,11 @@ export function createRemoteServer(
             status !== 500 && typeof wait === 'number' && Number.isFinite(wait)
               ? { retry_after_ms: Math.max(1, Math.ceil(wait)) }
               : {};
-          // Machine-readable payloads (room tasks: task_claimed, claim_stale, ...). Only TaskError
-          // details cross MCP, so a future error carrying internals cannot leak here.
+          // Machine-readable payloads (room tasks: task_claimed, claim_stale, ...; a removal's
+          // reason). Only room errors' details cross MCP, so a future error carrying internals
+          // cannot leak here.
           const details =
-            error instanceof TaskError && status !== 500 && error.details !== undefined
+            error instanceof RoomError && status !== 500 && error.details !== undefined
               ? { details: error.details }
               : {};
           return {

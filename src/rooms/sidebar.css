@@ -1,0 +1,803 @@
+/* Central City — Room v2: Sidebar & App Shell Styles
+   System font stack at Claude Code sizes, v8 tokens, and light/dark mode support.
+*/
+
+.rm-app {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  height: 100dvh;
+  width: 100vw;
+  background: var(--canvas);
+  color: var(--text);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ==========================================================================
+   Left Collapsible Sidebar (ChatGPT & Claude Inspired)
+   ========================================================================== */
+
+.rm-sidebar {
+  width: 260px;
+  background-color: var(--bg-surface, var(--surface-sunken, #f8fafc));
+  border-right: 1px solid var(--border, #e2e8f0);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  flex-shrink: 0;
+  z-index: 30;
+  padding: 0;
+  gap: 0;
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  user-select: none;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.rm-sidebar.collapsed {
+  width: 64px;
+}
+
+/* Sidebar Header */
+.rm-sidebar-header {
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle, #edf2f7);
+  min-height: 56px;
+  flex-shrink: 0;
+}
+
+.rm-sidebar-brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  cursor: default;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.rm-sidebar-brand-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-s, 6px);
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.rm-sidebar-brand-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary, #090d16);
+  white-space: nowrap;
+  letter-spacing: -0.3px;
+}
+
+.rm-sidebar.collapsed .rm-sidebar-brand-text {
+  display: none;
+}
+
+.rm-sidebar.collapsed .rm-sidebar-header {
+  padding: 12px 0;
+  justify-content: center;
+  align-items: center;
+  min-height: 56px;
+}
+
+.rm-sidebar.collapsed .rm-sidebar-brand-wrap {
+  justify-content: center;
+  margin: 0 auto;
+  cursor: pointer;
+}
+
+.rm-sidebar-collapse-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-s, 6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted, #64748b);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.rm-sidebar-collapse-btn:hover {
+  background-color: var(--bg-surface-hover, var(--surface-hover, #e2e8f0));
+  color: var(--text-primary, #0f172a);
+}
+
+.rm-sidebar.collapsed .rm-sidebar-collapse-btn {
+  display: none;
+}
+
+/* Workspace and Room list: the prominent links at the top of the sidebar */
+.rm-sidebar-nav-action {
+  margin: 10px 12px 4px 12px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--radius-s, 6px);
+  background-color: var(--bg-surface-elevated, var(--surface, #ffffff));
+  border: 1px solid var(--border, #e2e8f0);
+  color: var(--text-primary, #0f172a);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.rm-sidebar-nav-action:hover {
+  background-color: var(--bg-surface-hover, var(--surface-hover, #e2e8f0));
+  border-color: var(--border-strong, #94a3b8);
+  color: var(--text-primary, #0f172a);
+  text-decoration: none;
+}
+
+.rm-sidebar-nav-action.active {
+  background-color: var(--accent-subtle, rgba(37, 99, 235, 0.1));
+  border-color: var(--accent-border, rgba(37, 99, 235, 0.3));
+  color: var(--accent-text, #0055d6);
+  font-weight: 600;
+}
+
+.rm-sidebar.collapsed .rm-sidebar-nav-action {
+  padding: 8px 0;
+  justify-content: center;
+  margin: 8px auto 4px auto;
+  width: 44px;
+}
+
+.rm-sidebar.collapsed .rm-sidebar-nav-action span {
+  display: none;
+}
+
+/* Workspace sits directly above Room list. */
+.rm-sidebar-nav-action + .rm-sidebar-nav-action,
+.rm-sidebar.collapsed .rm-sidebar-nav-action + .rm-sidebar-nav-action {
+  margin-top: 0;
+}
+
+/* Quick Actions (New room, Join room) */
+.rm-sidebar-actions-row {
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px 10px 12px;
+  flex-shrink: 0;
+}
+
+.rm-sidebar.collapsed .rm-sidebar-actions-row {
+  flex-direction: column;
+  padding: 4px 8px;
+  align-items: center;
+}
+
+.rm-sidebar-act-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  min-height: 32px;
+  border-radius: var(--radius-s, 6px);
+  font-size: 12.5px;
+  font-weight: 500;
+  background-color: var(--bg-surface-elevated, var(--surface, #ffffff));
+  border: 1px solid var(--border, #e2e8f0);
+  color: var(--text-secondary, #334155);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  padding: 0 8px;
+}
+
+.rm-sidebar-act-btn:hover {
+  background-color: var(--bg-surface-hover, var(--surface-hover, #e2e8f0));
+  color: var(--text-primary, #0f172a);
+}
+
+.rm-sidebar-act-btn.primary {
+  background-color: var(--accent-subtle, #eff6ff);
+  border-color: var(--accent-border, #bfdbfe);
+  color: var(--accent-text, #0055d6);
+  font-weight: 600;
+}
+
+.rm-sidebar-act-btn.primary:hover {
+  background-color: var(--accent-subtle, #eff6ff);
+  border-color: var(--accent-text, #0055d6);
+  color: var(--accent-text, #0055d6);
+}
+
+.rm-sidebar.collapsed .rm-sidebar-act-btn {
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  flex: none;
+  padding: 0;
+}
+
+.rm-sidebar.collapsed .rm-sidebar-act-btn span {
+  display: none;
+}
+
+/* Scrollable Room List */
+.rm-sidebar-rooms-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 8px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rm-sidebar-room-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rm-sidebar-group-header {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted, #64748b);
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: none;
+  border: none;
+  width: 100%;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.rm-closed-accordion-header {
+  cursor: pointer;
+  border-radius: var(--radius-s, 6px);
+  transition: background-color 0.12s ease;
+}
+
+.rm-closed-accordion-header:hover {
+  background-color: var(--bg-surface-hover, var(--surface-hover, #e2e8f0));
+  color: var(--text-primary, #0f172a);
+}
+
+.rm-group-header-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rm-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.rm-sidebar.collapsed .rm-sidebar-group-header {
+  display: none;
+}
+
+.rm-sidebar-room-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-s, 6px);
+  color: var(--text-secondary, #334155);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.12s ease;
+  position: relative;
+  min-height: 34px;
+  box-sizing: border-box;
+}
+
+.rm-sidebar-room-item:hover {
+  background-color: var(--bg-surface-hover, var(--surface-hover, #e2e8f0));
+  color: var(--text-primary, #0f172a);
+  text-decoration: none;
+}
+
+.rm-sidebar-room-item.active {
+  background-color: var(--bg-surface-elevated, var(--surface, #ffffff));
+  color: var(--accent-text, #0055d6);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(15, 23, 42, 0.05));
+  border: 1px solid var(--border-subtle, #edf2f7);
+}
+
+.rm-sidebar-room-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  background-color: var(--accent, #2563eb);
+  border-radius: 0 var(--radius-xs, 4px) var(--radius-xs, 4px) 0;
+}
+
+.rm-sidebar-room-item.closed-item {
+  color: var(--text-muted, #64748b);
+}
+
+.rm-sidebar-room-item.closed-item:hover {
+  color: var(--text-secondary, #334155);
+}
+
+.rm-sidebar.collapsed .rm-sidebar-room-item {
+  justify-content: center;
+  padding: 8px 0;
+  width: 44px;
+  margin: 0 auto;
+}
+
+.rm-sidebar.collapsed .rm-sidebar-room-item .rm-room-item-name {
+  display: none;
+}
+
+.rm-room-item-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background-color: var(--status-live, #059669);
+  flex-shrink: 0;
+}
+
+.rm-room-item-dot.closed {
+  background-color: var(--text-muted, #64748b);
+  opacity: 0.6;
+}
+
+.rm-room-item-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rm-room-item-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background-color: var(--accent-text, #0055d6);
+  color: var(--text-inverse, #ffffff);
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.rm-closed-rooms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rm-no-rooms {
+  padding: 12px 10px;
+  font-size: 13px;
+}
+
+/* Sidebar Bottom Footer */
+.rm-sidebar-footer {
+  border-top: 1px solid var(--border-subtle, #edf2f7);
+  padding: 10px 10px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background-color: var(--bg-surface, var(--surface-sunken, #f8fafc));
+  flex-shrink: 0;
+}
+
+.rm-sidebar-footer-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-s, 6px);
+  color: var(--text-secondary, #334155);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.12s ease;
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: inherit;
+  width: 100%;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.rm-sidebar-footer-link:hover {
+  background-color: var(--bg-surface-hover, var(--surface-hover, #e2e8f0));
+  color: var(--text-primary, #0f172a);
+  text-decoration: none;
+}
+
+.rm-sidebar.collapsed .rm-sidebar-footer-link {
+  justify-content: center;
+  padding: 8px 0;
+  width: 44px;
+  margin: 0 auto;
+}
+
+.rm-sidebar.collapsed .rm-sidebar-footer-link span {
+  display: none;
+}
+
+.rm-sidebar-profile-card {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: var(--radius-s, 6px);
+  margin-top: 4px;
+  background-color: var(--bg-surface-elevated, var(--surface, #ffffff));
+  border: 1px solid var(--border, #e2e8f0);
+}
+
+.rm-sidebar.collapsed .rm-sidebar-profile-card:not(.rm-profile-menu-button),
+.rm-sidebar.collapsed .rm-no-rooms {
+  display: none;
+}
+
+/* Account card: name plus a small chevron; in the collapsed rail an icon button opens the
+   same menu. */
+.rm-profile-menu-button {
+  gap: 8px;
+}
+.rm-profile-menu-button .rm-profile-card-name {
+  flex: 1;
+  min-width: 0;
+}
+.rm-profile-chevron {
+  flex: none;
+  color: var(--text-muted);
+}
+.rm-profile-rail-icon {
+  display: none;
+  flex: none;
+}
+/* The rail lets the account menu open past its 64 px edge, above the main column. */
+.rm-sidebar.collapsed {
+  overflow: visible;
+  position: relative;
+}
+.rm-sidebar.collapsed .rm-profile-menu-button {
+  width: 44px;
+  height: 44px;
+  margin: 4px auto 0;
+  padding: 0;
+  justify-content: center;
+}
+.rm-sidebar.collapsed .rm-profile-menu-button .rm-profile-card-name,
+.rm-sidebar.collapsed .rm-profile-chevron {
+  display: none;
+}
+.rm-sidebar.collapsed .rm-profile-rail-icon {
+  display: inline-block;
+}
+.rm-sidebar.collapsed .rm-profile-menu-list {
+  right: auto;
+  width: max-content;
+  min-width: 140px;
+}
+
+.rm-profile-card-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary, #0f172a);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ==========================================================================
+   Room list: overview of the person's rooms
+   ========================================================================== */
+
+.rm-overview {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 40px 32px 48px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.rm-overview-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.rm-overview-head h1 {
+  flex: 1;
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  color: var(--text-primary, #09090b);
+}
+
+.rm-overview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: var(--radius-m, 10px);
+  background-color: var(--bg-surface-elevated, #ffffff);
+  overflow: hidden;
+}
+
+.rm-overview-list li + li {
+  border-top: 1px solid var(--border-subtle, #f1f3f5);
+}
+
+.rm-overview-room {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 16px;
+  color: var(--text-primary, #09090b);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.rm-overview-room:hover {
+  background-color: var(--bg-surface-hover, #f1f3f5);
+  text-decoration: none;
+}
+
+.rm-overview-room:focus-visible {
+  outline: 2px solid var(--border-focus, #0066ff);
+  outline-offset: -2px;
+}
+
+.rm-overview-room.unread .rm-overview-room-name {
+  font-weight: 600;
+}
+
+.rm-overview-room.closed {
+  color: var(--text-muted, #52525b);
+}
+
+.rm-overview-room-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rm-overview-room-role {
+  font-size: 12px;
+  color: var(--text-muted, #52525b);
+  flex-shrink: 0;
+}
+
+.rm-overview-empty {
+  padding: 32px 24px;
+  border: 1px dashed var(--border, #e4e4e7);
+  border-radius: var(--radius-m, 10px);
+  text-align: center;
+}
+
+.rm-overview-empty h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary, #09090b);
+}
+
+.rm-overview-empty p {
+  margin: 0 auto;
+  max-width: 42ch;
+  font-size: 13px;
+}
+
+/* ==========================================================================
+   Mobile Responsiveness (Drawer under 900px)
+   ========================================================================== */
+
+@media (max-width: 899px) {
+  .rm-app {
+    grid-template-columns: 1fr;
+  }
+
+  .rm-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(300px, 85vw);
+    max-width: 85vw;
+    z-index: 50;
+    /* No shadow while off-canvas: it would show as a strip on the left edge. */
+    box-shadow: none;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .rm-sidebar.open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-floating, 0 20px 25px -5px rgba(15, 23, 42, 0.1));
+  }
+
+  .rm-sidebar.collapsed {
+    width: min(300px, 85vw);
+  }
+
+  .rm-sidebar.collapsed .rm-sidebar-brand-text,
+  .rm-sidebar.collapsed .rm-sidebar-nav-action span,
+  .rm-sidebar.collapsed .rm-sidebar-act-btn span,
+  .rm-sidebar.collapsed .rm-sidebar-group-header,
+  .rm-sidebar.collapsed .rm-room-item-name,
+  .rm-sidebar.collapsed .rm-sidebar-footer-link span,
+  .rm-sidebar.collapsed .rm-sidebar-profile-card {
+    display: initial;
+  }
+
+  .rm-sidebar.collapsed .rm-sidebar-nav-action,
+  .rm-sidebar.collapsed .rm-sidebar-room-item,
+  .rm-sidebar.collapsed .rm-sidebar-footer-link {
+    width: auto;
+    justify-content: flex-start;
+    padding: 7px 10px;
+    margin: 0;
+  }
+
+  .rm-sidebar-collapse-btn {
+    display: none !important;
+  }
+
+  .rm-close-drawer {
+    display: inline-flex !important;
+  }
+
+  .rm-overview {
+    padding: 12px 16px 32px;
+    gap: 16px;
+  }
+
+  .rm-overview-head h1 {
+    font-size: 18px;
+  }
+
+  .rm-drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    background-color: rgba(9, 13, 22, 0.5);
+    backdrop-filter: blur(2px);
+  }
+}
+
+/* Account menu: the profile card opens Sign out. */
+.rm-profile-menu {
+  position: relative;
+}
+.rm-profile-menu-button {
+  width: 100%;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+}
+.rm-profile-menu-button:hover {
+  border-color: var(--border-strong, var(--border));
+}
+.rm-profile-menu-button:focus-visible,
+.rm-profile-menu-item:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+.rm-profile-menu-list {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-surface-elevated, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m, 8px);
+  box-shadow: var(--shadow-md, 0 8px 24px rgb(0 0 0 / 12%));
+  z-index: 20;
+}
+.rm-profile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-s, 6px);
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.rm-profile-menu-item:hover {
+  background: var(--bg-muted, var(--surface-muted, rgb(0 0 0 / 5%)));
+}
+.rm-profile-menu-item:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Under 900 px the drawer is never a rail: undo the collapsed-rail account and empty-state rules. */
+@media (max-width: 899px) {
+  .rm-sidebar.collapsed {
+    overflow: hidden;
+    position: fixed;
+    z-index: 50;
+  }
+  .rm-sidebar.collapsed .rm-no-rooms {
+    display: block;
+  }
+  .rm-sidebar.collapsed .rm-profile-menu-button {
+    display: flex;
+    width: 100%;
+    height: auto;
+    margin: 4px 0 0;
+    padding: 8px 12px;
+    justify-content: flex-start;
+  }
+  .rm-sidebar.collapsed .rm-profile-menu-button .rm-profile-card-name {
+    display: block;
+  }
+  .rm-sidebar.collapsed .rm-profile-chevron {
+    display: inline-block;
+  }
+  .rm-sidebar.collapsed .rm-profile-rail-icon {
+    display: none;
+  }
+  .rm-sidebar.collapsed .rm-profile-menu-list {
+    right: 0;
+    width: auto;
+  }
+}

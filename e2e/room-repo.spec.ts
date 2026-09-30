@@ -87,7 +87,9 @@ async function mockRepo(page: Page, roomId: string, initial: Binding | null) {
 async function openCode(page: Page, roomId: string) {
   await page.goto(`/rooms/${roomId}`);
   await expect(page.getByRole('heading', { level: 1, name: 'Launch plan' })).toBeVisible();
-  await page.getByRole('button', { name: /^Code/ }).click();
+  // Code lives in the top bar's "…" menu.
+  await page.getByRole('button', { name: 'More room actions' }).click();
+  await page.getByRole('menuitem', { name: /^Code/ }).click();
   const panel = page.getByRole('complementary', { name: 'Code' });
   await expect(panel).toBeVisible();
   return panel;
@@ -104,6 +106,9 @@ test('without room repositories on the server, the room shows no Code button', a
     host.page.locator('.rm-room-head').getByRole('button', { name: 'Invite', exact: true }),
   ).toBeVisible();
   await expect(host.page.getByRole('button', { name: /^Code/ })).toHaveCount(0);
+  await host.page.getByRole('button', { name: 'More room actions' }).click();
+  await expect(host.page.getByRole('menu', { name: 'More room actions' })).toBeVisible();
+  await expect(host.page.getByRole('menuitem', { name: /^Code/ })).toHaveCount(0);
 });
 
 test('the host connects a repository only after ticking the notice and typing its name', async ({
@@ -133,9 +138,11 @@ test('the host connects a repository only after ticking the notice and typing it
   await connect.click();
   await expect(panel).toContainText('Connected repository');
   await expect(panel).toContainText('acme/website');
+  await host.page.getByRole('button', { name: 'More room actions' }).click();
   await expect(
-    host.page.getByRole('button', { name: 'Code, connected to acme/website' }),
+    host.page.getByRole('menuitem', { name: 'Code, connected to acme/website' }),
   ).toBeVisible();
+  await host.page.keyboard.press('Escape');
   expect(sent.find((item) => item.path.endsWith('/repo') && item.body)?.body).toEqual({
     repo: 'acme/website',
     acknowledge_member_read: true,

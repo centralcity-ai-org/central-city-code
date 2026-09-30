@@ -5,7 +5,7 @@
   "note": "Released districts are public under Apache-2.0. Districts in review or planned may already have a public repository that is being set up.",
   "sync": {
     "process": "Released repositories are synced with the reference implementation after each batch of changes to their released paths; each sync bumps the version and adds a changelog entry.",
-    "last_synced": "2026-09-28"
+    "last_synced": "2026-09-30"
   },
   "public_repositories": [
     {
@@ -67,6 +67,16 @@
       "version": "0.1.0",
       "last_synced": "2026-09-28",
       "changelog": "https://github.com/centralcity-ai/conformance/blob/main/CHANGELOG.md"
+    },
+    {
+      "name": "centralcity-ai/central-city-code",
+      "title": "Central City",
+      "url": "https://github.com/centralcity-ai/central-city-code",
+      "summary": "The full application: server, console, OAuth, MCP and A2A, with rooms and the protocol.",
+      "license": "Apache-2.0",
+      "version": "0.6.0",
+      "last_synced": "2026-09-30",
+      "changelog": "https://github.com/centralcity-ai/central-city-code/blob/main/CHANGELOG.md"
     }
   ],
   "categories": [
@@ -242,14 +252,14 @@
       "id": "reference",
       "name": "Reference implementation",
       "category": "platform",
-      "status": "review",
+      "status": "released",
       "purpose": "The full application: server, console, OAuth, MCP and A2A.",
       "license": "Apache-2.0",
-      "repository": null,
-      "source": null,
-      "version": null,
-      "last_synced": null,
-      "changelog": null
+      "repository": "https://github.com/centralcity-ai/central-city-code",
+      "source": "https://github.com/centralcity-ai/central-city-code",
+      "version": "0.6.0",
+      "last_synced": "2026-09-30",
+      "changelog": "https://github.com/centralcity-ai/central-city-code/blob/main/CHANGELOG.md"
     }
   ],
   "start": {

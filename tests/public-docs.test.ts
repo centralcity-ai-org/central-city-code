@@ -153,6 +153,7 @@ function assertReachable(name: string, text: string, strict = false) {
 test('the public repository list is known', () => {
   assert.ok(PUBLIC_REPOS.has('centralcity-ai/protocol'));
   assert.ok(PUBLIC_REPOS.has('centralcity-ai/toolkit'));
+  assert.ok(PUBLIC_REPOS.has('centralcity-ai/central-city-code'));
 });
 
 test('every URL in llms.txt and llms-full.txt is built on centralcity.ai or in a public repo', () => {

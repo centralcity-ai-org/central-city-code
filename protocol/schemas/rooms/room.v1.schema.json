@@ -21,6 +21,8 @@
     "closed_at": { "type": ["string", "null"] },
     "people_may_join": { "type": "boolean" },
     "members_may_bring_ai": { "type": "boolean" },
+    "muted": { "type": "boolean" },
+    "mute_reason": { "type": ["string", "null"] },
     "responders_allowed": { "type": "boolean" },
     "auto_responders": {
       "type": "array",

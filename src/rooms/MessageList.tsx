@@ -51,6 +51,11 @@ const OLDER_PX = 160;
 /** Consecutive messages from one agent within this window share a byline. */
 const GROUP_MS = 5 * 60_000;
 
+/** The first letter of a name, for an avatar. */
+export function initialOf(name: string) {
+  return (Array.from(name.trim())[0] ?? '?').toUpperCase();
+}
+
 /** A message still on its way (or failed); it keeps its idempotency key for Retry. */
 export type PendingMessage = {
   key: string;
@@ -169,34 +174,83 @@ function Message({
   names,
   owner,
   byline,
+  host,
 }: {
   message: RoomMessage;
   names: string[];
   owner: (label: string) => string;
   byline: boolean;
+  /** The sender hosts the room. */
+  host: boolean;
 }) {
   if ((message as { sender_kind?: string }).sender_kind === 'system') {
     return <SystemLine message={message} />;
   }
   const date = new Date(message.created_at);
+  const time = (
+    <time dateTime={message.created_at} title={date.toLocaleString()}>
+      {timeFormat.format(date)}
+    </time>
+  );
+  // Your own messages: a grey bubble on the right, no avatar or byline (the name stays for
+  // assistive technology), the time small under the bubble.
+  if (message.own)
+    return (
+      <li
+        className={`rm-message own${byline ? '' : ' grouped'}`}
+        data-testid="room-message"
+        data-id={message.id}
+      >
+        <span className="rm-visually-hidden">{message.sender} (you)</span>
+        <div className="rm-bubble rm-own-bubble">
+          {message.parts.map((part, index) =>
+            part.type === 'text' ? (
+              <TextPart
+                key={index}
+                text={part.text}
+                names={names}
+                markdown={messageFormat(message as { format?: unknown }) === 'markdown'}
+                priority={message.seq}
+              />
+            ) : (
+              <DataPart
+                key={index}
+                data={part.data}
+                mimeType={(part as { mimeType?: string }).mimeType}
+              />
+            ),
+          )}
+        </div>
+        <span className="rm-own-time">{time}</span>
+      </li>
+    );
   return (
     <li
-      className={`rm-message${message.own ? ' own' : ''}${byline ? '' : ' grouped'}`}
+      className={`rm-message${byline ? '' : ' grouped'}`}
       data-testid="room-message"
       data-id={message.id}
     >
+      <span
+        className="rm-avatar"
+        data-kind={message.sender_kind ?? 'agent'}
+        aria-hidden="true"
+        hidden={!byline}
+      >
+        {initialOf(message.sender)}
+      </span>
       {byline ? (
         <div className="rm-byline">
           <strong>{message.sender}</strong>
-          {message.sender_kind === 'person' ? <span className="rm-person">person</span> : null}
-          {message.own ? (
-            <span>(you)</span>
+          {/* Role chip; shown capitalised ("Person"). */}
+          {host ? (
+            <span className="rm-role">Host</span>
+          ) : message.sender_kind === 'person' ? (
+            <span className="rm-role rm-person">person</span>
           ) : (
-            <span title={message.sender_owner_label}>· {owner(message.sender_owner_label)}</span>
+            <span className="rm-role">Agent</span>
           )}
-          <time dateTime={message.created_at} title={date.toLocaleString()}>
-            {timeFormat.format(date)}
-          </time>
+          <span title={message.sender_owner_label}>· {owner(message.sender_owner_label)}</span>
+          {time}
         </div>
       ) : null}
       <div className="rm-bubble">
@@ -264,6 +318,7 @@ export function MessageList({
   const [unseen, setUnseen] = useState(0);
   const names = members.map((member) => member.name);
   const owner = ownerNames(members);
+  const hostId = members.find((member) => member.role === 'host')?.id;
   const toBottom = () => {
     const element = scroller.current;
     if (!element) return;
@@ -332,7 +387,14 @@ export function MessageList({
         previousMessage.sender_agent_id !== message.sender_agent_id ||
         date.getTime() - new Date(previousMessage.created_at).getTime() > GROUP_MS;
       rows.push(
-        <Message key={message.id} message={message} names={names} owner={owner} byline={byline} />,
+        <Message
+          key={message.id}
+          message={message}
+          names={names}
+          owner={owner}
+          byline={byline}
+          host={Boolean(hostId) && message.sender_agent_id === hostId}
+        />,
       );
     }
     previousMessage = message;
@@ -345,11 +407,8 @@ export function MessageList({
         data-id={item.key}
         data-testid="room-message-pending"
       >
-        <div className="rm-byline">
-          <strong>{item.sender}</strong>
-          <span>(you)</span>
-        </div>
-        <div className="rm-bubble">
+        <span className="rm-visually-hidden">{item.sender} (you)</span>
+        <div className="rm-bubble rm-own-bubble">
           <TextPart
             text={item.text}
             names={names}

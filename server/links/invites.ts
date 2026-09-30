@@ -13,7 +13,13 @@ import type { CityLimits } from '../limits.js';
 import { clientAddressPrefixes } from '../rate-limit.js';
 import { unclaimedScopeId } from '../autonomy/index.js';
 import { UNCLAIMED_AGENT_TTL_MS } from '../autonomy/expiry-schema.js';
-import { CLOSED_ROOM_JOIN, closedRoomOfCode, RoomError, type Rooms } from '../rooms/service.js';
+import {
+  CLOSED_ROOM_JOIN,
+  closedRoomOfCode,
+  RoomError,
+  roomDeleted,
+  type Rooms,
+} from '../rooms/service.js';
 import { codeHash, liveJoinLink } from './store.js';
 import {
   legacyShortCodeHash,
@@ -198,19 +204,23 @@ export function createRoomInvites(d: Dependencies) {
     const row = (
       await q.query<{
         closed_at: string | number | null;
+        deleted_at: string | number | null;
         removed_at: string | number | null;
         removed_by: string | null;
       }>(
-        `SELECT r.closed_at, m.removed_at, m.removed_by FROM rooms r
+        `SELECT r.closed_at, r.deleted_at, m.removed_at, m.removed_by FROM rooms r
           LEFT JOIN room_members m ON m.room_id=r.id AND m.agent_id=$2 WHERE r.id=$1`,
         [roomId, agentId],
       )
     ).rows[0];
+    // The host deleted the room (migration 35): that, not a removal, is why.
+    if (row?.deleted_at != null) return 'deleted' as const;
     if (row?.removed_at != null && row.removed_by !== 'left') return 'removed' as const;
     if (row?.closed_at != null) return 'closed' as const;
     return 'open' as const;
   }
-  const refuseState = (state: 'removed' | 'closed' | 'open') => {
+  const refuseState = (state: 'deleted' | 'removed' | 'closed' | 'open') => {
+    if (state === 'deleted') roomDeleted();
     if (state === 'removed')
       throw new RoomError(403, 'removed_from_room', 'The host removed you from this room.');
     if (state === 'closed') throw new RoomError(409, 'room_closed', CLOSED_ROOM_JOIN);
@@ -307,8 +317,11 @@ export function createRoomInvites(d: Dependencies) {
       // Live credential of an active member of an open room, locked; anything else is denied.
       const row = await guestMember(tx, known.agent_id, true);
       // Removed by the host or the room closed: say so; else refused.
-      if (!row && known.revoked_at === null)
-        refuseState(await memberState(tx, known.room_id, known.agent_id));
+      // A deleted room (migration 35) revoked the credential: it says so all the same.
+      if (!row) {
+        const state = await memberState(tx, known.room_id, known.agent_id);
+        if (state === 'deleted' || known.revoked_at === null) refuseState(state);
+      }
       if (!row || row.token_hash !== hash(token) || Number(row.expires_at) <= time) throw denied();
       await tx.query('SELECT operator_id FROM workspaces WHERE operator_id=$1 FOR UPDATE', [
         row.host_owner_id,
@@ -487,6 +500,7 @@ export function createRoomInvites(d: Dependencies) {
     const codes = await d.db.transaction((tx) =>
       d.rooms.joinCodesForRoomToken(tx, room.token, room.slug, d.clock()),
     );
+    if (codes === 'deleted') return roomDeleted();
     if (codes === 'closed') throw new RoomError(409, 'room_closed', CLOSED_ROOM_JOIN);
     if (!codes?.length) throw invalid();
     return (pickupHash && codes.find((item) => codeHash(item) === pickupHash)) || codes[0]!;
@@ -502,8 +516,9 @@ export function createRoomInvites(d: Dependencies) {
     if (!/^[A-Za-z0-9_-]{43}$/.test(values.code)) await chargeShortCode(address);
     const time = d.clock();
     const row = await liveJoinLink(d.db, values.code, time);
-    if (!row && (await closedRoomOfCode(d.db, values.code, time)))
-      throw new RoomError(409, 'room_closed', CLOSED_ROOM_JOIN);
+    const ended = row ? null : await closedRoomOfCode(d.db, values.code, time);
+    if (ended === 'deleted') roomDeleted();
+    if (ended === 'closed') throw new RoomError(409, 'room_closed', CLOSED_ROOM_JOIN);
     if (
       !row ||
       row.target !== 'room' ||
@@ -788,7 +803,17 @@ export function createRoomInvites(d: Dependencies) {
         [hash(token), time],
       )
     ).rows[0];
-    if (!row) throw credentialInvalid();
+    if (!row) {
+      // A credential of a room its host deleted (migration 35): 410 room_deleted, not a bare
+      // "invalid" (only the holder of the exact credential learns this).
+      const gone = await q.query(
+        `SELECT 1 FROM room_invite_credentials c JOIN rooms r ON r.id=c.room_id
+          WHERE c.token_hash=$1 AND r.deleted_at IS NOT NULL`,
+        [hash(token)],
+      );
+      if (gone.rows.length) roomDeleted();
+      throw credentialInvalid();
+    }
     return row;
   }
   async function invoke(token: string, tool: string, args: unknown, origin: string) {
@@ -833,7 +858,10 @@ export function createRoomInvites(d: Dependencies) {
     try {
       return await authenticate(d.db, token, d.clock());
     } catch (error) {
-      if (error instanceof RoomError && (error.statusCode === 401 || error.statusCode === 403))
+      if (
+        error instanceof RoomError &&
+        (error.statusCode === 401 || error.statusCode === 403 || error.statusCode === 410)
+      )
         return null;
       throw error;
     }

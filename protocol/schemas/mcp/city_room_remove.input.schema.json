@@ -21,6 +21,15 @@
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       "description": "Member agent to remove."
+    },
+    "reason": {
+      "description": "Optional reason (at most 200 characters), shown only to the removed member, never in the thread.",
+      "type": "string",
+      "maxLength": 200
+    },
+    "block_rejoin": {
+      "description": "true (default): the removed owner cannot rejoin this room with any link. false: it may rejoin with a live invite link.",
+      "type": "boolean"
     }
   },
   "required": ["room_id", "agent_id"],

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import {
   Client,
@@ -423,4 +425,70 @@ test('workspace-key tools are listed to AI workspace key (ccw_) sessions only, n
   for (const name of KEY_TOOLS) assert.ok(keyed.includes(name), name);
   const listed = await callTool(app, key, 'city_workspace_keys');
   assert.ok(!listed.isError, JSON.stringify(listed));
+});
+
+// Ajv is not a direct dependency; use the copy the MCP SDK already ships (as protocol-schemas does).
+const sdkRequire = createRequire(
+  fileURLToPath(import.meta.resolve('@modelcontextprotocol/server')),
+);
+const Ajv2020 = sdkRequire('ajv/dist/2020').default as new (options: object) => {
+  compile(schema: object): ((value: unknown) => boolean) & { errors?: unknown };
+};
+
+test('paged city_room_members results validate against the advertised outputSchema', async (t) => {
+  const { app } = await fixture(t);
+  const { tokens } = await fullFlow(app, {
+    scope: 'workspace:read agents:create rooms:host rooms:join',
+    scopes: ['agents:create', 'rooms:host', 'rooms:join'],
+  });
+  const token = tokens.access_token;
+  const agents: string[] = [];
+  for (let index = 0; index < 3; index++) {
+    const agent = await callTool(app, token, 'city_create_agent', agentArgs());
+    assert.ok(!agent.isError, JSON.stringify(agent));
+    agents.push(agent.structuredContent.agent.id);
+  }
+  const room = await callTool(app, token, 'city_create_room', {
+    agent_id: agents[0],
+    name: 'Paged room',
+    idempotency_key: randomUUID(),
+  });
+  assert.ok(!room.isError, JSON.stringify(room));
+  const roomId = room.structuredContent.room.id as string;
+  for (const agentId of agents.slice(1)) {
+    const joined = await callTool(app, token, 'city_join_room', {
+      link: room.structuredContent.link.link,
+      agent_id: agentId,
+      idempotency_key: randomUUID(),
+    });
+    assert.ok(!joined.isError, JSON.stringify(joined));
+  }
+  const listed = rpcResult((await mcpCall(app, token, 'tools/list')).body).result.tools as {
+    name: string;
+    outputSchema: object;
+  }[];
+  const advertised = listed.find((tool) => tool.name === 'city_room_members')!.outputSchema;
+  const validate = new Ajv2020({ strict: false, allErrors: true }).compile(advertised);
+  // One member per page: every page but the last carries next_cursor, and each validates.
+  const seen: string[] = [];
+  let cursor: string | undefined;
+  let pages = 0;
+  do {
+    const page = await callTool(app, token, 'city_room_members', {
+      room_id: roomId,
+      limit: 1,
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    assert.ok(!page.isError, JSON.stringify(page));
+    assert.ok(
+      validate(page.structuredContent),
+      `page ${pages + 1}: ${JSON.stringify(validate.errors)}`,
+    );
+    seen.push(...(page.structuredContent.members as { id: string }[]).map((member) => member.id));
+    cursor = page.structuredContent.next_cursor;
+    if (pages < 2) assert.equal(typeof cursor, 'string', `page ${pages + 1} has next_cursor`);
+    pages++;
+  } while (cursor !== undefined && pages < 10);
+  assert.equal(pages, 3);
+  assert.deepEqual([...seen].sort(), [...agents].sort());
 });

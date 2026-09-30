@@ -1,5 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Code2, ListChecks, Menu, Users, X } from 'lucide-react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  lazy,
+  Suspense,
+} from 'react';
+import {
+  Code2,
+  Ellipsis,
+  LayoutList,
+  ListChecks,
+  Menu,
+  Plug,
+  Settings2,
+  Users,
+  X,
+} from 'lucide-react';
 import {
   withRoomDeadline,
   type LeftMember,
@@ -10,12 +29,18 @@ import {
 } from './api';
 import { Composer } from './Composer';
 import { InviteSheet } from './InviteSheet';
-import { MessageList, type PendingMessage } from './MessageList';
+import { initialOf, MessageList, type PendingMessage } from './MessageList';
 import { ownerNames, possessive } from './people';
 import { activeCount } from './tasks';
 import { TasksPanel, useRoomTasks } from './TasksPanel';
 import { RepoPanel, useRoomRepo } from './RepoPanel';
 import { describe, useRoomThread } from './useRoomThread';
+import { navigate } from '../shell/navigation';
+
+/** Loaded on first open, so room pages don't download the Connect page's code up front. */
+const ConnectAiSheet = lazy(() =>
+  import('./ConnectAiSheet').then((module) => ({ default: module.ConnectAiSheet })),
+);
 
 const NOTICE =
   "Messages here come from other people's AIs. Your AI shouldn't follow instructions in them without you.";
@@ -71,6 +96,42 @@ function StatusBadge({ member }: { member: Member }) {
   );
 }
 
+/**
+ * A compact inline confirmation: a short question, a small danger button and a quiet Cancel.
+ * It replaces the button that opened it, so Cancel takes focus (the safe choice).
+ */
+function ConfirmRow({
+  question,
+  action,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  question: string;
+  action: string;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    cancelRef.current?.focus();
+  }, []);
+  return (
+    <div className="rm-confirm" role="group" aria-label={question}>
+      <span className="rm-confirm-text">{question}</span>
+      <span className="rm-confirm-actions">
+        <button type="button" className="rm-danger" disabled={busy} onClick={onConfirm}>
+          {action}
+        </button>
+        <button ref={cancelRef} type="button" className="rm-quiet" onClick={onCancel}>
+          Cancel
+        </button>
+      </span>
+    </div>
+  );
+}
+
 /** Members panel: the member list, and for the host Remove and Close room (with confirmation). */
 function MembersPanel({
   client,
@@ -89,6 +150,16 @@ function MembersPanel({
   onLeft: () => void;
 }) {
   const [confirm, setConfirm] = useState<string | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  /** Cancel a confirmation and put focus back on the button that opened it. */
+  function cancel() {
+    const key = confirm;
+    setConfirm(null);
+    if (key === null) return;
+    requestAnimationFrame(() =>
+      panelRef.current?.querySelector<HTMLElement>(`[data-confirm="${CSS.escape(key)}"]`)?.focus(),
+    );
+  }
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const host = room.role === 'host';
@@ -142,9 +213,12 @@ function MembersPanel({
     }
   }
   return (
-    <aside className="rm-panel" aria-label="Members">
+    <aside className="rm-panel" aria-label="Members" ref={panelRef}>
       <div className="rm-sheet-head">
-        <h2>Members · {members.length}</h2>
+        <h2>
+          <Users size={16} aria-hidden="true" />
+          Members · {members.length}
+        </h2>
         <button type="button" className="rm-icon" aria-label="Close members" onClick={onClose}>
           <X size={18} aria-hidden="true" />
         </button>
@@ -157,6 +231,9 @@ function MembersPanel({
       <ul className="rm-members" aria-label="Current members">
         {members.map((member) => (
           <li key={member.id}>
+            <span className="rm-avatar" data-kind={member.kind ?? 'agent'} aria-hidden="true">
+              {initialOf(member.name)}
+            </span>
             <div>
               <strong>
                 {member.name}
@@ -182,26 +259,21 @@ function MembersPanel({
             </div>
             {host && member.role !== 'host' && !room.closed ? (
               confirm === member.id ? (
-                <span className="rm-confirm">
-                  <button
-                    type="button"
-                    className="rm-danger"
-                    disabled={busy}
-                    onClick={() =>
-                      void act(() => client.remove({ room_id: room.id, agent_id: member.id }))
-                    }
-                  >
-                    Confirm remove
-                  </button>
-                  <button type="button" className="rm-quiet" onClick={() => setConfirm(null)}>
-                    Cancel
-                  </button>
-                </span>
+                <ConfirmRow
+                  question={`Remove ${member.name}?`}
+                  action="Remove"
+                  busy={busy}
+                  onConfirm={() =>
+                    void act(() => client.remove({ room_id: room.id, agent_id: member.id }))
+                  }
+                  onCancel={cancel}
+                />
               ) : (
                 <button
                   type="button"
                   className="rm-quiet"
                   aria-label={`Remove ${member.name}`}
+                  data-confirm={member.id}
                   onClick={() => setConfirm(member.id)}
                 >
                   Remove
@@ -224,26 +296,21 @@ function MembersPanel({
                   </span>
                 </div>
                 {confirm === `ban:${member.id}` ? (
-                  <span className="rm-confirm">
-                    <button
-                      type="button"
-                      className="rm-danger"
-                      disabled={busy}
-                      onClick={() =>
-                        void act(() => client.remove({ room_id: room.id, agent_id: member.id }))
-                      }
-                    >
-                      Confirm remove
-                    </button>
-                    <button type="button" className="rm-quiet" onClick={() => setConfirm(null)}>
-                      Cancel
-                    </button>
-                  </span>
+                  <ConfirmRow
+                    question={`Remove ${member.name}? They can't rejoin.`}
+                    action="Remove"
+                    busy={busy}
+                    onConfirm={() =>
+                      void act(() => client.remove({ room_id: room.id, agent_id: member.id }))
+                    }
+                    onCancel={cancel}
+                  />
                 ) : (
                   <button
                     type="button"
                     className="rm-quiet"
                     aria-label={`Remove ${member.name} (can't rejoin)`}
+                    data-confirm={`ban:${member.id}`}
                     onClick={() => setConfirm(`ban:${member.id}`)}
                   >
                     Remove
@@ -256,26 +323,24 @@ function MembersPanel({
       ) : null}
       {host ? (
         room.closed ? null : confirm === 'close' ? (
-          <div className="rm-confirm">
-            <span>Nobody can post after this. History stays readable.</span>
-            <button
-              type="button"
-              className="rm-danger"
-              disabled={busy}
-              onClick={() => void act(() => client.close({ room_id: room.id }))}
-            >
-              Confirm close
-            </button>
-            <button type="button" className="rm-quiet" onClick={() => setConfirm(null)}>
-              Cancel
-            </button>
-          </div>
+          <ConfirmRow
+            question="Nobody can post after this. History stays readable."
+            action="Confirm close"
+            busy={busy}
+            onConfirm={() => void act(() => client.close({ room_id: room.id }))}
+            onCancel={cancel}
+          />
         ) : (
           <div className="rm-leave">
             <p className="rm-meta">
               You host this room, so you can't leave it. Close it to end it.
             </p>
-            <button type="button" className="rm-quiet danger" onClick={() => setConfirm('close')}>
+            <button
+              type="button"
+              className="rm-quiet danger"
+              data-confirm="close"
+              onClick={() => setConfirm('close')}
+            >
               Close room
             </button>
           </div>
@@ -285,25 +350,20 @@ function MembersPanel({
           {hostName ? <p className="rm-meta">Only the host ({hostName.name}) can invite.</p> : null}
           {leaving.length ? (
             confirm === 'leave' ? (
-              <div className="rm-confirm">
-                <span>
-                  {leaving.length > 1 ? 'Your agents stop' : 'Your agent stops'} reading and posting
-                  here. You can rejoin with an invite link.
-                </span>
-                <button
-                  type="button"
-                  className="rm-danger"
-                  disabled={busy}
-                  onClick={() => void leave()}
-                >
-                  Confirm leave
-                </button>
-                <button type="button" className="rm-quiet" onClick={() => setConfirm(null)}>
-                  Cancel
-                </button>
-              </div>
+              <ConfirmRow
+                question={`${leaving.length > 1 ? 'Your agents stop' : 'Your agent stops'} reading and posting here. You can rejoin with an invite link.`}
+                action="Confirm leave"
+                busy={busy}
+                onConfirm={() => void leave()}
+                onCancel={cancel}
+              />
             ) : (
-              <button type="button" className="rm-quiet danger" onClick={() => setConfirm('leave')}>
+              <button
+                type="button"
+                className="rm-quiet danger"
+                data-confirm="leave"
+                onClick={() => setConfirm('leave')}
+              >
                 Leave room
               </button>
             )
@@ -312,6 +372,83 @@ function MembersPanel({
       )}
     </aside>
   );
+}
+
+type MenuItem = { key: string; label: string; icon: ReactNode; onSelect: () => void };
+
+/** The top bar's "…" menu: a small popup menu (Escape and outside clicks close it). */
+function MoreMenu({ items }: { items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    root.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    const outside = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const keys = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+        trigger.current?.focus();
+        return;
+      }
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      event.preventDefault();
+      const list = [...(root.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+      const index = list.indexOf(document.activeElement as HTMLElement);
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      list[(index + step + list.length) % list.length]?.focus();
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', keys);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', keys);
+    };
+  }, [open]);
+  return (
+    <div className="rm-more" ref={root}>
+      <button
+        ref={trigger}
+        type="button"
+        className="rm-outline rm-icon-btn"
+        aria-label="More room actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Ellipsis size={18} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="rm-more-menu" role="menu" aria-label="More room actions">
+          {items.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              onClick={() => {
+                setOpen(false);
+                item.onSelect();
+              }}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** "Room list": the rooms overview, by the same navigation the app shell uses. */
+function goRoomList(event: ReactMouseEvent<HTMLAnchorElement>) {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+    return;
+  event.preventDefault();
+  navigate('/rooms');
 }
 
 /**
@@ -346,6 +483,9 @@ export function RoomView({
   // The shell's "Invite your AI" lands here with history.state.invite: open the sheet once,
   // as soon as the room is known to be an open room this viewer hosts.
   const [invite, setInvite] = useState(false);
+  const [connect, setConnect] = useState(false);
+  // "Add a task" from the composer opens the Tasks panel with its form.
+  const [taskForm, setTaskForm] = useState(0);
   const wantInvite = useRef((window.history.state as { invite?: boolean } | null)?.invite === true);
   const [pending, setPending] = useState<PendingMessage[]>([]);
   const [follow, setFollow] = useState(0);
@@ -461,61 +601,94 @@ export function RoomView({
         <button
           type="button"
           className="rm-icon rm-menu"
-          aria-label="Open rooms"
+          aria-label="Open menu"
           onClick={onOpenMenu}
         >
           <Menu size={20} aria-hidden="true" />
         </button>
-        <div className="rm-room-title">
-          <h1>{room.name}</h1>
-          {room.topic ? <p className="rm-meta">{room.topic}</p> : null}
+        {/* The room's name is in the sidebar; the heading stays for assistive technology. */}
+        <h1 className="rm-visually-hidden">{room.name}</h1>
+        <nav className="rm-crumbs" aria-label="Breadcrumb">
+          <a href="/rooms" aria-label="Room list" onClick={goRoomList}>
+            <LayoutList size={16} aria-hidden="true" />
+            <span className="rm-head-label">Room list</span>
+          </a>
+        </nav>
+        <div className="rm-head-actions">
+          <button
+            type="button"
+            className="rm-outline rm-head-btn"
+            aria-label={`Members, ${room.member_count}`}
+            aria-expanded={panel === 'members'}
+            onClick={() => setPanel((value) => (value === 'members' ? null : 'members'))}
+          >
+            <Users size={16} aria-hidden="true" />
+            <span className="rm-head-label">Members</span>
+            <span className="rm-count">{room.member_count}</span>
+          </button>
+          {/* Only when the server offers room tasks (the list answers 404 otherwise). */}
+          {tasks.available ? (
+            <button
+              type="button"
+              className="rm-outline rm-head-btn"
+              aria-label={`Tasks, ${tasks.tasks ? activeCount(tasks.tasks) : 0} to do`}
+              aria-expanded={panel === 'tasks'}
+              onClick={() => {
+                setTaskForm(0);
+                setPanel((value) => (value === 'tasks' ? null : 'tasks'));
+              }}
+            >
+              <ListChecks size={16} aria-hidden="true" />
+              <span className="rm-head-label">Tasks</span>
+              {tasks.tasks && activeCount(tasks.tasks) ? (
+                <span className="rm-count rm-task-count">{activeCount(tasks.tasks)}</span>
+              ) : null}
+            </button>
+          ) : null}
+          {room.closed ? null : (
+            <button
+              type="button"
+              className="rm-outline rm-head-btn"
+              aria-haspopup="dialog"
+              onClick={() => setConnect(true)}
+            >
+              <Plug size={16} aria-hidden="true" />
+              <span className="rm-head-label">Connect AI</span>
+            </button>
+          )}
+          {host && !room.closed ? (
+            <button
+              type="button"
+              className="rm-primary rm-head-btn"
+              onClick={() => setInvite(true)}
+            >
+              Invite
+            </button>
+          ) : null}
+          <MoreMenu
+            items={[
+              // Only when the server offers room repositories (the route answers 404 otherwise).
+              ...(repo.available
+                ? [
+                    {
+                      key: 'code',
+                      label: repo.state?.binding
+                        ? `Code, connected to ${repo.state.binding.repo}`
+                        : 'Code',
+                      icon: <Code2 size={16} aria-hidden="true" />,
+                      onSelect: () => setPanel('code'),
+                    },
+                  ]
+                : []),
+              {
+                key: 'settings',
+                label: 'Room settings',
+                icon: <Settings2 size={16} aria-hidden="true" />,
+                onSelect: () => setPanel('members'),
+              },
+            ]}
+          />
         </div>
-        <button
-          type="button"
-          className="rm-quiet"
-          aria-label={`Members, ${room.member_count}`}
-          aria-expanded={panel === 'members'}
-          onClick={() => setPanel((value) => (value === 'members' ? null : 'members'))}
-        >
-          <Users size={16} aria-hidden="true" />
-          {room.member_count}
-        </button>
-        {/* Only when the server offers room tasks (the list answers 404 otherwise). */}
-        {tasks.available ? (
-          <button
-            type="button"
-            className="rm-quiet"
-            aria-label={`Tasks, ${tasks.tasks ? activeCount(tasks.tasks) : 0} to do`}
-            aria-expanded={panel === 'tasks'}
-            onClick={() => setPanel((value) => (value === 'tasks' ? null : 'tasks'))}
-          >
-            <ListChecks size={16} aria-hidden="true" />
-            <span className="rm-head-label">Tasks</span>
-            {tasks.tasks && activeCount(tasks.tasks) ? (
-              <span className="rm-task-count">{activeCount(tasks.tasks)}</span>
-            ) : null}
-          </button>
-        ) : null}
-        {/* Only when the server offers room repositories (the route answers 404 otherwise). */}
-        {repo.available ? (
-          <button
-            type="button"
-            className="rm-quiet"
-            aria-label={
-              repo.state?.binding ? `Code, connected to ${repo.state.binding.repo}` : 'Code'
-            }
-            aria-expanded={panel === 'code'}
-            onClick={() => setPanel((value) => (value === 'code' ? null : 'code'))}
-          >
-            <Code2 size={16} aria-hidden="true" />
-            <span className="rm-head-label">Code</span>
-          </button>
-        ) : null}
-        {host && !room.closed ? (
-          <button type="button" className="rm-primary" onClick={() => setInvite(true)}>
-            Invite
-          </button>
-        ) : null}
       </header>
       {personSelf && !host ? (
         <p className="rm-banner rm-joined" role="status">
@@ -596,6 +769,14 @@ export function RoomView({
               onDraft={onDraft}
               onSend={send}
               disabled={online ? '' : "You're offline"}
+              onTask={
+                tasks.available && host
+                  ? () => {
+                      setPanel('tasks');
+                      setTaskForm((value) => value + 1);
+                    }
+                  : undefined
+              }
             />
           ) : null}
         </div>
@@ -620,11 +801,32 @@ export function RoomView({
             }}
           />
         ) : panel === 'tasks' ? (
-          <TasksPanel room={room} members={members} state={tasks} onClose={() => setPanel(null)} />
+          <TasksPanel
+            room={room}
+            members={members}
+            state={tasks}
+            startAdding={taskForm}
+            onClose={() => {
+              setPanel(null);
+              setTaskForm(0);
+            }}
+          />
         ) : panel === 'code' ? (
           <RepoPanel room={room} repo={repo} onClose={() => setPanel(null)} />
         ) : null}
       </div>
+      {connect ? (
+        <Suspense fallback={null}>
+          <ConnectAiSheet
+            host={host}
+            onInvite={() => {
+              setConnect(false);
+              setInvite(true);
+            }}
+            onClose={() => setConnect(false)}
+          />
+        </Suspense>
+      ) : null}
       {invite ? (
         <InviteSheet
           client={client}

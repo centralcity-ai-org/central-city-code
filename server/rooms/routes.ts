@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Operator } from '../../shared/types.js';
-import { MEMBERS_CURSOR, ROOM_LIMITS, roomRefSchema } from './contract.js';
+import { MEMBERS_CURSOR, ROOM_LIMITS, roomRefSchema, roomRemoveBody } from './contract.js';
 import { clientAddressKey } from '../rate-limit.js';
 import type { RoomPrincipal, Rooms } from './service.js';
 
@@ -100,10 +100,33 @@ export function registerRoomRoutes(app: FastifyInstance, d: RoomRouteDependencie
   app.post('/api/rooms/:room/members/:agentId/remove', async (request) => {
     const p = await principal(request);
     const { room, agentId } = memberParams.parse(request.params);
-    z.object({})
-      .strict()
-      .parse(request.body ?? {});
-    return d.rooms.remove(p, { room_id: room, agent_id: agentId });
+    // Optional { reason (<= 200 characters, shown only to the removed member), block_rejoin }.
+    const extra = roomRemoveBody.parse(request.body ?? {});
+    return d.rooms.remove(p, { ...extra, room_id: room, agent_id: agentId });
+  });
+  // Host: rename the room and/or change its topic ({ name?, topic? }).
+  app.patch('/api/rooms/:room', async (request) => {
+    const p = await principal(request);
+    const { room } = roomParams.parse(request.params);
+    return d.rooms.rename(p, room, request.body ?? {});
+  });
+  // Host: delete the room for everyone ({ confirm_name } must equal the current name exactly).
+  app.delete('/api/rooms/:room', async (request) => {
+    const p = await principal(request);
+    const { room } = roomParams.parse(request.params);
+    return d.rooms.deleteRoom(p, room, request.body ?? {});
+  });
+  // Host: mute or unmute one member ({ agent_id, muted, reason? }); a muted owner cannot post.
+  app.post('/api/rooms/:room/mute', async (request) => {
+    const p = await principal(request);
+    const { room } = roomParams.parse(request.params);
+    return d.rooms.mute(p, room, request.body ?? {});
+  });
+  // Host: the room's muted members, with the reasons.
+  app.get('/api/rooms/:room/mutes', async (request) => {
+    const p = await principal(request);
+    const { room } = roomParams.parse(request.params);
+    return d.rooms.mutes(p, room);
   });
   // A member leaves on its own (not the host); agent_id when the owner has several agents there.
   app.post('/api/rooms/:room/leave', async (request) => {
@@ -136,6 +159,10 @@ export function registerRoomRoutes(app: FastifyInstance, d: RoomRouteDependencie
     const values = body(request);
     // The member cap is its own host setting (people and AIs share it, up to 10,000).
     if ('member_cap' in values) return d.rooms.setMemberCap(p, room, values);
+    // Name and topic have their own route (PATCH /api/rooms/:room); settings keep their fields.
+    z.object({ name: z.never().optional(), topic: z.never().optional() })
+      .passthrough()
+      .parse(values);
     return d.rooms.update(p, { ...values, room_id: room });
   });
 }

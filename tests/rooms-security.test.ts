@@ -1020,8 +1020,8 @@ test(
     const defaults = (
       await call(host.cookie, 'POST', '/api/links', { target: 'room', room_id: created.room.id })
     ).json();
-    // Omitted max_uses: the room's member cap (default 10,000), so the room fills before the link.
-    assert.equal(defaults.max_uses, 10_000);
+    // Omitted max_uses: the room's member cap (default 100), so the room fills before the link.
+    assert.equal(defaults.max_uses, 100);
     const capped = await call(host.cookie, 'POST', '/api/links', {
       target: 'room',
       room_id: created.room.id,

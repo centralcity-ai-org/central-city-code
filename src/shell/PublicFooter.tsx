@@ -66,8 +66,8 @@ export function PublicFooter() {
         </div>
         <div className="cc-footer-bottom footer-bottom">
           <p className="cc-footer-legal">{FOOTER_COPYRIGHT}</p>
-          {/* Scoped to what is public today: the open districts that Downtown lists. */}
-          <p className="cc-footer-license">Open protocol, toolkit and SDK under Apache-2.0</p>
+          {/* The application code is public too (Developers › GitHub). */}
+          <p className="cc-footer-license">Open source under Apache-2.0</p>
           <div className="cc-footer-bottom-links">
             <a href={LINKS.downtown}>Downtown</a>
             <a href="/downtown/verify">Verify</a>

@@ -4,7 +4,7 @@ import { test, expect as baseExpect, type Browser, type Page } from '@playwright
  * First-run audit fixes:
  * P1 a member leaves a room (confirm, then the room is gone from its list); the host is told it
  * closes the room instead. P2 the owner label reads "another person's agent". P3 at 360 px the
- * Invite sheet puts Copy invite right under the link, above the how-to paragraphs.
+ * Invite sheet puts Copy invite right under the link, above More options.
  */
 const expect = baseExpect.configure({ timeout: 15_000 });
 const PASSWORD = 'Local-test-only-passphrase-2026';
@@ -47,23 +47,22 @@ test('a member leaves a room; the host closes instead; labels and the invite she
   await dialog.getByRole('button', { name: 'Create room' }).click();
   await expect(host.page).toHaveURL(/\/rooms\/[A-Za-z0-9_-]+$/);
 
-  // P3: at 360 px, Copy invite sits right under the link, above the how-to paragraphs, and on
-  // the first screen.
+  // P3: at 360 px, Copy invite sits right under the link, above More options, and on the first
+  // screen.
   await host.page.setViewportSize({ width: 360, height: 780 });
   await host.page.getByRole('button', { name: 'Invite' }).first().click();
-  const sheet = host.page.getByRole('dialog', { name: 'Invite your AI' });
+  const sheet = host.page.getByRole('dialog', { name: 'Invite to this room' });
   const field = sheet.getByLabel('Invite link');
   await expect(field).toHaveValue(/\/j\//);
   const copy = sheet.getByRole('button', { name: 'Copy invite' });
-  // The first how-to paragraph (its wording belongs to the copy owner, not this test).
-  const howTo = sheet.locator('.rm-instruction').first();
-  const [fieldBox, copyBox, howToBox] = await Promise.all([
+  const more = sheet.getByText('More options');
+  const [fieldBox, copyBox, moreBox] = await Promise.all([
     field.boundingBox(),
     copy.boundingBox(),
-    howTo.boundingBox(),
+    more.boundingBox(),
   ]);
   expect(copyBox!.y).toBeGreaterThan(fieldBox!.y);
-  expect(copyBox!.y).toBeLessThan(howToBox!.y);
+  expect(copyBox!.y).toBeLessThan(moreBox!.y);
   expect(copyBox!.y + copyBox!.height).toBeLessThanOrEqual(780);
   const link = await field.inputValue();
   await sheet.getByRole('button', { name: 'Close' }).first().click();
@@ -106,7 +105,9 @@ test('a member leaves a room; the host closes instead; labels and the invite she
   // (a ban), after which it disappears from that list.
   await expect(hostPanel.getByText('Recently left')).toBeVisible();
   await hostPanel.getByRole('button', { name: /^Remove .* \(can't rejoin\)$/ }).click();
-  await hostPanel.getByRole('button', { name: 'Confirm remove' }).click();
+  const confirmBan = hostPanel.getByRole('group', { name: /^Remove .*\? They can't rejoin\.$/ });
+  await expect(confirmBan.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await confirmBan.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(hostPanel.getByText('Recently left')).toHaveCount(0);
 
   expect(host.errors).toEqual([]);

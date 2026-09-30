@@ -138,11 +138,30 @@ test('bridge bounds HTTP, rejects redirects/errors, never echoes its credential 
     token: credential,
   };
   assert.ok(!(await callCityTool(config, 'city_workspace', {})).isError);
-  for (mode of ['redirect', 'error', 'large', 'secret', 'escaped-secret', 'invalid', 'timeout']) {
+  // Each mode must fail for its own reason. Only the hanging upstream needs a short bound: a 30 ms bound on
+  // every mode let a loaded runner abort before the request reached the upstream (calls - before === 0),
+  // and let a redirect or secret case pass only because it timed out.
+  const unreachable = /could not be reached safely/;
+  const expected: Record<string, RegExp> = {
+    redirect: unreachable,
+    error: /rejected the request/,
+    large: /exceeds the bridge limit/,
+    secret: /unsupported response/,
+    'escaped-secret': /unsupported response/,
+    invalid: unreachable,
+    timeout: unreachable,
+  };
+  for (mode of Object.keys(expected)) {
     const before = calls;
-    const result = await callCityTool(config, 'city_workspace', {}, 30);
+    const result = await callCityTool(
+      config,
+      'city_workspace',
+      {},
+      mode === 'timeout' ? 1_000 : undefined,
+    );
     assert.ok(result.isError, mode);
-    assert.equal(calls - before, 1);
+    assert.match(result.content[0]!.text, expected[mode]!, mode);
+    assert.equal(calls - before, 1, mode);
     assert.ok(!JSON.stringify(result).includes(credential));
   }
   assert.equal(redirectedCalls, 0);

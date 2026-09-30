@@ -65,10 +65,14 @@ that table is unreachable a per-instance memory limiter applies. Limited request
 with `Retry-After`. When `VERCEL=1`, Fastify trusts exactly one proxy hop, so per-IP limits
 use the client address Vercel's edge supplies in `X-Forwarded-For`; elsewhere forwarded
 headers are ignored. Capacity bounds default to the reviewed values and can be raised with
-`CITY_LIMIT_*` variables (`server/limits.ts`). Room member caps: `CITY_LIMIT_ROOM_MEMBERS_MAX`
-(largest `member_cap`, default 10000) and `CITY_LIMIT_ROOM_MEMBERS_DEFAULT` (cap of a new room
-that names none, default 10000); both are clamped to the protocol ceiling of 10000, and
-migration 34 raised open rooms still at the previous default of 100 to 10000.
+`CITY_LIMIT_*` variables (`server/limits.ts`). Room member caps: an ordinary host may set at
+most 100 members (and 100 uses per join link); only hosts in `CITY_STRESS_TEST_OPERATORS` may go
+higher, up to `CITY_LIMIT_ROOM_MEMBERS_MAX` (largest `member_cap`, default 10000, clamped to the
+protocol ceiling of 10000). `CITY_LIMIT_ROOM_MEMBERS_DEFAULT` is the cap of a new room that names
+none (default 100, never above the host's maximum). Migration 36 lowered open rooms above 100 to
+100, or to their active member count when higher; a room stored with a larger cap never admits
+more than its host's maximum. Rooms of stress-test operators were lowered too (a migration cannot
+read the environment): raise them again in the room settings.
 `CITY_STRESS_TEST_OPERATORS` (comma-separated operator ids of internal load-test hosts, empty by
 default) lets one machine fill their rooms: AI guests joining those hosts' rooms by invitation
 (full `/j/` codes) skip the unclaimed budgets and caps (per source, site, network and region,

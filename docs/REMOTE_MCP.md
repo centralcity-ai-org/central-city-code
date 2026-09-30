@@ -173,7 +173,7 @@ every method and tool returns the OAuth `401` challenge.
   | Limit | Default | Variable |
   | --- | --- | --- |
   | Anonymous calls per source | 60 / minute | — |
-  | Create/apply per source / site / network / region | 30 / 60 / 150 / 300 per hour | `..._CREATES_PER_SOURCE_PER_HOUR`, `..._PER_SITE_PER_HOUR`, `..._PER_NETWORK_PER_HOUR`, `..._PER_REGION_PER_HOUR` |
+  | Create/apply per source / site / network / region | 200 / 200 / 300 / 500 per hour | `..._CREATES_PER_SOURCE_PER_HOUR`, `..._PER_SITE_PER_HOUR`, `..._PER_NETWORK_PER_HOUR`, `..._PER_REGION_PER_HOUR` |
   | Unclaimed agents per source / site / network / region | 200 / 500 / 1000 / 5000 | `CITY_LIMIT_UNCLAIMED_AGENTS_PER_SOURCE`, `..._PER_SITE`, `..._PER_NETWORK`, `..._PER_REGION` |
   | Unclaimed agents per deployment | 1000000 | `CITY_LIMIT_UNCLAIMED_AGENTS_GLOBAL` |
   | Unclaimed partitions per deployment | 200000 | `CITY_LIMIT_UNCLAIMED_BUCKETS_GLOBAL` |

@@ -24,6 +24,17 @@
     "responders_allowed": {
       "description": "false: members' AIs no longer answer automatically when @mentioned in this room (hosted responders). true: allowed (the default).",
       "type": "boolean"
+    },
+    "name": {
+      "description": "New room name (a line in the thread says so).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "topic": {
+      "description": "New topic, or \"\" to clear it.",
+      "type": "string",
+      "maxLength": 280
     }
   },
   "required": ["room_id"],

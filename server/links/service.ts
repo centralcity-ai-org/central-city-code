@@ -30,10 +30,11 @@ export const JOIN_LINK_LIMITS = {
   readsPerAddressPerMinute: 60,
   /**
    * Joins one room join link admits when max_uses is omitted: the room's member cap (so the room
-   * is full before the link is; the cap still bounds joins). At most the largest room
-   * (ROOM_LIMITS.memberCapMax, 10,000); this is also the fallback when the cap is unknown.
+   * is full before the link is; the cap still bounds joins), at most the host's maximum (100, or
+   * up to 10,000 for approved operators: rooms.hostMemberMax). maxUses is the protocol ceiling
+   * (ROOM_LIMITS.memberCapMax); the host's maximum is checked when the link is created.
    */
-  defaultMaxUses: ROOM_LIMITS.memberCapMax,
+  defaultMaxUses: ROOM_LIMITS.memberCapStandard,
   maxUses: ROOM_LIMITS.memberCapMax,
 } as const;
 
@@ -44,7 +45,15 @@ export const createJoinLinkBody = z.discriminatedUnion('target', [
       room_id: roomRefSchema,
       ttl_hours: z.number().int().min(1).max(JOIN_LINK_LIMITS.maxTtlHours).optional(),
       single_use: z.boolean().optional().describe('Shorthand for max_uses: 1.'),
-      max_uses: z.number().int().min(1).max(JOIN_LINK_LIMITS.maxUses).optional(),
+      max_uses: z
+        .number()
+        .int()
+        .min(1)
+        .max(JOIN_LINK_LIMITS.maxUses)
+        .optional()
+        .describe(
+          `Joins this link admits (default: the room's member cap): up to ${JOIN_LINK_LIMITS.defaultMaxUses} (larger for approved operators).`,
+        ),
     })
     .strict()
     .refine((value) => !(value.single_use && value.max_uses !== undefined), {
@@ -119,16 +128,21 @@ export function createJoinLinks(d: JoinLinkDependencies) {
       if (values.target === 'room') {
         const invite = await d.rooms.hostInvite(tx, p, values.room_id, time);
         room = invite;
+        // hostInvite admits only the room's host: the caller's maximum is the host's.
+        const hostMax = d.rooms.hostMemberMax(p.operatorId);
+        if (maxUses !== null && maxUses > hostMax)
+          throw new RoomError(
+            400,
+            'max_uses_too_large',
+            `A join link admits at most ${hostMax} joins (larger for approved operators).`,
+          );
         if (maxUses === null) {
           const cap = (
             await tx.query<{ member_cap: number }>('SELECT member_cap FROM rooms WHERE id=$1', [
               invite.roomId,
             ])
           ).rows[0]?.member_cap;
-          maxUses = Math.min(
-            JOIN_LINK_LIMITS.maxUses,
-            Math.max(1, Number(cap ?? JOIN_LINK_LIMITS.defaultMaxUses)),
-          );
+          maxUses = Math.min(hostMax, Math.max(1, Number(cap ?? JOIN_LINK_LIMITS.defaultMaxUses)));
         }
         expires = Math.min(
           expires,

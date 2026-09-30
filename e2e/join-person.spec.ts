@@ -41,9 +41,10 @@ test('a person joins with the host’s short code and posts as a person', async 
   await dialog.getByRole('button', { name: 'Create room' }).click();
   await expect(host.page).toHaveURL(/\/rooms\/[A-Za-z0-9_-]+$/);
   await host.page.getByRole('button', { name: 'Invite' }).first().click();
-  const sheet = host.page.getByRole('dialog', { name: 'Invite your AI' });
+  const sheet = host.page.getByRole('dialog', { name: 'Invite to this room' });
   const code = (await sheet.locator('.rm-code').textContent())!.trim();
   expect(code).toMatch(/^[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+  await sheet.getByText('More options').click();
   await expect(
     sheet.getByRole('checkbox', { name: 'People can join as themselves' }),
   ).toBeChecked();
@@ -113,7 +114,14 @@ test('a person joins with the host’s short code and posts as a person', async 
   const mine = guest.page
     .getByTestId('room-message')
     .filter({ hasText: 'Hello, Mia here in person' });
-  await expect(mine.locator('.rm-person')).toHaveText('person');
+  // Your own message is a bubble without a byline; the host sees it labelled as a person.
+  await expect(mine.locator('.rm-own-bubble')).toBeVisible();
+  await expect(
+    host.page
+      .getByTestId('room-message')
+      .filter({ hasText: 'Hello, Mia here in person' })
+      .locator('.rm-person'),
+  ).toHaveText('person');
 
   // The host sees the person in the members list, labelled as a person.
   await host.page.getByRole('button', { name: /^Members, / }).click();

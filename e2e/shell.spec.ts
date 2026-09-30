@@ -238,27 +238,25 @@ test('public header: logo, nav, Sign in, one primary action and the theme toggle
   await expect.poll(background).toBe('rgb(255, 255, 255)');
 });
 
-test('public header: Developer disclosure with Central City Code and Protocol', async ({
-  page,
-}) => {
-  test.skip(!LINKS.code, 'The Developer section appears once the public code repository is live.');
+test('public header: Developers disclosure with GitHub and Protocol', async ({ page }) => {
+  test.skip(!LINKS.code, 'The Developers section appears once the public code repository is live.');
   await page.goto('/');
   const header = page.getByRole('banner');
   const nav = header.getByRole('navigation', { name: 'Public' });
-  const button = nav.getByRole('button', { name: 'Developer' });
+  const button = nav.getByRole('button', { name: 'Developers' });
   await expect(button).toHaveAttribute('aria-expanded', 'false');
-  const code = nav.getByRole('link', { name: /Central City Code/ });
+  const code = nav.getByRole('link', { name: /GitHub/ });
   await expect(code).toBeHidden();
 
   // Opens on click; the links are the public code (new tab, noopener), Docs and Protocol.
   await button.click();
   await expect(button).toHaveAttribute('aria-expanded', 'true');
   const panel = page.locator(`#${await button.getAttribute('aria-controls')}`);
-  await expect(panel.getByRole('link')).toHaveText([/^Central City Code/, 'Protocol']);
+  await expect(panel.getByRole('link')).toHaveText([/^GitHub/, 'Protocol']);
   await expect(code).toHaveAttribute('href', LINKS.code!);
   await expect(code).toHaveAttribute('target', '_blank');
   await expect(code).toHaveAttribute('rel', /noopener/);
-  await expect(code).toHaveAccessibleName('Central City Code (opens in a new tab)');
+  await expect(code).toHaveAccessibleName('GitHub (opens in a new tab)');
   await expect(panel.getByRole('link', { name: 'Protocol' })).toHaveAttribute(
     'href',
     '/downtown#district-protocol',
@@ -305,12 +303,12 @@ test('public header at 360 px: short primary label, menu with nav, Sign in and t
   const menu = header.getByRole('navigation', { name: 'Menu' });
   await expect(menu.getByRole('link')).toHaveText(
     LINKS.code
-      ? ['Downtown', 'Docs', /^Central City Code/, 'Protocol', 'Sign in']
+      ? ['Downtown', 'Docs', /^GitHub/, 'Protocol', 'Sign in']
       : ['Downtown', 'Docs', 'Sign in'],
   );
-  const developer = menu.getByRole('group', { name: 'Developer' });
+  const developer = menu.getByRole('group', { name: 'Developers' });
   if (LINKS.code)
-    await expect(developer.getByRole('link', { name: /Central City Code/ })).toHaveAttribute(
+    await expect(developer.getByRole('link', { name: /GitHub/ })).toHaveAttribute(
       'href',
       LINKS.code,
     );

@@ -591,7 +591,7 @@ test('capacity limits default to the reviewed bounds and accept validated overri
     registrationsPerWindow: 10,
     agentsPerWorkspace: 100,
     roomMembersMax: 10_000,
-    roomMembersDefault: 10_000,
+    roomMembersDefault: 100,
     connectionsPerWorkspace: 500,
     jobsPerWorkspace: 1000,
     activeJobsPerWorkspace: 10,

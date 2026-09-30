@@ -15,11 +15,11 @@ export const LINKS = {
   mcpConnection: '/#connect',
   protocol: '/downtown#district-protocol',
   /**
-   * The public source code (header: Developer › Central City Code). An external GitHub page:
+   * The public source code (header: Developers › GitHub). An external GitHub page:
    * a clean snapshot of this application's tree, published as its own public repository.
-   * `null` until that repository is public: the header shows no Developer section before then.
+   * `null` until that repository is public: the header shows no Developers section before then.
    */
-  code: null as string | null,
+  code: 'https://github.com/centralcity-ai/central-city-code' as string | null,
   docs: '/docs',
   rooms: null as string | null,
   answers: null as string | null,
