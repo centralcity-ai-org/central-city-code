@@ -60,7 +60,7 @@ export function prefetchInitialScreen() {
   if (isRoomsPath(window.location.pathname)) return void loadRooms().catch(ignorePrefetchFailure);
   if (/^\/invite\/?$/.test(window.location.pathname))
     return void loadInvite().catch(ignorePrefetchFailure);
-  const route = routeFromHash();
+  const route = isConnectPath(window.location.pathname) ? 'connect' : routeFromHash();
   // Signed-in visitors land on the console from any hash; the session decides, so a
   // signed-out first visit to / loads only the landing chunk.
   if (route === 'connect') void loadConnect().catch(ignorePrefetchFailure);
@@ -124,6 +124,11 @@ function continueTo(next: string) {
   } else navigate(next, true);
 }
 
+/** The Connect page's path; /#connect keeps working too. */
+function isConnectPath(pathname: string) {
+  return /^\/connect\/?$/.test(pathname);
+}
+
 type PublicRoute = 'home' | 'connect' | 'signin';
 function routeFromHash(hash = window.location.hash): PublicRoute {
   if (hash === '#connect') return 'connect';
@@ -172,7 +177,15 @@ export function Root() {
   // Path routing for /signin and the room pages; RoomsApp and navigate() announce via popstate.
   const [path, setPath] = useState(() => window.location.pathname);
   useEffect(() => {
-    const change = () => setPath(window.location.pathname);
+    // Back and forward can cross a hash route too (e.g. /connect back to /), so both follow.
+    const change = () => {
+      const next = routeFromHash();
+      // Sign-in reached through history (or a fragment link, which fires popstate before
+      // hashchange): start the console chunk it leads to before the form renders.
+      if (next === 'signin') void loadApp().catch(ignorePrefetchFailure);
+      setPath(window.location.pathname);
+      setRoute(next);
+    };
     window.addEventListener('popstate', change);
     return () => window.removeEventListener('popstate', change);
   }, []);
@@ -186,6 +199,22 @@ export function Root() {
   useEffect(() => {
     if (signedIn && /^\/invite\/?$/.test(path)) navigate(INVITE_ROOMS_PATH, true);
   }, [signedIn, path]);
+  // Signed in on /connect: the console's "Connect your AI" view, which it opens from #connect.
+  useEffect(() => {
+    if (signedIn && isConnectPath(path)) navigate('/#connect', true);
+  }, [signedIn, path]);
+  // Whatever way the page arrives at sign-in, the console chunk it leads to is on its way.
+  useEffect(() => {
+    if (route === 'signin') void loadApp().catch(ignorePrefetchFailure);
+  }, [route]);
+  // Signed out on /#connect: the Connect page's own address is /connect (the entry is replaced,
+  // so Back still returns to the page before).
+  useEffect(() => {
+    if (session && !session.operator && path === '/' && route === 'connect') {
+      window.history.replaceState(window.history.state, '', '/connect');
+      setPath('/connect');
+    }
+  }, [session, path, route]);
   const publicPath = /^\/downtown\/?$/.test(path);
   const trust = trustPage(path);
   const known = knownPath(path);
@@ -322,7 +351,7 @@ export function Root() {
           />
         </Screen>
       );
-    if (route === 'connect')
+    if (route === 'connect' || (route === 'home' && isConnectPath(path)))
       return (
         <Screen>
           <ConnectPage />
@@ -352,7 +381,7 @@ export function Root() {
       </Screen>
     );
   }
-  if (path === '/invite' || path === '/invite/') {
+  if (path === '/invite' || path === '/invite/' || isConnectPath(path)) {
     // Signed in: the effect above moves on to the person's room with its Invite sheet.
     return <Boot />;
   }

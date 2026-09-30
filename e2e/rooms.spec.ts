@@ -239,12 +239,21 @@ const pollNow = (page: Page) =>
   page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
 const list = (page: Page) => page.getByRole('list', { name: 'Room messages' });
 const message = (page: Page, text: string) => list(page).getByText(text, { exact: true });
+/**
+ * Whether the message whose text is `text` is fully inside the scroller. Found and measured in one
+ * evaluate on the stable scroller: a Markdown message first renders as plain text and is then
+ * swapped (Suspense), so a handle to the text element can be detached by the time it is measured.
+ */
 async function inView(page: Page, text: string) {
-  return message(page, text).evaluate((element) => {
-    const box = element.getBoundingClientRect();
-    const view = element.closest('[data-testid="room-scroll"]')!.getBoundingClientRect();
-    return box.top >= view.top - 1 && box.bottom <= view.bottom + 1;
-  });
+  return page.getByTestId('room-scroll').evaluate((view, wanted) => {
+    const item = [...view.querySelectorAll<HTMLElement>('[data-testid="room-message"]')].find(
+      (element) => element.querySelector('.rm-bubble')?.textContent?.trim() === wanted,
+    );
+    if (!item) return false;
+    const box = item.querySelector('.rm-bubble')!.getBoundingClientRect();
+    const frame = view.getBoundingClientRect();
+    return box.top >= frame.top - 1 && box.bottom <= frame.bottom + 1;
+  }, text);
 }
 
 test('join link: signed out → sign in → join; the code never appears in a URL, history or request (#31)', async ({
@@ -818,10 +827,10 @@ test('room top bar: Room list link, Connect AI and Invite, no pinned bar, no com
   await box.fill('Sent with Enter.');
   await box.press('Enter');
   await expect(message(page, 'Sent with Enter.')).toBeVisible();
-  // The "…" menu opens the members panel (room settings live there).
+  // The "…" menu opens the Room settings panel.
   await head.getByRole('button', { name: 'More room actions' }).click();
   await page.getByRole('menuitem', { name: 'Room settings', exact: true }).click();
-  await expect(page.getByRole('complementary', { name: 'Members' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'Room settings' })).toBeVisible();
   await roomList.click();
   await expect(page).toHaveURL(/^https?:\/\/[^/]+\/rooms$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Your rooms' })).toBeVisible();
@@ -844,10 +853,22 @@ test('Connect AI sheet shows the real connection address and commands', async ({
   await expect(
     sheet.getByText(`codex mcp add central-city --url ${endpoint}`, { exact: true }),
   ).toBeVisible();
-  await expect(sheet.getByRole('link', { name: 'Add to Cursor' })).toHaveAttribute(
+  // One-click installs open the HTTPS install pages (a bare cursor: or vscode: link does
+  // nothing without the app) in a new tab.
+  const cursor = sheet.getByRole('link', { name: 'Add to Cursor' });
+  await expect(cursor).toHaveAttribute(
     'href',
-    /^cursor:\/\/anysphere\.cursor-deeplink\/mcp\/install\?name=central-city&config=/,
+    `https://cursor.com/en/install-mcp?name=central-city&config=${encodeURIComponent(Buffer.from(JSON.stringify({ url: endpoint })).toString('base64'))}`,
   );
+  const vscode = sheet.getByRole('link', { name: 'Install in VS Code' });
+  await expect(vscode).toHaveAttribute(
+    'href',
+    `https://vscode.dev/redirect/mcp/install?name=central-city&config=${encodeURIComponent(JSON.stringify({ type: 'http', url: endpoint }))}`,
+  );
+  for (const link of [cursor, vscode]) {
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  }
   await expect(sheet.getByRole('link', { name: 'All connection options' })).toHaveAttribute(
     'href',
     '/#connect',

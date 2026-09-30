@@ -15,7 +15,7 @@
         "path": "integrations/claude-code/central-city"
       },
       "description": "Plan, create and claim zero-cost AI agent teams on Central City over MCP (no account needed), plus OAuth access to your workspace.",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "author": {
         "name": "Central City contributors"
       },

@@ -97,6 +97,8 @@ export interface OAuthDependencies {
   authenticate(values: unknown, address: string, request: FastifyRequest): Promise<Operator>;
   /** Sets the known-device cookie after a successful sign-in. */
   rememberDevice(reply: FastifyReply, operatorId: string): void;
+  /** Starts a browser session (the `cc_session` cookie) for an owner who just signed in. */
+  startSession(reply: FastifyReply, operatorId: string): Promise<void>;
   hosted?: HostedConfig;
   secureCookies: boolean;
   fetchClientMetadata?: ClientMetadataFetcher;
@@ -138,7 +140,7 @@ const secret = () => randomBytes(32).toString('base64url');
  */
 /** Hosts of widely used AI clients whose metadata documents publish their callback there. */
 const KNOWN_CLIENT_REDIRECT_HOSTS = new Set(['claude.ai', 'chatgpt.com']);
-function autoRedirectAllowed(verified: boolean, redirectUri: string): boolean {
+export function autoRedirectAllowed(verified: boolean, redirectUri: string): boolean {
   if (!verified) return false;
   let url: URL;
   try {
@@ -146,7 +148,7 @@ function autoRedirectAllowed(verified: boolean, redirectUri: string): boolean {
   } catch {
     return false;
   }
-  const host = url.hostname.replace(/^[|]$/g, '');
+  const host = url.hostname.replace(/^\[|\]$/g, '');
   if (url.protocol === 'http:' && ['127.0.0.1', '::1', 'localhost'].includes(host)) return true;
   return url.protocol === 'https:' && KNOWN_CLIENT_REDIRECT_HOSTS.has(host);
 }
@@ -690,6 +692,9 @@ export async function registerOAuthRoutes(
           request,
         );
         d.rememberDevice(reply, operator.id);
+        // Signing in here signs the browser in, like the sign-in page: approval then acts for
+        // the current session only (below), so signing out cancels an open request.
+        await d.startSession(reply, operator.id);
       } catch (error) {
         const status = error instanceof z.ZodError ? 401 : statusOf(error);
         if (status >= 500) throw error;
@@ -717,13 +722,24 @@ export async function registerOAuthRoutes(
       );
     }
     if (action !== 'approve') throw new PageFailure(400, 'Unknown action.');
-    const operatorId = pending.operator_id ?? (await d.optionalOperator(request))?.id;
-    if (!operatorId)
+    // Approval acts for whoever is signed in now, and only for the owner this request was shown
+    // to (or signed in for): signing out, or another owner signing in on the same browser,
+    // cancels the owner's open request instead of approving it for them.
+    const current = await d.optionalOperator(request);
+    // A mismatch keeps the stamp: only signing in on this form re-stamps the request.
+    if (!current || (pending.operator_id !== null && pending.operator_id !== current.id))
       return sendPage(
         reply,
         401,
-        loginPage(view(pending, csrf, { error: 'Sign in before approving.' })),
+        loginPage(
+          view(pending, csrf, {
+            error: current
+              ? 'The signed-in account changed. Sign in again to approve.'
+              : 'Sign in before approving.',
+          }),
+        ),
       );
+    const operatorId = current.id;
     const selected = body.scope === undefined ? [] : [body.scope].flat();
     const scopes = pending.scopes.filter(
       (scope) => scope === 'workspace:read' || selected.includes(scope),
@@ -1202,6 +1218,14 @@ export async function registerOAuthRoutes(
             .filter((scope) => scope && scope !== 'offline_access');
           if (!requested.every((scope) => row.scopes.includes(scope as AssistantScope)))
             throw new OAuthFailure(400, 'invalid_scope', 'Refresh cannot widen the granted scope.');
+          // Tokens carry the family's scopes, so a narrower request is refused rather than
+          // silently answered with the full set (checked before the token is rotated).
+          if (requested.length && new Set(requested).size < row.scopes.length)
+            throw new OAuthFailure(
+              400,
+              'invalid_scope',
+              'Refresh keeps the granted scope: omit scope or request the granted scopes.',
+            );
         }
         await tx.query('UPDATE oauth_tokens SET used_at=$2 WHERE token_hash=$1', [
           sha(presented),

@@ -62,12 +62,10 @@ test('public pages show no tool names, JSON or idempotency', async ({ page, brow
     await expect(page.locator('h1').first()).toBeVisible();
     await expectPlain(page, path);
   }
-  // The Connect setup dialog, both steps.
-  await page.goto('/#connect');
-  await page.getByRole('button', { name: /^Connect Codex/ }).click();
-  await expectPlain(page, 'Connect Codex setup');
-  await page.getByRole('button', { name: 'What’s next' }).click();
-  await expectPlain(page, 'Connect Codex next step');
+  // The Connect page, on the Codex tab.
+  await page.goto('/connect');
+  await page.getByRole('tab', { name: 'Codex' }).click();
+  await expectPlain(page, 'Connect page, Codex');
   // A failed sign-in explains itself in words.
   await page.goto('/signin');
   await expect(page.getByRole('heading', { level: 1, name: 'Welcome back.' })).toBeVisible();

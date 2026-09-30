@@ -105,7 +105,7 @@ export const LIGHT_PALETTE: Palette = {
   greenHalo: 'rgba(5, 150, 105, 0.1)',
   ripple: '#0066ff',
   rippleGreen: '#10b981',
-  font: 'system-ui, sans-serif',
+  font: "'Inter Variable', 'Inter Fallback', system-ui, sans-serif",
 };
 
 /** CSS custom property that carries each palette role (landing.css defines them per theme). */

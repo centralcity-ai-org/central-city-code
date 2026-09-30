@@ -1,26 +1,32 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { e2eOrigin } from './port';
 
+/*
+ * The Connect page (src/Connect.tsx): one address with a mode switch, one tab per app, plain
+ * steps, at /connect and /#connect.
+ */
 const origin = e2eOrigin();
 const mcpUrl = `${origin}/mcp`;
 const openUrl = `${origin}/mcp/open`;
+/** Off a local server every connection points at production (never a short-lived preview). */
+const PRODUCTION = 'https://centralcity.ai';
+const APPS = ['ChatGPT', 'Claude', 'Claude Code', 'Cursor', 'VS Code', 'Codex'];
+const ARROWS = /[←-⇿⟰-⟿⤀-⥿⬀-⬯]|->|=>|>>/;
 
-/** VS Code: vscode:mcp/install?<encodeURIComponent(JSON.stringify({ name, type, url }))>. */
+/** VS Code: the HTTPS redirect on vscode.dev, config = { type: 'http', url }; a new tab. */
 function expectVscodeLink(href: string | null, name: string, url: string) {
   expect(href).toBe(
-    `vscode:mcp/install?${encodeURIComponent(JSON.stringify({ name, type: 'http', url }))}`,
+    `https://vscode.dev/redirect/mcp/install?name=${encodeURIComponent(name)}&config=${encodeURIComponent(JSON.stringify({ type: 'http', url }))}`,
   );
-  expect(JSON.parse(decodeURIComponent(href!.slice('vscode:mcp/install?'.length)))).toEqual({
-    name,
-    type: 'http',
-    url,
-  });
+  const link = new URL(href!);
+  expect(link.searchParams.get('name')).toBe(name);
+  expect(JSON.parse(link.searchParams.get('config')!)).toEqual({ type: 'http', url });
 }
 
+/** Cursor: the HTTPS install page on cursor.com, config = base64 of { url }; a new tab. */
 function expectCursorLink(href: string | null, name: string, url: string) {
-  expect(href!.startsWith('cursor://anysphere.cursor-deeplink/mcp/install?')).toBe(true);
   const link = new URL(href!);
-  expect(link.protocol).toBe('cursor:');
+  expect(`${link.origin}${link.pathname}`).toBe('https://cursor.com/en/install-mcp');
   expect(link.searchParams.get('name')).toBe(name);
   expect(link.searchParams.get('config')).toBe(
     Buffer.from(JSON.stringify({ url })).toString('base64'),
@@ -30,199 +36,335 @@ function expectCursorLink(href: string | null, name: string, url: string) {
   });
 }
 
-test('provider choices reveal only the selected setup and preserve keyboard access', async ({
+/** Serves the local build at a public-looking origin without contacting a real provider. */
+async function hosted(page: Page, path = '/connect') {
+  await page.route('https://centralcity.test/**', async (route) => {
+    const url = new URL(route.request().url());
+    await route.fulfill({
+      response: await route.fetch({ url: `${origin}${url.pathname}${url.search}` }),
+    });
+  });
+  await page.goto(`https://centralcity.test${path}`);
+  await expect(page.getByRole('heading', { level: 1, name: 'Connect your AI' })).toBeVisible();
+}
+
+const tab = (page: Page, name: string) => page.getByRole('tab', { name, exact: true });
+const panel = (page: Page) => page.getByRole('tabpanel');
+const address = (page: Page) => page.getByRole('group', { name: 'MCP server address' });
+const openMode = (page: Page) => page.getByRole('radio', { name: 'Open mode, no account' });
+
+test('the Connect page has its own title, /#connect becomes /connect, and Back and Forward work', async ({
   page,
-  context,
+}) => {
+  await page.goto('/connect');
+  await expect(page.getByRole('heading', { level: 1, name: 'Connect your AI' })).toBeVisible();
+  await expect(page).toHaveTitle('Connect your AI · Central City');
+  // The old address: the same page, and the address bar settles on /connect.
+  await page.goto('/#connect');
+  await expect(page.getByRole('heading', { level: 1, name: 'Connect your AI' })).toBeVisible();
+  await expect(page).toHaveURL(/\/connect$/);
+  await expect(page).toHaveTitle('Connect your AI · Central City');
+  // In-page from the landing page: Back returns to it (with its title), Forward to Connect.
+  await page.goto('/');
+  await expect(page.getByRole('heading', { level: 1, name: 'Every AI. One room.' })).toBeVisible();
+  const landingTitle = await page.title();
+  await page.evaluate(() => {
+    window.location.hash = '#connect';
+  });
+  await expect(page.getByRole('heading', { level: 1, name: 'Connect your AI' })).toBeVisible();
+  await expect(page).toHaveURL(/\/connect$/);
+  await page.goBack();
+  await expect(page.getByRole('heading', { level: 1, name: 'Every AI. One room.' })).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveTitle(landingTitle);
+  await page.goForward();
+  await expect(page.getByRole('heading', { level: 1, name: 'Connect your AI' })).toBeVisible();
+  await expect(page).toHaveTitle('Connect your AI · Central City');
+});
+
+test('/connect and /#connect both open the page; no arrows; no sideways scroll at 390 px', async ({
+  page,
 }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
-  await page.goto('/#connect');
-  await expect(page.getByRole('heading', { name: 'Which AI do you use?' })).toBeVisible();
-  await expect(page.getByLabel('No-account MCP address')).not.toBeVisible();
-  const cursor = page.getByRole('button', { name: /^Connect Cursor/ });
-  await cursor.click();
-  const dialog = page.getByRole('dialog');
-  expectCursorLink(
-    await dialog.getByRole('link', { name: 'Add to Cursor' }).getAttribute('href'),
-    'central-city-open',
-    openUrl,
-  );
-  await dialog.getByRole('radio', { name: /Use my account/ }).check();
-  expectCursorLink(
-    await dialog.getByRole('link', { name: 'Add to Cursor' }).getAttribute('href'),
-    'central-city',
-    mcpUrl,
-  );
-  await page.keyboard.press('Escape');
-  await expect(dialog).not.toBeVisible();
-  await expect(cursor).toBeFocused();
-  await page.getByRole('button', { name: /^Connect VS Code/ }).click();
-  expectVscodeLink(
-    await dialog.getByRole('link', { name: 'Install in VS Code' }).getAttribute('href'),
-    'central-city-open',
-    openUrl,
-  );
-  await dialog.getByRole('radio', { name: /Use my account/ }).check();
-  expectVscodeLink(
-    await dialog.getByRole('link', { name: 'Install in VS Code' }).getAttribute('href'),
-    'central-city',
-    mcpUrl,
-  );
-  await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: /^Connect Codex/ }).click();
-  await dialog.getByRole('button', { name: 'Copy connection link' }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(openUrl);
-  await dialog.getByRole('radio', { name: /Use my account/ }).check();
-  await dialog.getByRole('button', { name: 'Copy connection link' }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(mcpUrl);
-  await dialog.getByRole('button', { name: 'What’s next' }).click();
-  await expect(
-    dialog.getByText('This page can’t see your AI app, so it never marks it as connected.', {
-      exact: false,
-    }),
-  ).toBeVisible();
-  await expect(dialog.getByRole('heading', { name: 'Bring Codex into a room' })).toBeFocused();
-  await dialog.getByRole('button', { name: 'Back to setup' }).click();
-  await expect(dialog.getByRole('heading', { name: 'Connect Codex' })).toBeFocused();
-  await dialog.getByRole('button', { name: 'What’s next' }).click();
-  // The next step is a link to paste, never a prompt to type.
-  await expect(dialog.getByRole('link', { name: 'Invite your AI' })).toHaveAttribute(
-    'href',
-    '/invite',
-  );
-  await expect(dialog.locator('pre')).toHaveCount(0);
-  await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: /^Connect Claude Code/ }).click();
-  await expect(dialog.getByLabel('Claude Code command')).toContainText(
-    `claude mcp add --transport http central-city-open ${openUrl}`,
-  );
-  await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: /^Connect ChatGPT/ }).click();
-  await expect(dialog.getByText('This page is running on your computer.')).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'What’s next' })).not.toBeVisible();
-  await page.keyboard.press('Escape');
-  await page.setViewportSize({ width: 360, height: 780 });
-  await page.getByRole('button', { name: /^Connect Codex/ }).click();
+  for (const path of ['/connect', '/#connect']) {
+    await page.goto('about:blank');
+    await page.goto(path);
+    await expect(page.getByRole('heading', { level: 1 }), path).toHaveText('Connect your AI');
+    await expect(page).toHaveTitle(/Central City/);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const path of ['/connect', 'hosted']) {
+    if (path === 'hosted') await hosted(page);
+    else await page.goto(path);
+    for (const mode of ['Workspace account', 'Open mode, no account']) {
+      await page.getByRole('radio', { name: mode }).check();
+      for (const name of APPS) {
+        await tab(page, name).click();
+        await expect(panel(page)).toBeVisible();
+        const text = await page.evaluate(() => document.body.innerText);
+        expect(text, `${path} ${mode} ${name}`).not.toMatch(ARROWS);
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+          `${path} ${mode} ${name}`,
+        ).toBe(true);
+      }
+    }
+  }
+  // Even the "by hand" settings stay inside the page width.
+  await tab(page, 'VS Code').click();
+  await panel(page).getByText('Add it by hand').click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  expect(await dialog.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.body.innerText)).not.toMatch(ARROWS);
   expect(errors).toEqual([]);
 });
 
-test('hosted setup provides a prefilled Claude link and honest ChatGPT limitations', async ({
-  page,
-}) => {
-  // Proxy the local build to a public-looking origin without contacting a real provider.
-  await page.route('https://centralcity.test/**', async (route) => {
-    const url = new URL(route.request().url());
-    await route.fulfill({
-      response: await route.fetch({ url: `${origin}${url.pathname}${url.search}` }),
-    });
-  });
-  await page.goto('https://centralcity.test/#connect');
-  await page.getByRole('button', { name: /^Connect Claude Open/ }).click();
-  const dialog = page.getByRole('dialog');
-  const href = new URL(
-    (await dialog.getByRole('link', { name: 'Open Claude to connect' }).getAttribute('href'))!,
+test('the mode switch changes the address and every command and install link', async ({ page }) => {
+  await page.goto('/connect');
+  await expect(page.getByRole('radio', { name: 'Workspace account' })).toBeChecked();
+  await expect(address(page)).toHaveText(mcpUrl);
+  await tab(page, 'Claude Code').click();
+  await expect(panel(page).getByRole('group', { name: 'Claude Code command' })).toHaveText(
+    `claude mcp add --transport http central-city ${mcpUrl}`,
   );
-  expect(href.origin).toBe('https://claude.ai');
-  expect(href.searchParams.get('modal')).toBe('add-custom-connector');
-  expect(href.searchParams.get('connectorUrl')).toBe('https://centralcity.test/mcp/open');
-  await dialog.getByRole('radio', { name: /Use my account/ }).check();
-  expect(
-    new URL(
-      (await dialog.getByRole('link', { name: 'Open Claude to connect' }).getAttribute('href'))!,
-    ).searchParams.get('connectorUrl'),
-  ).toBe('https://centralcity.test/mcp');
-  await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: /^Connect ChatGPT/ }).click();
-  await expect(dialog.getByRole('link', { name: 'Open ChatGPT Plugins' })).toHaveAttribute(
-    'href',
-    'https://chatgpt.com/plugins',
-  );
-  await expect(dialog.getByRole('group', { name: 'ChatGPT connection link' })).toHaveText(
-    'https://centralcity.test/mcp/open',
-  );
-  // ChatGPT's button is "Build MCP Apps"; a pasted address does nothing.
-  await expect(dialog.getByText('Build MCP Apps', { exact: true })).toBeVisible();
-  await expect(dialog).not.toContainText('Create MCP App');
-  await expect(
-    dialog.getByText('Add this address as an app. Pasting it into a chat won’t connect.'),
-  ).toBeVisible();
-  await expect(dialog.getByText('No authentication', { exact: true })).toBeVisible();
-  // The account connection (OAuth) works for ChatGPT since its client document is accepted.
-  await dialog.getByRole('radio', { name: /Use my account/ }).check();
-  await expect(dialog.getByRole('link', { name: 'Open ChatGPT Plugins' })).toBeVisible();
-  await expect(dialog.getByRole('group', { name: 'ChatGPT connection link' })).toHaveText(
-    'https://centralcity.test/mcp',
-  );
-  await expect(dialog.getByText('OAuth', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('Developer mode', { exact: true })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'What’s next' })).toBeVisible();
-  await page.keyboard.press('Escape');
-  // Claude web: a three-step guide next to the prefilled link.
-  await page.getByRole('button', { name: /^Connect Claude Open/ }).click();
-  await expect(dialog.locator('.connect-instructions > li')).toHaveCount(3);
-  await expect(dialog).toContainText('Claude Desktop');
-});
-
-test('one-click install links use the production signed-in, persistent address', async ({
-  page,
-}) => {
-  await page.route('https://centralcity.test/**', async (route) => {
-    const url = new URL(route.request().url());
-    await route.fulfill({
-      response: await route.fetch({ url: `${origin}${url.pathname}${url.search}` }),
-    });
-  });
-  await page.goto('https://centralcity.test/#connect');
-  const section = page.getByRole('region', { name: 'Install in one click' });
-  // Any non-local origin (production or a preview) installs the production connection.
-  const account = 'https://centralcity.ai/mcp';
+  await tab(page, 'Cursor').click();
   expectCursorLink(
-    await section.getByRole('link', { name: 'Add to Cursor' }).getAttribute('href'),
-    'central-city',
-    account,
-  );
-  expectVscodeLink(
-    await section.getByRole('link', { name: 'Install in VS Code' }).getAttribute('href'),
-    'central-city',
-    account,
-  );
-  const claude = new URL(
-    (await section
-      .getByRole('link', { name: /Add to Claude and Claude Desktop/ })
-      .getAttribute('href'))!,
-  );
-  expect(claude.origin).toBe('https://claude.ai');
-  expect(claude.searchParams.get('modal')).toBe('add-custom-connector');
-  expect(claude.searchParams.get('connectorUrl')).toBe(account);
-  await page.setViewportSize({ width: 360, height: 780 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  for (const link of await section.getByRole('link').all())
-    expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-});
-
-test('on a local server the one-click row offers only the local editors', async ({ page }) => {
-  await page.goto('/#connect');
-  const section = page.getByRole('region', { name: 'Install in one click' });
-  expectCursorLink(
-    await section.getByRole('link', { name: 'Add to Cursor' }).getAttribute('href'),
+    await panel(page).getByRole('link', { name: 'Add to Cursor' }).getAttribute('href'),
     'central-city',
     mcpUrl,
   );
-  await expect(section.getByRole('link', { name: /Claude/ })).toHaveCount(0);
+  await tab(page, 'VS Code').click();
+  expectVscodeLink(
+    await panel(page).getByRole('link', { name: 'Install in VS Code' }).getAttribute('href'),
+    'central-city',
+    mcpUrl,
+  );
+  await tab(page, 'Codex').click();
+  await expect(panel(page).getByRole('group', { name: 'Codex connection link' })).toHaveText(
+    mcpUrl,
+  );
+  await expect(panel(page).getByRole('group', { name: 'Codex command' })).toHaveText(
+    `codex mcp add central-city --url ${mcpUrl}`,
+  );
+  await expect(panel(page).getByRole('group', { name: 'Codex sign-in command' })).toHaveText(
+    'codex mcp login central-city',
+  );
+
+  await openMode(page).check();
+  await expect(address(page)).toHaveText(openUrl);
+  await expect(page.getByText('No account needed.', { exact: false })).toBeVisible();
+  await expect(panel(page).getByRole('group', { name: 'Codex connection link' })).toHaveText(
+    openUrl,
+  );
+  await expect(panel(page).getByRole('group', { name: 'Codex command' })).toHaveText(
+    `codex mcp add central-city-open --url ${openUrl}`,
+  );
+  // No account, nothing to sign in to.
+  await expect(panel(page).getByRole('group', { name: 'Codex sign-in command' })).toHaveCount(0);
+  await tab(page, 'Claude Code').click();
+  await expect(panel(page).getByRole('group', { name: 'Claude Code command' })).toHaveText(
+    `claude mcp add --transport http central-city-open ${openUrl}`,
+  );
+  await tab(page, 'Cursor').click();
+  expectCursorLink(
+    await panel(page).getByRole('link', { name: 'Add to Cursor' }).getAttribute('href'),
+    'central-city-open',
+    openUrl,
+  );
+  await panel(page).getByText('Add it by hand').click();
+  expect(
+    JSON.parse((await panel(page).getByRole('group', { name: 'Cursor settings' }).textContent())!),
+  ).toEqual({ mcpServers: { 'central-city-open': { url: openUrl } } });
+  await tab(page, 'VS Code').click();
+  expectVscodeLink(
+    await panel(page).getByRole('link', { name: 'Install in VS Code' }).getAttribute('href'),
+    'central-city-open',
+    openUrl,
+  );
+  await panel(page).getByText('Add it by hand').click();
+  expect(
+    JSON.parse((await panel(page).getByRole('group', { name: 'VS Code settings' }).textContent())!),
+  ).toEqual({ servers: { 'central-city-open': { type: 'http', url: openUrl } } });
+  // Nothing on the page still shows the account address.
+  expect(await page.evaluate(() => document.body.innerText)).not.toMatch(/\/mcp(?!\/open|\.json)/);
+});
+
+test('each of the six tabs shows its steps; the rail follows the arrow keys', async ({ page }) => {
+  await hosted(page);
+  const rail = page.getByRole('tablist', { name: 'Which AI do you use?' });
+  await expect(rail.getByRole('tab')).toHaveText(APPS);
+  const expected: Record<string, string> = {
+    ChatGPT: 'Build MCP Apps',
+    Claude: 'Add custom connector',
+    'Claude Code': 'Run this command in your terminal',
+    Cursor: 'Cursor opens with Central City ready to add',
+    'VS Code': 'VS Code opens and asks you to install Central City',
+    Codex: 'Settings / MCP servers / Add server',
+  };
+  for (const name of APPS) {
+    await tab(page, name).click();
+    await expect(tab(page, name)).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tabpanel')).toHaveCount(1);
+    await expect(panel(page)).toHaveAttribute(
+      'aria-labelledby',
+      (await tab(page, name).getAttribute('id'))!,
+    );
+    expect(await panel(page).locator('ol > li').count(), name).toBeGreaterThanOrEqual(2);
+    await expect(panel(page), name).toContainText(expected[name]!);
+  }
+  await tab(page, 'ChatGPT').click();
+  await page.keyboard.press('ArrowRight');
+  await expect(tab(page, 'Claude')).toBeFocused();
+  await expect(tab(page, 'Claude')).toHaveAttribute('aria-selected', 'true');
+  await expect(tab(page, 'ChatGPT')).toHaveAttribute('tabindex', '-1');
+  await page.keyboard.press('End');
+  await expect(tab(page, 'Codex')).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(tab(page, 'ChatGPT')).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(tab(page, 'Codex')).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Home');
+  await expect(tab(page, 'ChatGPT')).toHaveAttribute('aria-selected', 'true');
+  // The mode switch is a real radio group.
+  await expect(page.getByRole('radiogroup', { name: 'How your AI connects' })).toBeVisible();
+});
+
+test('hosted: production links for ChatGPT, Claude, Cursor and VS Code in both modes', async ({
+  page,
+}) => {
+  await hosted(page);
+  const account = `${PRODUCTION}/mcp`;
+  const open = `${PRODUCTION}/mcp/open`;
+  await expect(address(page)).toHaveText(account);
+  // ChatGPT: the Plugins page, the address as an app, OAuth for the account.
+  await expect(panel(page).getByRole('link', { name: 'Open ChatGPT Plugins' })).toHaveAttribute(
+    'href',
+    'https://chatgpt.com/plugins',
+  );
+  await expect(panel(page).getByRole('group', { name: 'ChatGPT connection link' })).toHaveText(
+    account,
+  );
+  await expect(panel(page).getByText('Build MCP Apps', { exact: true })).toBeVisible();
+  await expect(panel(page).getByText('Developer mode', { exact: true })).toBeVisible();
+  await expect(panel(page).getByText('OAuth', { exact: true })).toBeVisible();
+  await expect(
+    panel(page).getByText('Add this address as an app. Pasting it into a chat won’t connect.'),
+  ).toBeVisible();
+  await openMode(page).check();
+  await expect(panel(page).getByRole('group', { name: 'ChatGPT connection link' })).toHaveText(
+    open,
+  );
+  await expect(panel(page).getByText('No authentication', { exact: true })).toBeVisible();
+  // Claude: the prefilled "Add custom connector" link, three steps, Claude Desktop.
+  await tab(page, 'Claude').click();
+  const claudeHref = async () =>
+    new URL(
+      (await panel(page)
+        .getByRole('link', { name: 'Open Claude to connect' })
+        .getAttribute('href'))!,
+    );
+  let claude = await claudeHref();
+  expect(claude.origin + claude.pathname).toBe('https://claude.ai/customize/connectors');
+  expect(claude.searchParams.get('modal')).toBe('add-custom-connector');
+  expect(claude.searchParams.get('connectorName')).toBe('Central City');
+  expect(claude.searchParams.get('connectorUrl')).toBe(open);
+  await expect(panel(page).locator('ol > li')).toHaveCount(3);
+  await expect(panel(page)).toContainText('Claude Desktop');
+  await page.getByRole('radio', { name: 'Workspace account' }).check();
+  claude = await claudeHref();
+  expect(claude.searchParams.get('connectorUrl')).toBe(account);
+  await expect(panel(page).getByRole('group', { name: 'Claude connection link' })).toHaveText(
+    account,
+  );
+  // One-click installs: production, signed-in, persistent. HTTPS install pages (a bare cursor:
+  // or vscode: link does nothing without the app), opened in a new tab.
+  await tab(page, 'Cursor').click();
+  const cursor = panel(page).getByRole('link', { name: 'Add to Cursor' });
+  expectCursorLink(await cursor.getAttribute('href'), 'central-city', account);
+  await expect(cursor).toHaveAttribute(
+    'href',
+    'https://cursor.com/en/install-mcp?name=central-city&config=eyJ1cmwiOiJodHRwczovL2NlbnRyYWxjaXR5LmFpL21jcCJ9',
+  );
+  await expect(cursor).toHaveAttribute('target', '_blank');
+  await expect(cursor).toHaveAttribute('rel', 'noopener noreferrer');
+  await tab(page, 'VS Code').click();
+  const vscode = panel(page).getByRole('link', { name: 'Install in VS Code' });
+  expectVscodeLink(await vscode.getAttribute('href'), 'central-city', account);
+  await expect(vscode).toHaveAttribute(
+    'href',
+    'https://vscode.dev/redirect/mcp/install?name=central-city&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fcentralcity.ai%2Fmcp%22%7D',
+  );
+  await expect(vscode).toHaveAttribute('target', '_blank');
+  await expect(vscode).toHaveAttribute('rel', 'noopener noreferrer');
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const link of await panel(page).getByRole('link').all())
+    expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+});
+
+test('on a local server ChatGPT and Claude point to the live site; coding apps use this one', async ({
+  page,
+}) => {
+  await page.goto('/#connect');
+  for (const name of ['ChatGPT', 'Claude']) {
+    await tab(page, name).click();
+    await expect(panel(page)).toContainText('This page is running on your computer.');
+    await expect(panel(page).getByRole('link', { name: 'Open live Central City' })).toHaveAttribute(
+      'href',
+      'https://centralcity.ai/#connect',
+    );
+    await expect(panel(page).getByRole('link', { name: /Claude|ChatGPT/ })).toHaveCount(0);
+  }
+  await tab(page, 'Cursor').click();
+  expectCursorLink(
+    await panel(page).getByRole('link', { name: 'Add to Cursor' }).getAttribute('href'),
+    'central-city',
+    mcpUrl,
+  );
+});
+
+test('copy buttons put the value on the clipboard and say Copied', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+  await page.goto('/connect');
+  await page.getByRole('button', { name: 'Copy MCP server address' }).click();
+  await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Copied' })).toHaveCount(1);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(mcpUrl);
+  await openMode(page).check();
+  // A new address starts from "Copy" again.
+  await expect(page.getByRole('button', { name: 'Copy MCP server address' })).toBeVisible();
+  await tab(page, 'Claude Code').click();
+  await panel(page).getByRole('button', { name: 'Copy Claude Code command' }).click();
+  await expect(panel(page).getByRole('button', { name: 'Copied' })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    `claude mcp add --transport http central-city-open ${openUrl}`,
+  );
+  await tab(page, 'VS Code').click();
+  await panel(page).getByText('Add it by hand').click();
+  await panel(page).getByRole('button', { name: 'Copy VS Code settings' }).click();
+  expect(JSON.parse(await page.evaluate(() => navigator.clipboard.readText()))).toEqual({
+    servers: { 'central-city-open': { type: 'http', url: openUrl } },
+  });
+});
+
+test('the next step is a room invite link; docs and claim links stay', async ({ page }) => {
+  await page.goto('/connect');
+  const next = page.getByRole('region', { name: 'Next step: invite your AI into a room.' });
+  await expect(next.getByRole('link', { name: 'Invite your AI' })).toHaveAttribute(
+    'href',
+    '/invite',
+  );
+  await expect(next.getByRole('link', { name: 'API and SDK docs' })).toHaveAttribute(
+    'href',
+    '/docs/api',
+  );
+  await expect(next).not.toContainText('/mcp');
+  await next.getByRole('link', { name: 'Sign in to claim' }).click();
+  await expect(page.getByLabel('Account name')).toBeVisible();
 });
 
 test('the developer REST example (in the docs) still creates a claimable team', async ({
   page,
 }) => {
-  // Developer setup lives in the docs; the Connect page links there (docs/COPY_GLOSSARY.md).
-  await page.goto('/#connect');
-  await expect(page.getByRole('link', { name: 'developer docs' })).toHaveAttribute(
-    'href',
-    '/docs/api',
-  );
   await page.goto('/docs/api');
   const rest = await page.getByLabel('REST create request').textContent();
   const payload = JSON.parse(/-d '(.*)'/.exec(rest!)![1]!) as { idempotency_key: string };
@@ -231,23 +373,89 @@ test('the developer REST example (in the docs) still creates a claimable team', 
   const created = await page.request.post('/api/public/agents', { data: payload });
   expect(created.status()).toBe(201);
   expect((await created.json()).claim.claim_url).toMatch(/#claim=ccclaim_/);
-  await page.goto('/#connect');
-  await page.getByRole('link', { name: 'Sign in to claim' }).click();
-  await expect(page.getByLabel('Account name')).toBeVisible();
 });
 
-test('signed-in owners can open the claim box', async ({ page }) => {
+test('signed in: /connect opens the console view, which offers the claim box', async ({ page }) => {
   await page.goto('/#create');
   await page.getByLabel('Account name').fill('Browser-Connect');
   await page.getByLabel('Password', { exact: true }).fill('Local-test-only-passphrase-2026');
   await page.getByRole('button', { name: 'Create account', exact: true }).click();
   // A new account lands on the console Overview.
   await expect(page.getByRole('heading', { name: 'Everything, at a glance.' })).toBeVisible();
-  await page
-    .getByRole('navigation', { name: 'Workspace' })
-    .getByRole('button', { name: 'Connect your AI', exact: true })
-    .click();
-  await expect(page.getByRole('button', { name: /^Connect ChatGPT/ })).toBeVisible();
+  await page.goto('/connect');
+  await expect(page).toHaveURL(/\/#connect$/);
+  await expect(
+    page
+      .getByRole('navigation', { name: 'Workspace' })
+      .getByRole('button', { name: 'Connect your AI', exact: true }),
+  ).toHaveClass(/active/);
+  await expect(page.getByRole('heading', { name: 'Which AI do you use?' })).toBeVisible();
+  await expect(tab(page, 'Codex')).toBeVisible();
   await page.getByRole('button', { name: 'Claim agents' }).click();
   await expect(page.getByLabel('Claim agents your AI created')).toBeVisible();
 });
+
+/** Every visible text node against its nearest opaque background (WCAG AA, 0.1 margin). */
+async function lowContrast(page: Page) {
+  return page.evaluate(() => {
+    const canvas = document.createElement('canvas').getContext('2d')!;
+    const rgba = (color: string) => {
+      canvas.clearRect(0, 0, 1, 1);
+      canvas.fillStyle = color;
+      canvas.fillRect(0, 0, 1, 1);
+      return [...canvas.getImageData(0, 0, 1, 1).data];
+    };
+    const luminance = ([r, g, b]: number[]) =>
+      [r!, g!, b!]
+        .map((value) => value / 255)
+        .map((value) => (value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4))
+        .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index]!, 0);
+    const background = (element: Element | null): number[] => {
+      for (; element; element = element.parentElement) {
+        const value = rgba(getComputedStyle(element).backgroundColor);
+        if (value[3]! > 200) return value;
+      }
+      return rgba(getComputedStyle(document.body).backgroundColor);
+    };
+    const low: string[] = [];
+    let count = 0;
+    const walker = document.createTreeWalker(document.querySelector('main')!, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const element = node.parentElement!;
+      const style = getComputedStyle(element);
+      if (!node.textContent!.trim() || !element.checkVisibility({ opacityProperty: true }))
+        continue;
+      count += 1;
+      const [a, b] = [luminance(rgba(style.color)), luminance(background(element))];
+      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      const large =
+        parseFloat(style.fontSize) >= 24 ||
+        (parseFloat(style.fontSize) >= 18.66 && Number(style.fontWeight) >= 700);
+      if (ratio < (large ? 3.1 : 4.6))
+        low.push(`${node.textContent!.trim().slice(0, 40)} (${ratio.toFixed(2)})`);
+    }
+    return { count, low };
+  });
+}
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`every tab meets text contrast in ${scheme}`, async ({ page }) => {
+    // The site is light unless dark is chosen: store the choice so dark is really checked.
+    await page.addInitScript((theme) => localStorage.setItem('cc-theme', theme), scheme);
+    await hosted(page);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    for (const name of APPS) {
+      await tab(page, name).click();
+      await page.getByRole('heading', { level: 1 }).hover();
+      const result = await lowContrast(page);
+      expect(result.count, name).toBeGreaterThan(10);
+      expect(result.low, name).toEqual([]);
+    }
+    // The chosen tab, the selected mode and the Copied state too.
+    await openMode(page).check();
+    await page.getByRole('heading', { level: 1 }).hover();
+    expect((await lowContrast(page)).low).toEqual([]);
+  });
+}

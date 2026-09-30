@@ -1,40 +1,40 @@
 import { test, expect, type Page } from '@playwright/test';
 
 /*
- * The site footer (src/shell/links.ts): Product, Help & safety, Terms &
- * policies and Company, then the company line. Every link must resolve (no 404), the columns
- * become closed accordions at 360 px, and no page scrolls sideways on a phone.
+ * The site footer (src/shell/links.ts): the header's four groups (Product, Developers, Open
+ * Source, Company), then Help & legal and the company line. Every same-site link must resolve
+ * (no 404), GitHub links open in a new tab, the columns become closed accordions at 360 px, and no
+ * page scrolls sideways on a phone.
  */
 
-const COLUMNS: [string, [string, string][]][] = [
+const GITHUB = 'https://github.com/centralcity-ai';
+/** [name, href, GitHub?] per column. */
+const COLUMNS: [string, [string, string, boolean?][]][] = [
   [
     'Product',
     [
-      ['Sign up', '/#signin'],
-      ['Connect your AI', '/#connect'],
+      ['Workspace', '/#signin'],
+      ['Connect AI', '/connect'],
+    ],
+  ],
+  [
+    'Developers',
+    [
+      ['API', '/docs/api'],
       ['Docs', '/docs'],
-      ['Downtown (open source)', '/downtown'],
-      ['Verify the count', '/downtown/verify'],
-    ],
-  ],
-  [
-    'Help & safety',
-    [
-      ['Support center', '/support'],
+      ['Protocol', `${GITHUB}/protocol`, true],
+      ['SDK', `${GITHUB}/sdk-ts`, true],
+      ['Changelog', `${GITHUB}/central-city-code/blob/main/CHANGELOG.md`, true],
       ['Status', '/status'],
-      ['Security', '/security'],
-      ['Responsible disclosure', '/security#disclosure'],
     ],
   ],
   [
-    'Terms & policies',
+    'Open Source',
     [
-      ['Privacy policy', '/privacy'],
-      ['Privacy choices', '/privacy-choices'],
-      ['Terms of service', '/terms'],
-      ['Acceptable use policy', '/acceptable-use'],
-      ['Data processing addendum', '/dpa'],
-      ['Imprint', '/imprint'],
+      ['Source code', `${GITHUB}/central-city-code`, true],
+      ['Repositories', '/downtown'],
+      ['Verify', '/downtown/verify'],
+      ['Transparency log', `${GITHUB}/transparency`, true],
     ],
   ],
   [
@@ -42,6 +42,19 @@ const COLUMNS: [string, [string, string][]][] = [
     [
       ['About', '/about'],
       ['Contact', '/contact'],
+      ['Security', '/security'],
+      ['Privacy', '/privacy'],
+    ],
+  ],
+  [
+    'Help & legal',
+    [
+      ['Support', '/support'],
+      ['Terms of service', '/terms'],
+      ['Privacy choices', '/privacy-choices'],
+      ['Acceptable use', '/acceptable-use'],
+      ['Data processing addendum', '/dpa'],
+      ['Imprint', '/imprint'],
     ],
   ],
 ];
@@ -60,15 +73,25 @@ async function footerHrefs(page: Page) {
   ];
 }
 
-test('the footer has the four columns, in order, with their links', async ({ page }) => {
+test('the footer mirrors the header groups, then Help & legal, in order', async ({ page }) => {
   await page.goto('/');
   const footer = page.getByRole('contentinfo');
   await expect(footer.locator('.cc-footer-column h2')).toHaveText(COLUMNS.map(([title]) => title));
   for (const [title, links] of COLUMNS) {
     const column = footer.getByRole('navigation', { name: title });
-    await expect(column.getByRole('link')).toHaveText(links.map(([name]) => name));
-    for (const [name, href] of links)
-      await expect(column.getByRole('link', { name, exact: true })).toHaveAttribute('href', href);
+    await expect(column.getByRole('link')).toHaveCount(links.length);
+    for (const [index, [name, href, external]] of links.entries()) {
+      const link = column.getByRole('link').nth(index);
+      await expect(link).toHaveAttribute('href', href);
+      if (external) {
+        await expect(link).toHaveAccessibleName(`${name} (opens in a new tab)`);
+        await expect(link).toHaveAttribute('target', '_blank');
+        await expect(link).toHaveAttribute('rel', /noopener/);
+      } else {
+        await expect(link).toHaveAccessibleName(name);
+        await expect(link).not.toHaveAttribute('target', /.*/);
+      }
+    }
   }
   await expect(footer.locator('.cc-footer-legal')).toHaveText(
     '© 2026 Central City S.R.L. · Torino, Italy',
@@ -83,6 +106,11 @@ test('every footer link resolves: no 404, and anchors exist', async ({ page }) =
   expect(hrefs.length).toBeGreaterThanOrEqual(20);
   for (const href of hrefs) {
     const url = new URL(href, page.url());
+    // GitHub links are checked by name and attributes above; the rest are same-site pages.
+    if (url.origin === 'https://github.com') {
+      expect(href, href).toMatch(/^https:\/\/github\.com\/centralcity-ai\//);
+      continue;
+    }
     expect(url.origin, href).toBe(new URL(page.url()).origin);
     if (/\.(json|md|txt)$/.test(url.pathname)) {
       expect((await page.request.get(url.toString())).status(), href).toBe(200);
@@ -107,17 +135,22 @@ test('at 360 px the columns are closed accordions and nothing scrolls sideways',
   await page.goto('/');
   const footer = page.getByRole('contentinfo');
   const groups = footer.locator('details');
-  await expect(groups).toHaveCount(4);
+  await expect(groups).toHaveCount(5);
   for (const group of await groups.all()) await expect(group).not.toHaveAttribute('open');
   await expect(footer.getByRole('link', { name: 'Imprint' })).toBeHidden();
-  await footer.getByText('Terms & policies', { exact: true }).click();
+  await footer.getByText('Help & legal', { exact: true }).click();
   await expect(footer.getByRole('link', { name: 'Imprint' })).toBeVisible();
   for (const group of await groups.all()) await group.locator('summary').click();
   await expect(footer.locator('.cc-footer-legal')).toBeVisible();
   // Every footer link is a 44 px target.
   for (const link of await footer.locator('a:visible').all())
     expect((await link.boundingBox())!.height, await link.innerText()).toBeGreaterThanOrEqual(44);
-  const paths = ['/', ...(await footerHrefs(page)).filter((href) => !/\.(json|md)$/.test(href))];
+  const paths = [
+    '/',
+    ...(await footerHrefs(page)).filter(
+      (href) => !/\.(json|md)$/.test(href) && href.startsWith('/'),
+    ),
+  ];
   for (const path of paths) {
     await page.goto(path);
     await expect(page.getByRole('contentinfo')).toBeVisible();

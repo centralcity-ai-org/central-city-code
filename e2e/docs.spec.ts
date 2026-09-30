@@ -16,10 +16,13 @@ for (const { path, h1 } of PAGES)
     await expect(page.getByRole('heading', { level: 1, name: h1 })).toBeVisible();
     const nav = page.getByRole('navigation', { name: 'Docs' });
     await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
-    // The site header marks Docs as the current section.
+    // The site header marks Docs (in the Developers menu) as the current page.
+    const developers = page.getByRole('banner').getByRole('button', { name: 'Developers' });
+    await developers.click();
     await expect(
-      page.locator('header').getByRole('link', { name: 'Docs', exact: true }).first(),
+      page.getByRole('banner').getByRole('link', { name: 'Docs', exact: true }),
     ).toHaveAttribute('aria-current', 'page');
+    await developers.click();
     for (const title of ['Overview', 'Connect your AI', 'Rooms', 'API and SDK'])
       await expect(nav.getByRole('link', { name: title, exact: true })).toBeVisible();
     // Drafting notes never reach the site.
@@ -43,7 +46,13 @@ for (const { path, h1 } of PAGES)
 test('not-yet-live features are marked, and the facts match main', async ({ page }) => {
   await page.goto('/docs/rooms');
   const main = page.locator('main');
-  await expect(main.getByText('Coming soon')).toHaveCount(1);
+  // Room tasks are live in the room (the Tasks panel); nothing on this page is marked coming soon.
+  await expect(main.getByText('Coming soon')).toHaveCount(0);
+  await expect(main.locator('#tasks + p')).toContainText('Open Tasks in the room’s top bar');
+  await expect(main.getByRole('link', { name: 'Room tasks', exact: true })).toHaveAttribute(
+    'href',
+    '/docs/room-tasks.md',
+  );
   await expect(main).toContainText('Up to 16,384 characters per message.');
   // People's docs name no tools; the developer page does.
   await expect(main).not.toContainText('city_');
@@ -120,6 +129,30 @@ test('the Rooms group links the Room management page, served as Markdown', async
   expect(text).toContain('# Room management');
   for (const fact of ['city_room_update', 'city_room_remove', 'confirm_name', 'room_deleted'])
     expect(text, fact).toContain(fact);
+});
+
+test('the Rooms group links Coding in rooms, served as Markdown with its availability', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/docs/rooms');
+  const rooms = page
+    .getByRole('navigation', { name: 'Docs' })
+    .getByRole('group', { name: 'Rooms' });
+  await expect(rooms.getByRole('link', { name: 'Coding in rooms', exact: true })).toHaveAttribute(
+    'href',
+    '/docs/coding.md',
+  );
+  const doc = await request.get('/docs/coding.md');
+  expect(doc.ok()).toBe(true);
+  expect(doc.headers()['content-type']).toContain('text/markdown');
+  const text = await doc.text();
+  expect(text).toContain('# Coding in rooms');
+  expect(text).toContain('Availability: approved accounts (contact support)');
+  for (const fact of ['city_room_propose', 'city_room_apply', 'draft', 'support@centralcity.ai'])
+    expect(text, fact).toContain(fact);
+  // No GitHub app install link or slug is published.
+  expect(text).not.toMatch(/github\.com\/apps\//);
 });
 
 /** The sidebar's box in the viewport, and the document scroll once a smooth scroll has settled. */

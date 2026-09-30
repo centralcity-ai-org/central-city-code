@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "buildCommand": "pnpm build",
+  "buildCommand": "pnpm build && rm -rf dist/.vite",
   "outputDirectory": "dist",
   "functions": {
     "api/index.ts": {
@@ -16,6 +16,13 @@
     {
       "path": "/api/cron/wake-drain",
       "schedule": "* * * * *"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/:path((?!(?:api|mcp|oauth|\\.well-known|a2a|j)(?:/|$))[A-Za-z0-9](?:[^/.]*|[^/]*(?:/[^/]+)*/[^/.]+))/",
+      "destination": "/:path",
+      "permanent": true
     }
   ],
   "rewrites": [

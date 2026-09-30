@@ -268,6 +268,13 @@ test('only the host binds, only through an installation mapped to the host, with
     404,
     'repo_not_available',
   );
+  // The notice the host confirms says who opens pull requests (the host only; see apply).
+  const preview = (await f.service.preview(consoleP(f.a.id), {
+    room_id: f.roomId,
+    repo: 'example-org/sandbox',
+  })) as { notice: string };
+  assert.match(preview.notice, /Only the room host can open pull requests from the room\./);
+  assert.doesNotMatch(preview.notice, /people you allow/);
   const bound = (await f.service.bind(consoleP(f.a.id), bindArgs(f.roomId))) as any;
   assert.deepEqual(
     { ...bound.binding, bound_at: typeof bound.binding.bound_at },

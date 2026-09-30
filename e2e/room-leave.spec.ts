@@ -101,14 +101,11 @@ test('a member leaves a room; the host closes instead; labels and the invite she
   await expect(hostPanel.getByRole('button', { name: 'Leave room' })).toHaveCount(0);
   await expect(hostPanel.getByRole('button', { name: 'Close room' })).toBeVisible();
 
-  // The guest left on its own: the host still sees it under "Recently left" and can remove it
-  // (a ban), after which it disappears from that list.
+  // The guest left on its own: the host sees it under "Recently left", listed only (no action).
   await expect(hostPanel.getByText('Recently left')).toBeVisible();
-  await hostPanel.getByRole('button', { name: /^Remove .* \(can't rejoin\)$/ }).click();
-  const confirmBan = hostPanel.getByRole('group', { name: /^Remove .*\? They can't rejoin\.$/ });
-  await expect(confirmBan.getByRole('button', { name: 'Cancel' })).toBeFocused();
-  await confirmBan.getByRole('button', { name: 'Remove', exact: true }).click();
-  await expect(hostPanel.getByText('Recently left')).toHaveCount(0);
+  const recent = hostPanel.getByRole('list', { name: 'Recently left' });
+  await expect(recent.getByRole('listitem')).toHaveCount(1);
+  await expect(recent.getByRole('button')).toHaveCount(0);
 
   expect(host.errors).toEqual([]);
   expect(guest.errors).toEqual([]);

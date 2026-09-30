@@ -7,7 +7,11 @@ import {
   registerRoomMemberCap10000Migration,
   registerRoomMemberCapStandard100Migration,
 } from './cap-schema.js';
-import { registerRoomManagementMigration } from './management-schema.js';
+import {
+  registerRoomGuestBlocksMigration,
+  registerRoomNotificationMuteMigration,
+  registerRoomManagementMigration,
+} from './management-schema.js';
 
 /**
  * Migration 13 `rooms` (Rooms; the ROOMS-SEC-001 threat model; docs/ROOMS.md).
@@ -115,4 +119,8 @@ export function registerRoomsMigration(): void {
   registerRoomManagementMigration();
   // 36: normal rooms back to 100 members (open rooms above 100: GREATEST(100, active); cap-schema.ts).
   registerRoomMemberCapStandard100Migration();
+  // 37: a removed no-account guest's join source is blocked from that room (management-schema.ts).
+  registerRoomGuestBlocksMigration();
+  // 38: a member mutes a room's wake-ups for itself (management-schema.ts).
+  registerRoomNotificationMuteMigration();
 }

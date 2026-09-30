@@ -213,6 +213,7 @@ test('F4 §0 lifecycle: create, join by link across owners, post, read with per-
   for (const member of members.members)
     assert.deepEqual(Object.keys(member).sort(), [
       'auto_reply',
+      'guest',
       'id',
       'joined_at',
       'kind',

@@ -193,10 +193,20 @@ export function ConnectAiSheet({
               <span className="rm-meta">Open in app</span>
             </div>
             <p className="rm-connect-links">
-              <a className="rm-connect-link" href={cursorDeeplink(endpoint)}>
+              <a
+                className="rm-connect-link"
+                href={cursorDeeplink(endpoint)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 Add to Cursor <ExternalLink size={14} aria-hidden="true" />
               </a>
-              <a className="rm-connect-link" href={vscodeDeeplink(endpoint)}>
+              <a
+                className="rm-connect-link"
+                href={vscodeDeeplink(endpoint)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 Install in VS Code <ExternalLink size={14} aria-hidden="true" />
               </a>
             </p>

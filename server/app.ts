@@ -134,6 +134,11 @@ import {
 
 export interface AppOptions {
   dataDir?: string;
+  /**
+   * Unknown paths outside `/api/` (the local server serves the SPA and 404 page here). Unknown
+   * `/api/` routes always get the same body, and nothing echoes the requested path or query.
+   */
+  notFound?: (request: FastifyRequest, reply: FastifyReply) => unknown;
   now?: () => number;
   startWorkers?: boolean;
   secureCookies?: boolean;
@@ -402,6 +407,14 @@ async function createDatabaseApp(
     } catch {
       done(new ApiError(400, 'Invalid JSON'));
     }
+  });
+  // Fastify's default 404 body repeats the method, path and query string; this one never does.
+  app.setNotFoundHandler((request, reply) => {
+    if (!request.url.startsWith('/api/') && options.notFound)
+      return options.notFound(request, reply);
+    return reply
+      .code(404)
+      .send({ error: request.url.startsWith('/api/') ? 'Unknown API route' : 'Not found' });
   });
   app.setErrorHandler((error, _request, reply) => {
     const retryAfterMs = (error as { retryAfterMs?: unknown }).retryAfterMs;
@@ -1400,6 +1413,7 @@ async function createDatabaseApp(
     optionalOperator,
     authenticate,
     rememberDevice,
+    startSession: (reply, operatorId) => db.transaction((tx) => session(tx, reply, operatorId)),
     hosted: options.hosted,
     secureCookies: options.hosted ? true : (options.secureCookies ?? false),
     ...options.remoteMcp,
@@ -2190,6 +2204,11 @@ async function createDatabaseApp(
     );
     await db.query(
       'DELETE FROM sessions WHERE token_hash IN (SELECT token_hash FROM sessions WHERE expires_at<=$1 LIMIT 1000)',
+      [time],
+    );
+    // Expired guest source blocks (migration 37); they stop blocking at expires_at anyway.
+    await db.query(
+      'DELETE FROM room_guest_blocks WHERE (room_id,source_hash) IN (SELECT room_id,source_hash FROM room_guest_blocks WHERE expires_at<=$1 LIMIT 1000)',
       [time],
     );
     // Answers: asks, receipts and revoked tombstones older than 30 days.

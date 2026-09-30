@@ -202,6 +202,12 @@ test('the build writes every public page, the index and /docs.md', () => {
   for (const path of generated) assert.ok(!existsSync(join(root, 'public', path)), path);
 });
 
+test('llms.txt and llms-full.txt pass the public-safety check', () => {
+  // Static public files skip the docs build, so they are checked here with the same patterns.
+  for (const file of ['public/llms.txt', 'public/llms-full.txt'])
+    assertPublicSafe(file, read(file));
+});
+
 test('the public-safety check rejects internal notes, source paths and raw links', () => {
   const unsafe = [
     'https://raw.githubusercontent.com/example/project/main/docs/ROOMS.md',

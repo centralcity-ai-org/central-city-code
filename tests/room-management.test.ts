@@ -188,7 +188,12 @@ test('remove with a reason: only the removed member sees it; the rejoin block is
     reason: 'Off‮ topic,\n  again',
   });
   assert.equal(removed.statusCode, 200, removed.body);
-  assert.deepEqual(removed.json(), { room_id: roomId, agent_id: bravo, removed: true });
+  assert.deepEqual(removed.json(), {
+    room_id: roomId,
+    agent_id: bravo,
+    removed: true,
+    guest_source_blocked: false,
+  });
   // The thread says who was removed, never why.
   const thread = await texts(app, a, roomId);
   assert.equal(thread.at(-1), 'system: Bravo was removed by the host.');
@@ -686,7 +691,9 @@ test('room deletion is rate limited per owner', async (t) => {
 
 const ORIGIN = 'https://centralcity.ai';
 async function hosted(t: { after(fn: () => Promise<unknown>): void }) {
+  let now = Date.now();
   const app = await createApp({
+    now: () => now,
     database: await PGlite.create('memory://'),
     hosted: {
       databaseUrl: 'postgres://unused.invalid/test',
@@ -749,6 +756,24 @@ async function hosted(t: { after(fn: () => Promise<unknown>): void }) {
     send('POST', `/api/assistant/tools/${name}`, args, { authorization: `Bearer ${key}` });
   const console = (who: Owner, method: string, url: string, body?: unknown) =>
     send(method, url, body, { cookie: who.cookie, 'x-city-workspace': who.id });
+  /** A no-account MCP client at one address (its join source). */
+  const transportFrom = (remoteAddress: string) =>
+    injectTransport(async (req) => {
+      const res = await app.inject({
+        method: req.method,
+        url: req.path,
+        headers: {
+          host: 'centralcity.ai',
+          'x-forwarded-proto': 'https',
+          ...(req.accept ? { accept: req.accept } : {}),
+          ...(req.body === undefined ? {} : { 'content-type': 'application/json' }),
+          ...req.headers,
+        },
+        ...(req.body === undefined ? {} : { payload: JSON.stringify(req.body) }),
+        remoteAddress,
+      });
+      return { statusCode: res.statusCode, body: res.body };
+    }, ORIGIN);
   const transport = injectTransport(async (req) => {
     const res = await app.inject({
       method: req.method,
@@ -825,7 +850,20 @@ async function hosted(t: { after(fn: () => Promise<unknown>): void }) {
     assert.equal(joined.statusCode, 200, joined.body);
     return { a, b, bravo, roomId, link };
   };
-  return { app, tool, console, transport, guestJoin, guestPost, hostedOwner, setup };
+  return {
+    app,
+    tool,
+    console,
+    transport,
+    transportFrom,
+    guestJoin,
+    guestPost,
+    hostedOwner,
+    setup,
+    advance: (ms: number) => {
+      now += ms;
+    },
+  };
 }
 
 test('a muted guest (no account) cannot post over /mcp/open and hears the reason', async (t) => {
@@ -938,4 +976,313 @@ test('a deleted room is 410 room_deleted everywhere: tools, links, short codes, 
   // An outsider with no link learns nothing (404).
   const outsider = await h.console(c, 'GET', `/api/rooms/${roomId}/messages`);
   assert.equal(outsider.statusCode, 404, outsider.body);
+});
+
+test('a removed guest without an account cannot rejoin from its network by any link', async (t) => {
+  const h = await hosted(t);
+  const { a, b, bravo, roomId, link } = await h.setup();
+  const home = h.transportFrom('192.0.2.44');
+  const join = (transport: typeof home, value: string) =>
+    callOpenTool(transport, 'city_join_invite', {
+      invite_link: value,
+      name: 'Returning guest',
+      idempotency_key: randomUUID(),
+    });
+  const joined = await join(home, link.join_link);
+  const guestId = joined.result?.structuredContent?.['agent_id'] as string;
+  assert.ok(guestId, joined.raw.slice(0, 600));
+  const removed = await h.console(a, 'POST', `/api/rooms/${roomId}/members/${guestId}/remove`, {
+    reason: 'Spamming the room',
+  });
+  assert.equal(removed.statusCode, 200, removed.body);
+  assert.equal(removed.json().guest_source_blocked, true);
+  // Only the keyed source hash, the room and the expiry are stored.
+  const rows = (
+    await h.app.city.db.query<Record<string, unknown>>(
+      'SELECT * FROM room_guest_blocks WHERE room_id=$1',
+      [roomId],
+    )
+  ).rows;
+  assert.equal(rows.length, 1);
+  assert.deepEqual(Object.keys(rows[0]!).sort(), ['expires_at', 'room_id', 'source_hash']);
+  assert.ok(!JSON.stringify(rows).includes('192.0.2.44'));
+
+  // The same link, its short code and the room link are refused from the same source, without
+  // the host's reason (someone else on that network may be asking).
+  for (const value of [link.join_link, link.short_code, link.link]) {
+    const again = await join(home, value);
+    assert.equal(outcomeErrorCode(again), 'removed_from_room', again.raw.slice(0, 600));
+    assert.ok(!again.raw.includes('Spamming'), 'the reason is never told to the source');
+  }
+  // So are links minted after the removal.
+  const fresh = await h.tool(a.key, 'city_room_link', {
+    room_id: roomId,
+    rotate: true,
+    idempotency_key: randomUUID(),
+  });
+  assert.equal(fresh.statusCode, 200, fresh.body);
+  for (const value of [fresh.json().join_link, fresh.json().short_code, fresh.json().link]) {
+    const again = await join(home, value);
+    assert.equal(outcomeErrorCode(again), 'removed_from_room', again.raw.slice(0, 600));
+  }
+  // The REST guest path (bootstrap) is refused too, with may_rejoin false.
+  const boot = await h.app.inject({
+    method: 'POST',
+    url: '/api/public/invites/bootstrap',
+    headers: {
+      'content-type': 'application/json',
+      'x-city-request': '1',
+      host: 'centralcity.ai',
+      origin: ORIGIN,
+    },
+    payload: JSON.stringify({ code: fresh.json().join_link }),
+    remoteAddress: '192.0.2.44',
+  });
+  assert.equal(boot.statusCode, 403, boot.body);
+  assert.equal(boot.json().code, 'removed_from_room');
+  assert.deepEqual(boot.json().details, { reason: null, may_rejoin: false });
+
+  // Another network still joins with the live link; signed-in owners are unaffected.
+  const elsewhere = await join(h.transportFrom('198.51.100.90'), fresh.json().join_link);
+  assert.ok(elsewhere.result?.structuredContent?.['agent_id'], elsewhere.raw.slice(0, 600));
+  const c = await h.hostedOwner('Signed-in newcomer');
+  const signedIn = await h.tool(c.key, 'city_join_room', {
+    link: fresh.json().link,
+    create: { name: 'Signed-in AI' },
+    idempotency_key: randomUUID(),
+  });
+  assert.equal(signedIn.statusCode, 200, signedIn.body);
+  // Removing a signed-in member records no source block (its owner is blocked instead).
+  const member = await h.console(a, 'POST', `/api/rooms/${roomId}/members/${bravo}/remove`, {});
+  assert.equal(member.json().guest_source_blocked, false);
+  const back = await h.tool(b.key, 'city_join_room', {
+    link: fresh.json().link,
+    agent_id: bravo,
+    idempotency_key: randomUUID(),
+  });
+  assert.equal(back.json().code, 'removed_from_room');
+
+  // The block ends after 30 days, and the sweep removes it.
+  h.advance(30 * 86_400_000 + 1000);
+  const later = await h.tool(a.key, 'city_room_link', {
+    room_id: roomId,
+    rotate: true,
+    idempotency_key: randomUUID(),
+  });
+  const returned = await join(home, later.json().join_link);
+  assert.ok(returned.result?.structuredContent?.['agent_id'], returned.raw.slice(0, 600));
+  await h.app.city.tick();
+  assert.equal(
+    (await h.app.city.db.query('SELECT 1 FROM room_guest_blocks WHERE room_id=$1', [roomId])).rows
+      .length,
+    0,
+  );
+});
+
+test('block_rejoin false records no guest source block', async (t) => {
+  const h = await hosted(t);
+  const { a, roomId, link } = await h.setup();
+  const home = h.transportFrom('192.0.2.55');
+  const joined = await callOpenTool(home, 'city_join_invite', {
+    invite_link: link.join_link,
+    name: 'Guest on a break',
+    idempotency_key: randomUUID(),
+  });
+  const guestId = joined.result?.structuredContent?.['agent_id'] as string;
+  const removed = await h.tool(a.key, 'city_room_remove', {
+    room_id: roomId,
+    agent_id: guestId,
+    block_rejoin: false,
+  });
+  assert.equal(removed.statusCode, 200, removed.body);
+  assert.equal(removed.json().guest_source_blocked, false);
+  const again = await callOpenTool(home, 'city_join_invite', {
+    invite_link: link.join_link,
+    name: 'Guest is back',
+    idempotency_key: randomUUID(),
+  });
+  assert.ok(again.result?.structuredContent?.['agent_id'], again.raw.slice(0, 600));
+});
+test('members carry guest: true only for invited AIs without an account (REST, MCP, /mcp/open)', async (t) => {
+  const h = await hosted(t);
+  const { a, b, bravo, roomId, link } = await h.setup();
+  const guest = await h.guestJoin(link.join_link);
+  const flags = (members: Array<{ id: string; guest?: boolean }>) =>
+    Object.fromEntries(members.map((m) => [m.id, m.guest]));
+  // The host's console list, a signed-in member's MCP list, and the guest's own view agree.
+  const viaRest = await h.console(a, 'GET', `/api/rooms/${roomId}/members`);
+  assert.equal(viaRest.statusCode, 200, viaRest.body);
+  const rest = flags(viaRest.json().members);
+  assert.equal(rest[guest.agentId], true);
+  assert.equal(rest[bravo], false);
+  assert.equal(Object.values(rest).filter((flag) => flag === true).length, 1);
+  assert.ok(
+    Object.values(rest).every((flag) => typeof flag === 'boolean'),
+    'always sent',
+  );
+  const viaTool = await h.tool(b.key, 'city_room_members', { room_id: roomId });
+  assert.equal(viaTool.statusCode, 200, viaTool.body);
+  assert.deepEqual(flags(viaTool.json().members), rest);
+  const viaOpen = await callOpenTool(h.transport, 'city_room_members', {
+    room_credential: guest.credential,
+  });
+  assert.equal(outcomeErrorCode(viaOpen), null, viaOpen.raw.slice(0, 600));
+  assert.deepEqual(
+    flags(viaOpen.result!.structuredContent!['members'] as Array<{ id: string; guest: boolean }>),
+    rest,
+  );
+});
+
+test('the host lifts guest network blocks explicitly; rotating the link keeps them', async (t) => {
+  const h = await hosted(t);
+  const { a, b, roomId, link } = await h.setup();
+  const home = h.transportFrom('192.0.2.66');
+  const join = (value: string) =>
+    callOpenTool(home, 'city_join_invite', {
+      invite_link: value,
+      name: 'Blocked guest',
+      idempotency_key: randomUUID(),
+    });
+  const hostView = async () =>
+    (await h.console(a, 'GET', '/api/rooms'))
+      .json()
+      .rooms.find((r: { id: string }) => r.id === roomId);
+  assert.equal((await hostView()).guest_blocks, 0);
+  const joined = await join(link.join_link);
+  const guestId = joined.result?.structuredContent?.['agent_id'] as string;
+  assert.ok(guestId, joined.raw.slice(0, 600));
+  const removed = await h.console(a, 'POST', `/api/rooms/${roomId}/members/${guestId}/remove`, {});
+  assert.equal(removed.json().guest_source_blocked, true);
+  assert.equal((await hostView()).guest_blocks, 1);
+  // Only the host's console view carries the count.
+  const memberView = (await h.console(b, 'GET', '/api/rooms'))
+    .json()
+    .rooms.find((r: { id: string }) => r.id === roomId);
+  assert.equal(memberView.guest_blocks, undefined);
+
+  // Rotating the link (as the removal dialog's "reset the invite link" does) keeps the block.
+  const rotated = await h.tool(a.key, 'city_room_link', {
+    room_id: roomId,
+    rotate: true,
+    idempotency_key: randomUUID(),
+  });
+  assert.equal(rotated.statusCode, 200, rotated.body);
+  assert.equal((await hostView()).guest_blocks, 1);
+  assert.equal(outcomeErrorCode(await join(rotated.json().join_link)), 'removed_from_room');
+
+  // Only the host lifts blocks: a member hears host_required, an outsider 404.
+  const byMember = await h.console(b, 'DELETE', `/api/rooms/${roomId}/guest-blocks`);
+  assert.equal(byMember.statusCode, 403, byMember.body);
+  assert.equal(byMember.json().code, 'host_required');
+  const c = await h.hostedOwner('Outsider workspace');
+  const byOutsider = await h.console(c, 'DELETE', `/api/rooms/${roomId}/guest-blocks`);
+  assert.equal(byOutsider.statusCode, 404, byOutsider.body);
+  assert.equal((await hostView()).guest_blocks, 1);
+
+  const cleared = await h.console(a, 'DELETE', `/api/rooms/${roomId}/guest-blocks`);
+  assert.equal(cleared.statusCode, 200, cleared.body);
+  assert.deepEqual(cleared.json(), { room_id: roomId, cleared: 1 });
+  assert.equal((await hostView()).guest_blocks, 0);
+  const audited = await h.app.city.db.query(
+    "SELECT 1 FROM room_events WHERE room_id=$1 AND action='guest_blocks.cleared'",
+    [roomId],
+  );
+  assert.equal(audited.rows.length, 1);
+  // That network may join again with a live link; clearing again lifts nothing.
+  const back = await join(rotated.json().join_link);
+  assert.ok(back.result?.structuredContent?.['agent_id'], back.raw.slice(0, 600));
+  const again = await h.console(a, 'DELETE', `/api/rooms/${roomId}/guest-blocks`);
+  assert.deepEqual(again.json(), { room_id: roomId, cleared: 0 });
+
+  // A deleted room answers 410 to its host.
+  const room = await hostView();
+  await h.console(a, 'DELETE', `/api/rooms/${roomId}`, { confirm_name: room.name });
+  const gone = await h.console(a, 'DELETE', `/api/rooms/${roomId}/guest-blocks`);
+  assert.equal(gone.statusCode, 410, gone.body);
+});
+
+test('a member mutes a room for itself: no wake-up or mention, still reads and posts', async (t) => {
+  const app = await fixture(t);
+  const { a, b, bravo, roomId, link } = await room(app);
+  const bOwner = (
+    await app.city.db.query<{ owner_id: string }>(
+      'SELECT owner_id FROM room_members WHERE agent_id=$1',
+      [bravo],
+    )
+  ).rows[0]!.owner_id;
+  await app.city.db.query(
+    `INSERT INTO wake_webhooks(id,agent_id,owner_id,url,events,salt,created_at,created_by)
+      VALUES('hook-self',$1,$2,'https://hooks.example.test/wake',ARRAY['room_post','mention'],'00',0,'test')`,
+    [bravo, bOwner],
+  );
+  const bravo2 = await agent(app, b.key, 'Bravo two');
+  await ok(app, b.key, 'city_join_room', { link, agent_id: bravo2, idempotency_key: randomUUID() });
+  const say = (text: string) =>
+    rest(app, a, 'POST', `/api/rooms/${roomId}/messages`, { text, idempotency_key: randomUUID() });
+  const counts = async () => {
+    const q = async (sql: string, id: string) =>
+      Number((await app.city.db.query<{ n: string }>(sql, [id])).rows[0]!.n);
+    return {
+      mentions:
+        (await q('SELECT count(*) AS n FROM mentions WHERE agent_id=$1', bravo)) +
+        (await q('SELECT count(*) AS n FROM mentions WHERE agent_id=$1', bravo2)),
+      outbox: await q('SELECT count(*) AS n FROM wake_outbox WHERE agent_id=$1', bravo),
+    };
+  };
+  const view = async (who: Owner) =>
+    (await rest(app, who, 'GET', '/api/rooms'))
+      .json()
+      .rooms.find((r: { id: string }) => r.id === roomId);
+  assert.equal((await say('@Bravo first')).statusCode, 201);
+  assert.deepEqual(await counts(), { mentions: 1, outbox: 1 });
+  await app.city.db.query('DELETE FROM wake_outbox');
+  assert.equal((await view(b)).notifications_muted, false);
+
+  const muted = await rest(app, b, 'POST', `/api/rooms/${roomId}/notifications`, { muted: true });
+  assert.equal(muted.statusCode, 200, muted.body);
+  assert.deepEqual(muted.json(), { room_id: roomId, notifications_muted: true });
+  assert.equal((await view(b)).notifications_muted, true);
+  // Only the viewer's own setting: the host's view is unaffected.
+  assert.equal((await view(a)).notifications_muted, false);
+  // No wake-up and no mention for any of this owner's agents.
+  assert.equal((await say('@Bravo second, @Bravo two too')).statusCode, 201);
+  assert.deepEqual(await counts(), { mentions: 1, outbox: 0 });
+  // It still reads and posts (unlike the host's mute).
+  const page = await ok(app, b.key, 'city_room_read', { room_id: roomId, since: 0 });
+  assert.ok(page.messages.some((m: { text: string }) => m.text.startsWith('@Bravo second')));
+  const posted = await call(app, b.key, 'city_room_post', {
+    room_id: roomId,
+    agent_id: bravo,
+    text: 'Still here',
+    idempotency_key: randomUUID(),
+  });
+  assert.equal(posted.statusCode, 200, posted.body);
+  // Leaving and rejoining keeps the setting.
+  await ok(app, b.key, 'city_room_leave', { room_id: roomId, agent_id: bravo2 });
+  await ok(app, b.key, 'city_join_room', { link, agent_id: bravo2, idempotency_key: randomUUID() });
+  assert.equal((await view(b)).notifications_muted, true);
+
+  const unmuted = await rest(app, b, 'POST', `/api/rooms/${roomId}/notifications`, {
+    muted: false,
+  });
+  assert.deepEqual(unmuted.json(), { room_id: roomId, notifications_muted: false });
+  assert.equal((await say('@Bravo third')).statusCode, 201);
+  assert.deepEqual(await counts(), { mentions: 2, outbox: 1 });
+  // Members only; the body is exactly { muted }.
+  const c = await owner(app, 'Outsider workspace');
+  assert.equal(
+    (await rest(app, c, 'POST', `/api/rooms/${roomId}/notifications`, { muted: true })).statusCode,
+    404,
+  );
+  for (const body of [{}, { muted: 'yes' }, { muted: true, agent_id: bravo }])
+    assert.equal(
+      (await rest(app, b, 'POST', `/api/rooms/${roomId}/notifications`, body)).statusCode,
+      400,
+    );
+  // A deleted room answers 410 to its former members.
+  await rest(app, a, 'DELETE', `/api/rooms/${roomId}`, { confirm_name: 'Synthetic desk' });
+  assert.equal(
+    (await rest(app, b, 'POST', `/api/rooms/${roomId}/notifications`, { muted: true })).statusCode,
+    410,
+  );
 });

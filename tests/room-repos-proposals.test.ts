@@ -666,3 +666,36 @@ test('an owner the host muted cannot propose or review (no stamped message, noth
   const again = await propose(f, { summary: 'After the mute' });
   assert.equal(again.proposal.number, 2);
 });
+
+test('the base must be the default branch head or an earlier commit on it', async (t) => {
+  const f = await fixture(t);
+  const repo = f.gh.repos[0]!;
+  const files = repo.commits[head]!;
+  // History: older <- head (main). A fork pull request head and an unmerged branch are one commit
+  // ahead of main; a diverged commit branches off older. All are resolvable by SHA on GitHub.
+  const older = commitSha('p-older');
+  const forkPullHead = commitSha('p-fork-pull-head');
+  const unmerged = commitSha('p-unmerged-branch');
+  const diverged = commitSha('p-diverged');
+  repo.commits[older] = { ...files };
+  repo.commits[forkPullHead] = { ...files, '.github/workflows/x.yml': 'on: push\n' };
+  repo.commits[unmerged] = { ...files, 'extra.txt': 'hidden\n' };
+  repo.commits[diverged] = { ...files };
+  repo.branches.feature = unmerged;
+  repo.parents = {
+    [older]: [],
+    [head]: [older],
+    [forkPullHead]: [head],
+    [unmerged]: [head],
+    [diverged]: [older],
+  };
+  for (const base of [forkPullHead, unmerged, diverged])
+    await rejects(propose(f, { base }), 422, 'base_not_on_default_branch');
+  const compared = f.gh.requests.filter((request) => request.path.includes('/compare/'));
+  assert.ok(compared.some((request) => request.path.includes(`${head}...${forkPullHead}`)));
+  // An earlier commit on main and the head itself are fine.
+  const onOlder = await propose(f, { base: older });
+  assert.equal(onOlder.proposal.base.commit, older);
+  const onHead = await propose(f);
+  assert.ok(onHead.proposal.id);
+});

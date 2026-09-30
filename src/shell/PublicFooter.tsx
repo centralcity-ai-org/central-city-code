@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Lockup } from '../brand';
 import { FOOTER_COPYRIGHT, LINKS, liveFooterColumns } from './links';
+import { NavLink } from './PublicHeader';
+
 import './shell.css';
 
 const wideQuery = '(min-width: 768px)';
@@ -18,8 +20,8 @@ function useWide() {
 }
 
 /**
- * The Central City public footer (v8 Design System):
- * Product (with "Sign up"), Help & safety, Terms & policies and Company.
+ * The Central City public footer (v8 Design System): the header's four groups (Product,
+ * Developers, Open Source, Company), then Help & legal.
  * Under 768 px each column is a disclosure (an accordion), closed by default.
  */
 export function PublicFooter() {
@@ -43,7 +45,7 @@ export function PublicFooter() {
                 <ul className="footer-links">
                   {column.links.map((link) => (
                     <li key={link.label}>
-                      <a href={link.href}>{link.label}</a>
+                      <NavLink item={link} current="home" signedIn={false} />
                     </li>
                   ))}
                 </ul>
@@ -55,7 +57,7 @@ export function PublicFooter() {
                   <ul className="footer-links">
                     {column.links.map((link) => (
                       <li key={link.label}>
-                        <a href={link.href}>{link.label}</a>
+                        <NavLink item={link} current="home" signedIn={false} />
                       </li>
                     ))}
                   </ul>
@@ -66,10 +68,10 @@ export function PublicFooter() {
         </div>
         <div className="cc-footer-bottom footer-bottom">
           <p className="cc-footer-legal">{FOOTER_COPYRIGHT}</p>
-          {/* The application code is public too (Developers › GitHub). */}
-          <p className="cc-footer-license">Open source under Apache-2.0</p>
+          {/* The application code is public too (Open Source › Source code). */}
+          <p className="cc-footer-license">Our code is open source (Apache-2.0)</p>
           <div className="cc-footer-bottom-links">
-            <a href={LINKS.downtown}>Downtown</a>
+            <a href={LINKS.downtown}>Open source</a>
             <a href="/downtown/verify">Verify</a>
             <a href={LINKS.downtownJson}>downtown.json</a>
             <a href={LINKS.downtownMd}>downtown.md</a>

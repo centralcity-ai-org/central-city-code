@@ -16,6 +16,13 @@ export type Role = 'host' | 'member' | 'guest';
 export type MessageFormat = 'plain' | 'markdown';
 /** A member that left on its own (host view). */
 export type LeftMember = { id: string; name: string; owner_label: string; left_at: string };
+/** A member the host muted (active or left): it still reads, but cannot post. */
+export type MutedMember = {
+  agent_id: string;
+  muted_at: string;
+  reason: string | null;
+  active: boolean;
+};
 /** Older servers send no format: that is plain text. */
 const withFormat = (message: RoomMessage): RoomMessage => ({
   ...message,
@@ -36,6 +43,11 @@ export type Member = Agent & {
   status?: MemberStatus;
   /** Last room activity (minute precision); null unless you host the room or own the member. */
   last_active_at?: string | null;
+  /**
+   * True for a guest without an account (joined through an invite link); such a guest gets a new
+   * identity on every join. Absent from servers that don't mark guests yet: treated as false.
+   */
+  guest?: boolean;
 };
 export type RoomMessage = {
   id: string;
@@ -85,8 +97,25 @@ export type ReadPage = {
 /** A join link, with its short code (7K4M-Q9XP) for the same invite when the server gives one. */
 export type JoinLink = { url: string; expires_at: string; id: string; code?: string };
 
+/**
+ * 'removed': the host removed the caller's owner; `reason` is the host's own words (untrusted:
+ * show it as plain text only) and `mayRejoin` whether a live link lets it back in.
+ * 'deleted': the host deleted the room.
+ */
 export class RoomsError extends Error {
-  constructor(public code: 'invite_invalid' | 'access_denied' | 'timeout') {
+  constructor(
+    public code:
+      | 'invite_invalid'
+      | 'access_denied'
+      | 'timeout'
+      | 'removed'
+      | 'deleted'
+      | 'muted'
+      | 'member_gone',
+    public removal?: { reason: string | null; mayRejoin: boolean },
+    /** For 'muted': the host's reason (their words; render as plain text only). */
+    public muteReason?: string | null,
+  ) {
     super(code);
   }
 }
@@ -139,12 +168,41 @@ export interface RoomsClient {
   revokeJoinLink(input: { id: string }): Promise<void>;
   /** Rotate the room invite: every earlier link, and every join link wrapping one, stops. */
   rotate(input: { room_id: string; idempotency_key: string }): Promise<void>;
-  remove(input: { room_id: string; agent_id: string }): Promise<void>;
+  /**
+   * Host only. `reason` (at most 200 characters) is shown only to the removed member;
+   * `block_rejoin` (server default true) keeps its owner from joining again.
+   */
+  remove(input: {
+    room_id: string;
+    agent_id: string;
+    reason?: string;
+    block_rejoin?: boolean;
+  }): Promise<void>;
+  /** Host only: the room's name and/or topic (`PATCH /api/rooms/:room`). */
+  rename(input: {
+    room_id: string;
+    name?: string;
+    topic?: string;
+  }): Promise<{ room: Room; changed: boolean }>;
+  /** Host only: deletes the room for everyone; `confirm_name` must equal its name exactly. */
+  deleteRoom(input: { room_id: string; confirm_name: string }): Promise<void>;
   close(input: { room_id: string }): Promise<void>;
   /** Your member agent leaves (not the host); agent_id when you have several there. */
   leave(input: { room_id: string; agent_id?: string }): Promise<void>;
-  /** Host only: members that left on their own recently (they can still be removed). */
+  /** Host only: members that left on their own recently (listed only). */
   recentlyLeft(input: { room_id: string }): Promise<LeftMember[]>;
+  /**
+   * Host only: mute or unmute one member (`POST /api/rooms/:room/mute`). A muted member still
+   * reads but cannot post; `reason` (at most 200 characters) is shown only to the muted member.
+   */
+  mute(input: {
+    room_id: string;
+    agent_id: string;
+    muted: boolean;
+    reason?: string;
+  }): Promise<void>;
+  /** Host only: the room's muted members (`GET /api/rooms/:room/mutes`). */
+  mutes(input: { room_id: string }): Promise<MutedMember[]>;
   /** Host only: who reads earlier messages (`POST /api/rooms/:room/settings`). */
   setHistory(input: { room_id: string; history: History }): Promise<Room>;
   /** Host only: the member cap, from max(current members, 2) to 100. */
@@ -211,6 +269,21 @@ const get = <T>(url: string) => api<T>(url, undefined, 'GET');
 function mapped<T>(operation: Promise<T>, joining = false): Promise<T> {
   return operation.catch((error: unknown) => {
     if (error instanceof ApiError) {
+      if (error.status === 410 && error.code === 'room_deleted') throw new RoomsError('deleted');
+      if (error.status === 403 && error.code === 'removed_from_room') {
+        const details = (error.details ?? {}) as { reason?: unknown; may_rejoin?: unknown };
+        throw new RoomsError('removed', {
+          reason: typeof details.reason === 'string' && details.reason ? details.reason : null,
+          mayRejoin: details.may_rejoin === true,
+        });
+      }
+      if (error.status === 403 && error.code === 'muted_in_room') {
+        const details = (error.details ?? {}) as { reason?: unknown };
+        const reason = typeof details.reason === 'string' && details.reason ? details.reason : null;
+        throw new RoomsError('muted', undefined, reason);
+      }
+      if (error.status === 404 && error.code === 'member_not_found')
+        throw new RoomsError('member_gone');
       // A join answers 404 for an unknown, expired, rotated or used-up invite.
       if (joining && error.status === 404) throw new RoomsError('invite_invalid');
       if (!joining && error.status === 404) throw new RoomsError('access_denied');
@@ -281,8 +354,22 @@ export function createHttpRoomsClient(): RoomsClient {
     async rotate({ room_id, idempotency_key }) {
       await mapped(api(`${path(room_id)}/link/rotate`, { idempotency_key }));
     },
-    async remove({ room_id, agent_id }) {
-      await mapped(api(`${path(room_id)}/members/${encodeURIComponent(agent_id)}/remove`, {}));
+    async remove({ room_id, agent_id, reason, block_rejoin }) {
+      await mapped(
+        api(`${path(room_id)}/members/${encodeURIComponent(agent_id)}/remove`, {
+          ...(reason ? { reason } : {}),
+          ...(block_rejoin === undefined ? {} : { block_rejoin }),
+        }),
+      );
+    },
+    async rename({ room_id, ...body }) {
+      const value = await mapped(
+        api<{ room: ServerRoom; changed: boolean }>(path(room_id), body, 'PATCH'),
+      );
+      return { room: room(value.room), changed: value.changed };
+    },
+    async deleteRoom({ room_id, confirm_name }) {
+      await mapped(api(path(room_id), { confirm_name }, 'DELETE'));
     },
     async close({ room_id }) {
       await mapped(api(`${path(room_id)}/close`, {}));
@@ -295,6 +382,14 @@ export function createHttpRoomsClient(): RoomsClient {
     },
     async recentlyLeft({ room_id }) {
       return (await mapped(get<{ left: LeftMember[] }>(`${path(room_id)}/left`))).left;
+    },
+    async mute({ room_id, agent_id, muted, reason }) {
+      await mapped(
+        api(`${path(room_id)}/mute`, { agent_id, muted, ...(reason ? { reason } : {}) }),
+      );
+    },
+    async mutes({ room_id }) {
+      return (await mapped(get<{ muted: MutedMember[] }>(`${path(room_id)}/mutes`))).muted;
     },
     async leave({ room_id, agent_id }) {
       await mapped(api(`${path(room_id)}/leave`, agent_id ? { agent_id } : {}));

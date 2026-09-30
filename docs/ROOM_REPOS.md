@@ -116,8 +116,8 @@ console's CSRF guard applies to every POST):
 | `POST /api/rooms/:room/repo/disconnect {agent_id?}`                                         | Host only: disconnects; reads stop at once.                                                                                                                  |
 
 - The notice (shown by the UI from `preview`): "All members of this room will be able to read
-  files in {owner/repo} (a private repository) and propose changes. Only people you allow can
-  open pull requests. Pull requests opened from the room run the proposed code in the
+  files in {owner/repo} (a private repository) and propose changes. Only the room host can open
+  pull requests from the room. Pull requests opened from the room run the proposed code in the
   repository's CI with its secrets."
 - The repository must be covered by an installation mapped to the host.
 - "Not covered", "not yours" and "does not exist" share one answer: `404 repo_not_available`.

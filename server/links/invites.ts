@@ -131,6 +131,70 @@ interface Dependencies {
   rooms: Rooms;
   limit(key: string, max: number, window: number): Promise<void>;
 }
+/**
+ * Short-code attempts per hour for a whole address prefix (right or wrong), on top of
+ * SHORT_CODE_LIMITS.attemptsPerAddressPerHour for one source. A home IPv6 /56 holds 256 /64s, so
+ * without these one subscriber could use up the global budget and pause short codes for
+ * everyone. IPv4 prefixes are shared far more (campus and carrier NAT), so their tiers are wider.
+ */
+export const SHORT_CODE_PREFIX_LIMITS = {
+  /** IPv6 /56, /48 and /32. */
+  ipv6: { site: 300, network: 1_000, region: 10_000 },
+  /** IPv4 /24, /16 and /8. */
+  ipv4: { site: 1_000, network: 5_000, region: 10_000 },
+} as const;
+
+/** Region prefix -> the hour window it was last logged in (per instance, bounded). */
+const regionTripsLogged = new Map<string, number>();
+/** True once per hour window per region prefix, so a probing network logs one line, not many. */
+function firstRegionTrip(prefix: string, time: number): boolean {
+  const window = Math.floor(time / 3_600_000);
+  if (regionTripsLogged.get(prefix) === window) return false;
+  if (regionTripsLogged.size >= 1_000) regionTripsLogged.clear();
+  regionTripsLogged.set(prefix, window);
+  return true;
+}
+
+/**
+ * Charges one short-code attempt (right or wrong) from `address`: its source (IPv6 /64 or one
+ * IPv4 address), then its site (/56 or /24), network (/48 or /16) and region (/32 or /8), then the
+ * global budget, as budget() does for creations. Every short-code path shares these keys (/j,
+ * bootstrap, /mcp/open and the signed-in join). Keys are keyed with the server secret when it is
+ * set, the plain prefix else (local development).
+ */
+export async function chargeShortCodeAttempt(
+  limit: (key: string, max: number, window: number) => Promise<void>,
+  address: string,
+  log: (line: string) => void = console.warn,
+  now: () => number = Date.now,
+): Promise<void> {
+  const prefixes = clientAddressPrefixes(address);
+  const tiers = SHORT_CODE_PREFIX_LIMITS[prefixes.source.endsWith('::/64') ? 'ipv6' : 'ipv4'];
+  const root = process.env.CITY_RATE_LIMIT_KEY;
+  const keyed = (scope: string, value: string) =>
+    root && root.length >= 32 ? unclaimedScopeId(root, `invite-${scope}`, value) : value;
+  for (const [name, scope, value, max] of [
+    ['anon', 'source', prefixes.source, SHORT_CODE_LIMITS.attemptsPerAddressPerHour],
+    ['site', 'site', prefixes.site, tiers.site],
+    ['network', 'network', prefixes.network, tiers.network],
+    ['region', 'region', prefixes.region, tiers.region],
+  ] as const)
+    await limit(`room-join:short-code-${name}:${keyed(scope, value)}`, max, 3_600_000).catch(
+      (error: unknown) => {
+        // A region tier tripping means a whole /32 (or IPv4 /8) is probing: worth an operator's
+        // eye. The line carries the tier and the masked prefix only, never a full address.
+        if (
+          name === 'region' &&
+          (error as { statusCode?: number }).statusCode === 429 &&
+          firstRegionTrip(value, now())
+        )
+          log(JSON.stringify({ event: 'short_code.region_limited', tier: name, prefix: value }));
+        throw error;
+      },
+    );
+  await limit('room-join:short-code-global', SHORT_CODE_LIMITS.attemptsGlobalPerHour, 3_600_000);
+}
+
 export function createRoomInvites(d: Dependencies) {
   const enabled = () => process.env.CITY_INVITE_FLOW === '1';
   function requireEnabled() {
@@ -144,6 +208,31 @@ export function createRoomInvites(d: Dependencies) {
   }
   const source = (address: string) =>
     unclaimedScopeId(secret(), 'invite-source', clientAddressPrefixes(address).source);
+  /**
+   * A guest without an account removed from this room blocks its join source from joining the
+   * room again as a guest for a while (migration 37; rooms/service.ts blockGuestSource). The
+   * source may be shared (one IPv4 address behind NAT), so the host's removal reason is never
+   * told here: the caller may be someone else on the same network. Signing in still works.
+   */
+  async function refuseBlockedSource(
+    q: Pick<Transaction, 'query'>,
+    roomId: string,
+    address: string,
+    time: number,
+  ) {
+    const blocked = await q.query(
+      'SELECT 1 FROM room_guest_blocks WHERE room_id=$1 AND source_hash=$2 AND expires_at>$3',
+      [roomId, source(address), time],
+    );
+    if (!blocked.rows.length) return;
+    const error = new RoomError(
+      403,
+      'removed_from_room',
+      'The host removed a guest who joined from this network, so guests without an account cannot join this room from here for now. Sign in to join, or ask the host.',
+    );
+    error.details = { reason: null, may_rejoin: false };
+    throw error;
+  }
   /**
    * The room host of a pasted full-length join code when that host is a stress-test operator
    * (server/stress-allowlist.ts), else null. Its guests skip the unclaimed caps (per address and
@@ -466,26 +555,7 @@ export function createRoomInvites(d: Dependencies) {
    * One per-address budget for every anonymous short-code lookup (the join paths and GET /j), so
    * no surface is a cheaper validity oracle than the others.
    */
-  async function chargeShortCode(address: string) {
-    // Keyed like the invite paths when the server secret is set; the plain address prefix else
-    // (local development), so the budget applies either way.
-    let key: string;
-    try {
-      key = source(address);
-    } catch {
-      key = clientAddressPrefixes(address).source;
-    }
-    await d.limit(
-      `room-join:short-code-anon:${key}`,
-      SHORT_CODE_LIMITS.attemptsPerAddressPerHour,
-      3_600_000,
-    );
-    await d.limit(
-      'room-join:short-code-global',
-      SHORT_CODE_LIMITS.attemptsGlobalPerHour,
-      3_600_000,
-    );
-  }
+  const chargeShortCode = (address: string) => chargeShortCodeAttempt(d.limit, address);
   /**
    * The join code for pasted text: a /j/ link or code (inviteCodeFrom), or a room link
    * (/r/<slug>#crr_...) of this origin, which stands for the room's current default join code
@@ -527,6 +597,8 @@ export function createRoomInvites(d: Dependencies) {
       !(await d.rooms.describeInvite(d.db, row.room_link_id, time))
     )
       throw invalid();
+    // Early answer for a blocked source (redeem checks again under its locks).
+    if (row.room_id) await refuseBlockedSource(d.db, row.room_id, address, time);
     const handle = `cir_${randomBytes(32).toString('base64url')}`;
     const expires = Math.min(
       time + 600_000,
@@ -669,6 +741,9 @@ export function createRoomInvites(d: Dependencies) {
       await tx.query('SELECT operator_id FROM workspaces WHERE operator_id=$1 FOR UPDATE', [
         link.owner_id,
       ]);
+      // Under the host lock, which a removal also holds (rooms.remove locks the host's workspace):
+      // a redeem queued behind a removal sees the block that removal committed.
+      await refuseBlockedSource(tx, link.room_id, address, time);
       const hosted = Number(
         (
           await tx.query<{ n: string }>(

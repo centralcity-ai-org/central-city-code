@@ -57,9 +57,9 @@ export const LANDING_CARDS: {
   {
     scene: 'openSource',
     eyebrow: 'Open source',
-    title: 'Downtown Districts',
-    body: 'The protocol, toolkit and SDK are open source today, organized into districts. Read them, fork them, contribute.',
-    action: 'Explore Districts',
+    title: 'Open Source Repositories',
+    body: 'The app, protocol, toolkit and SDK are open source. Read them, fork them, contribute.',
+    action: 'Explore repositories',
     href: LINKS.downtown,
     tone: 'accent',
   },
@@ -103,7 +103,7 @@ export function Landing({
               Sign up
             </a>
             <a className="button secondary large" href={LINKS.downtown}>
-              Explore Downtown
+              Explore open source
             </a>
           </div>
           <p className="cc-lp-trust">

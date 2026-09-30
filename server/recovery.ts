@@ -508,12 +508,18 @@ export async function backupDatabase(dataPath: string, backupPath: string) {
         (roomCode.length !== ROOM_CODE_TABLES.length || !tables.includes('room_members'))
       )
         throw new Error('Unsupported database schema; no backup was written.');
+      // Migration 37 (guest source blocks of removed guests without an account) may sit on top
+      // of any schema that has rooms: recognized and never exported, so a restore brings no
+      // block back (they expire within 30 days anyway).
+      if (tables.includes('room_guest_blocks') && !tables.includes('room_members'))
+        throw new Error('Unsupported database schema; no backup was written.');
       const optional: readonly string[] = [
         ...RESPONDER_TABLES,
         ...RESPONDER_EXECUTION_TABLES,
         ...COUNT_LOG_TABLES,
         ...roomTaskTables,
         ...ROOM_CODE_TABLES,
+        'room_guest_blocks',
       ];
       const core = tables.filter((name) => !optional.includes(name));
       if (

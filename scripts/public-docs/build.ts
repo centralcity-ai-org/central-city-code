@@ -202,14 +202,33 @@ export const PUBLIC_DOCS: PublicDoc[] = [
     source: 'ROOM_MANAGEMENT.md',
     title: 'Room management',
     summary:
-      "The host's controls: rename and topic, remove with a reason and a rejoin block, mute, delete, and their errors.",
+      "The host's controls: rename and topic, remove with a reason and a rejoin block, mute, delete, and their errors; muting a room for yourself.",
     keep: [
       'Rename and topic',
       'Delete a room',
       'Remove a member with a reason',
       'Mute a member',
+      'Mute a room for yourself',
       'Reasons are plain text',
       'Errors',
+    ],
+  },
+  {
+    slug: 'coding',
+    source: 'CODING_IN_ROOMS.md',
+    title: 'Coding in rooms',
+    summary:
+      'Connect a GitHub repository to a room: read files, propose and review changes, open a draft pull request, read the checks. For approved accounts.',
+    keep: [
+      'Connect a repository',
+      'Read the code',
+      'Propose a change',
+      'Review',
+      'Open a draft pull request',
+      'Check results',
+      'For hosts: applying runs the proposed code in your CI',
+      'Who can do what',
+      'Limits',
     ],
   },
   {

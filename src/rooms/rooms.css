@@ -1,5 +1,13 @@
 /* Rooms. Minimal chat UI built only from design tokens. */
 
+/* Filled destructive buttons (Danger zone, member Remove): one red in light and dark, so white
+   text stays at 4.83:1 (AA) on both. */
+.rm-app,
+.rm-panel {
+  --danger: #d92d20;
+  --danger-hover: #b42318;
+}
+
 .rm-app {
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
@@ -956,13 +964,9 @@
 }
 
 /* Room page: top bar, document-style thread, floating composer, side panels, Connect AI.
-   Design tokens only; the room uses the system font stack at its own compact sizes. */
+   Design tokens only; the room uses the site font (Inter) and the site type scale. */
 .rm-room {
-  --font-sans: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --type-ui: 500 14px/20px var(--font-sans);
-  --type-meta: 400 12px/18px var(--font-sans);
-  --type-heading: 500 15px/22px var(--font-sans);
-  --type-body: 400 15px/1.6 var(--font-sans);
+  --type-heading: 500 16px/24px var(--font-sans);
   font: var(--type-body);
 }
 .rm-room button,
@@ -1388,6 +1392,224 @@
 }
 .rm-members .rm-person {
   margin-left: var(--space-1);
+}
+
+/* Room settings panel: General (host), Members, Danger zone (host, collapsed). */
+.rm-settings .rm-sheet-head {
+  position: sticky;
+  top: calc(-1 * var(--space-4));
+  z-index: 1;
+  background: var(--canvas);
+}
+.rm-settings-section {
+  display: grid;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.rm-settings-section:last-child {
+  border-bottom: 0;
+}
+.rm-settings-section h3 {
+  margin: 0;
+  font: var(--type-ui);
+  font-weight: 600;
+}
+.rm-settings-form {
+  display: grid;
+  gap: var(--space-3);
+}
+.rm-textarea {
+  min-height: 80px;
+  padding: var(--space-2) var(--space-3);
+  resize: vertical;
+}
+.rm-field-error {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--error);
+  font: var(--type-meta);
+}
+.rm-settings-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.rm-toast:not(:empty) {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  font: var(--type-meta);
+}
+.rm-settings-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.rm-settings-link:hover {
+  background: var(--surface-sunken);
+}
+.rm-settings-link .rm-count {
+  margin-left: auto;
+}
+.rm-danger-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--target);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--error);
+  font-weight: 600;
+  cursor: pointer;
+}
+.rm-danger-body {
+  display: grid;
+  gap: var(--space-3);
+}
+.rm-danger-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.rm-delete-confirm {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--error);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.rm-delete-note {
+  margin: 0;
+  color: var(--text);
+  font: var(--type-meta);
+}
+.rm-delete-name {
+  overflow-wrap: anywhere;
+}
+.rm-delete-confirm .rm-confirm-actions {
+  margin-left: 0;
+}
+.rm-delete-confirm .rm-danger,
+.rm-delete-confirm .rm-quiet {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  line-height: 18px;
+}
+/* The Remove confirmation adds a reason field under the question. */
+.rm-remove-confirm {
+  align-items: stretch;
+}
+.rm-remove-confirm .rm-confirm-text {
+  flex-basis: 100%;
+}
+.rm-remove-field {
+  flex-basis: 100%;
+  color: var(--text-muted);
+}
+.rm-remove-confirm .rm-input {
+  flex-basis: 100%;
+  min-height: 36px;
+}
+.rm-remove-note {
+  flex-basis: 100%;
+  color: var(--text-muted);
+  font: var(--type-meta);
+}
+/* Filled red destructive button: the height, padding, radius and type of a primary button,
+   white text. The member Remove confirmation keeps its compact size. */
+.rm-app .rm-danger.rm-danger-solid,
+.rm-panel .rm-danger.rm-danger-solid {
+  min-height: var(--target);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-s);
+  background: var(--danger);
+  color: #fff;
+  /* The room buttons' type (as Save and Cancel), in the Danger zone and its confirmations. */
+  font: var(--type-ui);
+  font-weight: 500;
+}
+/* Close room and Delete room: compact, so they don't outweigh Save. */
+.rm-danger-row .rm-danger.rm-danger-solid,
+.rm-delete-confirm .rm-danger.rm-danger-solid,
+.rm-delete-confirm .rm-secondary {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  font-size: 13px;
+  line-height: 18px;
+}
+.rm-app .rm-danger.rm-danger-solid:hover:not(:disabled),
+.rm-panel .rm-danger.rm-danger-solid:hover:not(:disabled) {
+  border-color: var(--danger-hover);
+  background: var(--danger-hover);
+  color: #fff;
+}
+.rm-app .rm-danger.rm-danger-solid:focus-visible,
+.rm-panel .rm-danger.rm-danger-solid:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.rm-app .rm-danger.rm-danger-solid:disabled,
+.rm-panel .rm-danger.rm-danger-solid:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.rm-panel .rm-remove-confirm .rm-danger.rm-danger-solid {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  font-size: 13px;
+  line-height: 18px;
+}
+/* The neutral secondary button next to a filled red one (Cancel). */
+.rm-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--target);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.rm-secondary:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+/* A member row's quiet host actions (Mute/Unmute, Remove), and the small "Muted" label. */
+.rm-member-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+.rm-member-actions .rm-quiet {
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  font: var(--type-meta);
+}
+.rm-muted-label {
+  justify-self: start;
+  margin-top: 2px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  font: var(--type-meta);
 }
 
 /* Connect AI sheet. */

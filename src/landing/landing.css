@@ -290,290 +290,155 @@
 .cc-lp-showcase {
   padding: 10px 0 var(--space-8);
 }
+/* The frame. Inside, RoomShowcasePicture.tsx draws the room page with the room's own CSS
+   (src/rooms/rooms.css, sidebar.css) at the size of a window (desktop 1600 x 855, phone
+   390 x 695) and scales it to the frame's width; the frame keeps the picture's page size. */
 .cc-lp-room {
+  position: relative;
+  box-sizing: border-box;
   width: 95%;
   max-width: 900px;
+  aspect-ratio: 900 / 482;
   margin: 0 auto;
   overflow: hidden;
-  background: var(--lp-elevated);
+  background: var(--canvas, var(--lp-page));
   border: 1px solid var(--lp-border);
   border-radius: var(--lp-radius);
   box-shadow: var(--lp-shadow-xl);
-  font-size: 11.5px;
-  line-height: 1.4;
   text-align: left;
-  color: var(--lp-text);
   user-select: none;
 }
-.cc-lp-room-grid {
-  display: grid;
-  grid-template-columns: 175px minmax(0, 1fr) 195px;
-  min-height: 480px;
+.cc-lp-room-canvas.rm-app {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1600px;
+  height: 855px;
+  transform: scale(0.56125);
+  transform-origin: 0 0;
+  pointer-events: none;
 }
-.cc-lp-room-sidebar {
+/* Scrolled to the latest message, as the room opens. */
+.cc-lp-room .rm-scroll {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 6px;
-  background: var(--lp-surface);
-  border-right: 1px solid var(--lp-border);
-  font-size: 10px;
-}
-.cc-lp-room-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--lp-border);
-  background: var(--lp-elevated);
-  font-weight: 500;
-}
-.cc-lp-room-heading {
-  margin-top: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: var(--lp-text-quiet);
-}
-.cc-lp-room-pill {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
-  border-radius: 4px;
-  background: var(--lp-accent-subtle);
-  border: 1px solid var(--lp-accent-border);
-  color: var(--lp-accent-text);
-  font-weight: 600;
-}
-.cc-lp-room-workspace {
-  margin-top: auto;
-  padding-top: 8px;
-  border-top: 1px solid var(--lp-border);
-  font-size: 11.5px;
-  color: var(--lp-text-2);
-}
-.cc-lp-room-main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  background: var(--lp-room-main);
-}
-.cc-lp-room-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 32px;
-  padding: 4px 10px;
-  background: var(--lp-surface);
-  border-bottom: 1px solid var(--lp-border);
-}
-.cc-lp-room-title {
-  font-size: 11px;
-  font-weight: 600;
-}
-.cc-lp-room-topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.cc-lp-room-count {
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--lp-text-quiet);
-}
-.cc-lp-room-invite {
-  padding: 3px 10px;
-  border-radius: 6px;
-  background: var(--lp-fill);
-  color: var(--lp-on-fill);
-  font-size: 11.5px;
-  font-weight: 500;
-  line-height: 1.2;
-}
-.cc-lp-room-banner {
-  padding: 4px 10px;
-  background: var(--lp-accent-subtle);
-  border-bottom: 1px solid var(--lp-accent-border);
-  color: var(--lp-accent-text);
-  font-size: 9.5px;
-  line-height: 1.25;
-}
-.cc-lp-room-banner-link {
-  text-decoration: underline;
-}
-.cc-lp-room-stream {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-}
-.cc-lp-room-msg {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-width: 98%;
-}
-.cc-lp-room-msg-head {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  line-height: 1.2;
-}
-.cc-lp-room-sender {
-  font-size: 9.5px;
-  font-weight: 600;
-}
-.cc-lp-room-sender-role {
-  font-size: 8px;
-  color: var(--lp-text-quiet);
-}
-.cc-lp-room-time {
-  margin-left: auto;
-  font-size: 7.5px;
-  color: var(--lp-text-quiet);
-  white-space: nowrap;
-}
-.cc-lp-room-bubble {
-  padding: 3px 7px;
-  border-radius: 4px;
-  background: var(--lp-bubble);
-  border: 1px solid var(--lp-border);
-  font-size: 9px;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-.cc-lp-room-bubble[data-host='true'] {
-  border-left: 2px solid var(--lp-accent);
-}
-.cc-lp-room-composer {
-  padding: 5px 10px;
-  background: var(--lp-surface);
-  border-top: 1px solid var(--lp-border);
-}
-.cc-lp-room-input {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 3px 8px;
-  border-radius: 12px;
-  border: 1px solid var(--lp-border);
-  background: var(--lp-elevated);
-}
-.cc-lp-room-placeholder {
-  min-width: 0;
+  justify-content: flex-end;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 9px;
-  color: var(--lp-text-quiet);
 }
-.cc-lp-room-composer-actions {
+.cc-lp-room .cc-lp-room-if-dark {
+  display: none;
+}
+:root[data-theme='dark'] .cc-lp-room .cc-lp-room-if-light {
+  display: none;
+}
+:root[data-theme='dark'] .cc-lp-room .cc-lp-room-if-dark {
   display: flex;
+}
+/* The picture draws buttons, links and paragraphs as spans and divs (nothing to focus, and the
+   landing's own element styles stay out). These rules stand in for the browser's, the app's (styles.css)
+   and the room page's element rules, with the same specificity. */
+:where(.cc-lp-room [data-b]) {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 1px 6px;
+  border: 2px outset buttonborder;
+  background-color: buttonface;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: default;
 }
-.cc-lp-room-preview {
-  font-size: 10px;
-  color: var(--lp-text-quiet);
-}
-.cc-lp-room-send {
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--lp-accent-text);
-}
-.cc-lp-room-members {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 8px 10px;
-  background: var(--lp-surface);
-  border-left: 1px solid var(--lp-border);
-}
-.cc-lp-room-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 2px;
-  font-size: 10px;
-  font-weight: 600;
-}
-.cc-lp-room-close {
-  font-size: 13px;
-  color: var(--lp-text-quiet);
-}
-.cc-lp-room-member-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+:where(.cc-lp-room [data-p]) {
   margin: 0;
-  padding: 0;
-  list-style: none;
 }
-.cc-lp-room-member {
-  display: flex;
-  flex-direction: column;
-  padding: 1px 0;
+.rm-app span:where([data-b]),
+.rm-room span:where([data-b]) {
+  font: var(--type-ui);
 }
-.cc-lp-room-member-name {
+.rm-app span:where([data-b])[data-disabled] {
+  opacity: 0.55;
+}
+.rm-send[data-disabled] {
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+.rm-rooms span:where([data-a]) {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1.2;
+  gap: var(--space-2);
+  min-height: var(--target);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-s);
+  color: var(--text);
+  text-decoration: none;
+  font: var(--type-ui);
+  font-weight: 400;
 }
-.cc-lp-room-dot {
-  width: 4px;
-  height: 4px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--lp-live);
+.rm-rooms span:where([data-a])[aria-current='page'] {
+  background: var(--accent-tint);
 }
-.cc-lp-room-member-role {
-  padding-left: 8px;
-  font-size: 8px;
-  line-height: 1.15;
-  color: var(--lp-text-quiet);
+.rm-crumbs span:where([data-a]) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  white-space: nowrap;
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  font: var(--type-ui);
+  text-decoration: none;
+}
+.cc-lp-room-mark {
+  display: block;
+  background: url('/brand/central-city-mark.png') center / contain no-repeat;
 }
 @media (max-width: 1024px) {
   .cc-lp-room {
     width: 100%;
   }
-  .cc-lp-room-grid {
-    grid-template-columns: 155px minmax(0, 1fr) 180px;
-  }
 }
-@media (max-width: 860px) {
-  .cc-lp-room-grid {
-    grid-template-columns: minmax(0, 1fr) 180px;
+/* Under 900 px the room page is its phone layout: the Members sheet over the thread (the host
+   note below the list sits past the fold of a phone-sized sheet, so it is left out). */
+@media (max-width: 899px) {
+  .cc-lp-room {
+    max-width: 390px;
+    aspect-ratio: 358 / 636.5;
   }
-  .cc-lp-room-sidebar {
+  .cc-lp-room-canvas.rm-app {
+    width: 390px;
+    height: 695px;
+    transform: scale(0.9128);
+  }
+  .cc-lp-room .rm-sidebar,
+  .cc-lp-room .rm-leave {
     display: none;
   }
-}
-/* Phones: one column, the members listed under the conversation. */
-@media (max-width: 640px) {
-  .cc-lp-room-grid {
-    grid-template-columns: minmax(0, 1fr);
-    min-height: 0;
+  .cc-lp-room .rm-panel {
+    max-height: 591px;
   }
-  .cc-lp-room-members {
-    border-left: 0;
-    border-top: 1px solid var(--lp-border);
+  /* The room page's phone top bar (its rules under 600 px), for the phone picture at any width. */
+  .cc-lp-room .rm-room-head .rm-head-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
-  .cc-lp-room-member-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px 12px;
+  .cc-lp-room .rm-head-actions {
+    gap: var(--space-1);
   }
-  .cc-lp-room-bubble {
-    font-size: 10px;
+  .cc-lp-room .rm-room-head .rm-outline,
+  .cc-lp-room .rm-room-head .rm-primary {
+    min-height: 40px;
+    padding: 0 var(--space-2);
+  }
+  .cc-lp-room .rm-crumbs span:where([data-a]) {
+    min-height: 40px;
+    padding: 0 var(--space-1);
   }
 }
 

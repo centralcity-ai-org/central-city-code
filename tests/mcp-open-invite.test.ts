@@ -195,7 +195,13 @@ test('anonymous MCP rejects foreign or decorated invitation URLs without admitti
 test('anonymous MCP enforces host removal, revoked credentials, and 24-hour expiry', async (t) => {
   const f = await fixture(t),
     guest = await join(f);
-  await f.post(`/api/rooms/${f.roomId}/members/${guest.agent_id}/remove`, {}, f.host);
+  // block_rejoin false: the next guest joins from the same test network (a default removal
+  // would block that network from the room; see room-management tests).
+  await f.post(
+    `/api/rooms/${f.roomId}/members/${guest.agent_id}/remove`,
+    { block_rejoin: false },
+    f.host,
+  );
   assert.ok((await call(f, 'city_room_read', { room_credential: guest.room_credential })).isError);
   const second = await join(f);
   await f.app.city.db.query('UPDATE room_invite_credentials SET revoked_at=$1', [f.now()]);
@@ -839,7 +845,12 @@ test("a from_join guest's latest_messages exclude messages from before it joined
 test('city_room_renew: removed_from_room, room_closed, else refused (revoked, expired, unknown)', async (t) => {
   const f = await fixture(t);
   const removed = await join(f);
-  await f.post(`/api/rooms/${f.roomId}/members/${removed.agent_id}/remove`, {}, f.host);
+  // block_rejoin false: later guests join from the same test network.
+  await f.post(
+    `/api/rooms/${f.roomId}/members/${removed.agent_id}/remove`,
+    { block_rejoin: false },
+    f.host,
+  );
   const revoked = await joinWith(f, { name: 'Revoked AI' });
   await f.app.city.db.query('UPDATE room_invite_credentials SET revoked_at=$1 WHERE agent_id=$2', [
     f.now(),

@@ -12,7 +12,7 @@ const SUBLINE =
 
 const hero = (page: Page) => page.getByRole('region', { name: HEADLINE });
 
-test('landing hero: one headline, Sign up and Explore Downtown, and its calls to action route', async ({
+test('landing hero: one headline, Sign up and Explore open source, and its calls to action route', async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -43,21 +43,22 @@ test('landing hero: one headline, Sign up and Explore Downtown, and its calls to
   // is the only other link.
   await expect(hero(page).locator('.button.primary')).toHaveCount(1);
   const actions = hero(page).getByRole('link').filter({ hasNotText: 'Verify here' });
-  await expect(actions).toHaveText(['Sign up', 'Explore Downtown']);
+  await expect(actions).toHaveText(['Sign up', 'Explore open source']);
   await expect(hero(page).getByRole('link', { name: 'Sign up' })).toHaveAttribute(
     'href',
     '/#create',
   );
-  await expect(hero(page).getByRole('link', { name: 'Explore Downtown' })).toHaveAttribute(
+  await expect(hero(page).getByRole('link', { name: 'Explore open source' })).toHaveAttribute(
     'href',
     '/downtown',
   );
 
   // Retired concepts stay off the landing (DESIGN_SYSTEM §4.2). "exchange" is back by product
-  // decision (the 29 Sep sub-line) and "districts" with the approved v8 page (Downtown
-  // Districts), so only these remain banned.
+  // decision (the 29 Sep sub-line); "Downtown" is retired (the page is "Open source"). The demo
+  // room may still mention test "districts", so only "Downtown" is banned for it.
   const text = (await page.locator('main').innerText()).toLowerCase();
-  for (const word of ['circle', 'route', 'operator']) expect(text, word).not.toContain(word);
+  for (const word of ['circle', 'route', 'operator', 'downtown'])
+    expect(text, word).not.toContain(word);
   await expect(page.getByRole('heading', { name: 'Answers', exact: true })).toHaveCount(0);
 
   // Sign up opens the create-account form.
@@ -65,9 +66,9 @@ test('landing hero: one headline, Sign up and Explore Downtown, and its calls to
   await expect(page.getByRole('heading', { level: 1, name: 'Create your account.' })).toBeVisible();
   await expect(page.getByLabel('Account name')).toBeVisible();
 
-  // Explore Downtown opens Downtown.
+  // Explore open source opens the open source page.
   await page.goto('/');
-  await hero(page).getByRole('link', { name: 'Explore Downtown' }).click();
+  await hero(page).getByRole('link', { name: 'Explore open source' }).click();
   await expect(page).toHaveURL(/\/downtown$/);
 
   // The header's Sign in still opens the sign-in form.
@@ -93,7 +94,7 @@ test('Built for real AI agents: three cards with their actions, then Bring your 
   await expect(cards).toHaveCount(3);
   const expected = [
     ['Collaboration', 'Real-Time Rooms', 'Sign in', '/#signin'],
-    ['Open source', 'Downtown Districts', 'Explore Districts', '/downtown'],
+    ['Open source', 'Open Source Repositories', 'Explore repositories', '/downtown'],
     ['Transparency', 'Verifiable Agent Count', 'Verify count', '/downtown/verify'],
   ];
   for (const [index, [eyebrow, title, action, href]] of expected.entries()) {
@@ -138,10 +139,11 @@ function clippedInRoom(page: Page) {
           box.right > frame.right + 0.5 ||
           box.bottom > frame.bottom + 0.5 ||
           box.left < frame.left - 0.5;
-        // The composer placeholder may end in an ellipsis, like the real composer.
+        // Form fields and visually hidden labels are drawn as in the room page.
         const clipped =
           element.scrollWidth > element.clientWidth + 1 &&
-          !element.classList.contains('cc-lp-room-placeholder');
+          !['textarea', 'select'].includes(element.localName) &&
+          getComputedStyle(element).clipPath === 'none';
         return outside || clipped;
       })
       .map((element) => `${element.className}: ${element.textContent?.slice(0, 40)}`);
@@ -152,8 +154,9 @@ test('the room picture is one labelled image and nothing in it is cut off', asyn
   await page.goto('/');
   const room = page.getByRole('img', { name: /^Example of a room/ });
   await expect(room).toBeVisible();
-  // Illustrative only: nothing inside can be focused or clicked.
-  await expect(room.locator('a, button, input, [tabindex]')).toHaveCount(0);
+  // Illustrative only: the room page's markup, inert, so nothing inside can be focused or clicked.
+  await expect(room.locator('.cc-lp-room-canvas')).toHaveAttribute('inert', '');
+  await expect(room.locator('a[href], [tabindex]')).toHaveCount(0);
   for (const name of ['Mia', 'Host agent', 'ChatGPT', 'Claude', 'Gemini', 'Grok', 'Custom Agent'])
     await expect(room.locator('.cc-lp-room-member-name', { hasText: name })).toHaveCount(1);
   await expect(room.getByText('Members · 7')).toBeVisible();
@@ -173,7 +176,7 @@ test('the room picture is one labelled image and nothing in it is cut off', asyn
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       `${width} px scrolls sideways`,
     ).toBe(true);
-    // On phones the members move under the conversation instead of disappearing.
+    // On phones the Members sheet covers the conversation, as in the room page.
     await expect(room.locator('.cc-lp-room-members')).toBeVisible();
   }
 });
@@ -302,7 +305,7 @@ const V8_TOKENS = {
   },
 };
 
-/** Visible text in <main> under WCAG AA (4.5:1, 3:1 for large text), with a 0.1 margin. */
+/** Visible text in <main> (outside the room picture) under WCAG AA (4.5:1, 3:1 for large text), with a 0.1 margin. */
 function lowContrastInMain(page: Page) {
   return page.evaluate(() => {
     const paint = document.createElement('canvas').getContext('2d')!;
@@ -338,6 +341,8 @@ function lowContrastInMain(page: Page) {
         parseFloat(style.fontSize) >= 24 ||
         (parseFloat(style.fontSize) >= 18.66 && Number(style.fontWeight) >= 700);
       count++;
+      // The room picture is an image of the room page (role img), drawn with that page's colours.
+      if (element.closest('[data-room-showcase]')) continue;
       if (ratio < (large ? 3.1 : 4.6))
         low.push(
           `${element.className}: ${walker.currentNode.textContent!.trim().slice(0, 30)} (${ratio.toFixed(2)})`,
@@ -369,7 +374,7 @@ for (const scheme of ['light', 'dark'] as const)
     expect(result.low).toEqual([]);
   });
 
-test('the card buttons share one line and the header keeps Downtown off the logo', async ({
+test('the card buttons share one line and the header keeps its menus off the logo', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -381,7 +386,7 @@ test('the card buttons share one line and the header keeps Downtown off the logo
   expect(tops).toHaveLength(3);
   expect(new Set(tops).size).toBe(1);
   const lockup = await page.locator('.cc-header .lockup').first().boundingBox();
-  const downtown = await page.locator('.cc-header-nav a').first().boundingBox();
-  expect(lockup && downtown).toBeTruthy();
-  expect(downtown!.x - (lockup!.x + lockup!.width)).toBeGreaterThanOrEqual(24);
+  const menus = await page.locator('.cc-header-nav button').first().boundingBox();
+  expect(lockup && menus).toBeTruthy();
+  expect(menus!.x - (lockup!.x + lockup!.width)).toBeGreaterThanOrEqual(24);
 });

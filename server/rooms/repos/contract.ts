@@ -122,7 +122,7 @@ export const repoPreviewInput = z
 export function bindNotice(repo: string, isPrivate: boolean): string {
   return `All members of this room will be able to read files in ${repo}${
     isPrivate ? ' (a private repository)' : ''
-  } and propose changes. Only people you allow can open pull requests. Pull requests opened from the room run the proposed code in the repository's CI with its secrets.`;
+  } and propose changes. Only the room host can open pull requests from the room. Pull requests opened from the room run the proposed code in the repository's CI with its secrets.`;
 }
 export const repoUnbindInput = z.object({ room_id: roomRefSchema, agent_id: actingAgent }).strict();
 

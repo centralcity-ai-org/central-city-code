@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
+  signedIn,
   ALL_SCOPES,
   approve,
   authorizeUrl,
@@ -23,7 +24,7 @@ import {
   type App,
 } from './oauth-helpers.js';
 import { clientAddressKey, LOGIN_FAILURES } from '../server/rate-limit.js';
-import { OAUTH_CAPS, OAUTH_LIFETIMES } from '../server/oauth/server.js';
+import { autoRedirectAllowed, OAUTH_CAPS, OAUTH_LIFETIMES } from '../server/oauth/server.js';
 import { metadataRedirectAllowed, validateMetadataDocument } from '../server/oauth/clients.js';
 import type { AssistantGrant } from '../shared/assistant.js';
 
@@ -726,7 +727,10 @@ test('an omitted scope requests the core set; core write scopes start checked, o
       })
     ).json().scope;
   // A POST that selects nothing (the core box unticked) grants read access only...
-  const untouched = await consentPost(app, write, { action: 'approve', expires_in_days: '1' });
+  const untouched = await consentPost(app, signedIn(write, consent), {
+    action: 'approve',
+    expires_in_days: '1',
+  });
   assert.equal(
     await exchange(redirectFrom(untouched.body).searchParams.get('code')!, writeFlow.verifier),
     'workspace:read',
@@ -794,4 +798,79 @@ test('an attacker-published metadata document cannot turn authorize errors into 
   assert.equal(res.status, 400);
   assert.doesNotMatch(res.body, /http-equiv="refresh"/);
   assert.match(res.body, /evil\.example\.test/);
+});
+
+test('signing out, or another owner signing in, cancels an open consent request', async (t) => {
+  const { app, cookie } = await fixture(t);
+  const client = await registerClient(app);
+  const url = authorizeUrl({ client_id: client.client_id, code_challenge: pkce().challenge });
+  // The owner is signed in: the page is stamped for them.
+  const form = await openAuthorize(app, url, cookie);
+  assert.match(form.body, /Allow .* to access Central City/);
+  const logout = await app.inject({
+    method: 'POST',
+    url: '/api/auth/logout',
+    headers: { ...jsonHeaders, cookie },
+    payload: '{}',
+  });
+  assert.equal(logout.statusCode, 200, logout.body);
+  // The old tab approves after sign-out: refused, with the signed-out session or none.
+  for (const withCookie of [form, { ...form, cookie: `${form.cookie}; ${cookie}` }]) {
+    const res = await consentPost(app, withCookie, { action: 'approve', expires_in_days: '1' });
+    assert.equal(res.statusCode, 401, res.body);
+    assert.match(res.body, /Sign in before approving/);
+  }
+  // Another owner signs in on the same browser: still refused for the first owner's request.
+  const other = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    headers: jsonHeaders,
+    payload: JSON.stringify({ name: 'Second owner', password: PASSWORD }),
+  });
+  const otherCookie = `cc_session=${other.cookies.find((c) => c.name === 'cc_session')!.value}`;
+  const swapped = await consentPost(
+    app,
+    { ...form, cookie: `${form.cookie}; ${otherCookie}` },
+    { action: 'approve', expires_in_days: '1' },
+  );
+  assert.equal(swapped.statusCode, 401, swapped.body);
+  assert.match(swapped.body, /signed-in account changed/);
+  // Signing in on the form re-stamps the request for whoever signs in, and approval works.
+  const login = await consentPost(app, form, {
+    action: 'login',
+    name: 'Second owner',
+    password: PASSWORD,
+  });
+  assert.equal(login.statusCode, 200, login.body);
+  const approved = await consentPost(app, signedIn(form, login), {
+    action: 'approve',
+    expires_in_days: '1',
+  });
+  assert.ok(redirectFrom(approved.body).searchParams.get('code'));
+});
+
+test('a refresh that asks for fewer scopes is refused and the refresh token still works', async (t) => {
+  const { app } = await fixture(t);
+  const { client, tokens } = await fullFlow(app);
+  const refresh = (scope?: string) =>
+    tokenRequest(app, {
+      grant_type: 'refresh_token',
+      refresh_token: tokens.refresh_token,
+      client_id: client.client_id,
+      ...(scope === undefined ? {} : { scope }),
+    });
+  const narrower = await refresh('workspace:read');
+  assert.equal(narrower.statusCode, 400, narrower.body);
+  assert.equal(narrower.json().error, 'invalid_scope');
+  // Nothing was rotated: the same refresh token still works with the granted scope.
+  const same = await refresh();
+  assert.equal(same.statusCode, 200, same.body);
+  assert.equal(same.json().scope, tokens.scope);
+});
+
+test('the IPv6 loopback redirect counts as loopback for verified clients', () => {
+  assert.equal(autoRedirectAllowed(true, 'http://[::1]:5555/cb'), true);
+  assert.equal(autoRedirectAllowed(true, 'http://127.0.0.1:5555/cb'), true);
+  assert.equal(autoRedirectAllowed(false, 'http://[::1]:5555/cb'), false);
+  assert.equal(autoRedirectAllowed(true, 'https://[::1]:5555/cb'), false);
 });

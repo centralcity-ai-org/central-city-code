@@ -156,6 +156,30 @@ export async function resolvePaths(
 }
 
 /**
+ * A proposal's base must be the default branch's head or an earlier commit on it (GitHub compare
+ * head...base answers 'behind' or 'identical'). Any other commit GitHub resolves, such as another
+ * branch or a fork's pull request head, would carry its whole tree (workflows included) into the
+ * applied branch without being part of the reviewed diff. Checked at propose and again at apply.
+ */
+export async function requireOnDefaultBranch(
+  session: RepoSession,
+  defaultBranch: string,
+  headSha: string,
+  base: string,
+): Promise<void> {
+  const refused = (): never =>
+    refuse(
+      422,
+      'base_not_on_default_branch',
+      `The base must be the head of ${defaultBranch} or an earlier commit on it; propose again on the current head.`,
+    );
+  const { status } = await session
+    .compare(headSha, base)
+    .catch((error) => fromGitHub(error, refused));
+  if (status !== 'behind' && status !== 'identical') refused();
+}
+
+/**
  * Reads each touched file at the base commit **through the git tree** and applies its patch
  * exactly. Every parent must be a directory (or absent, for a new file), a
  * modified or deleted file must be a regular file (`100644`/`100755`), and a new file must not
@@ -396,8 +420,9 @@ export function createRoomProposals(d: RepoDependencies): RoomProposals {
       PROPOSAL_LIMITS.proposalsPerOwnerPerRoomPerHour,
       HOUR,
     );
-    // Each touched file costs GitHub calls (tree levels and a blob): charge the read budgets for them.
-    await access.chargeRead(room.id, p.operatorId, files.length + 2);
+    // Each touched file costs GitHub calls (tree levels and a blob), plus the base, the default
+    // branch head and their comparison: charge the read budgets for them.
+    await access.chargeRead(room.id, p.operatorId, files.length + 4);
     // Validate against GitHub with a read-only token; no database client is held meanwhile.
     const session = await access.session(binding, room.host_owner_id, READ_PERMISSIONS);
     const commit = await session
@@ -409,6 +434,15 @@ export function createRoomProposals(d: RepoDependencies): RoomProposals {
       );
     if (commit.sha !== input.base)
       refuse(404, 'base_not_found', 'The base commit is not in the connected repository.');
+    // The base must lie on the default branch (not another branch or a fork's pull request).
+    const head = await session
+      .commit(binding.default_branch)
+      .catch((error) =>
+        fromGitHub(error, () =>
+          refuse(502, 'github_unavailable', 'GitHub could not be reached; try again later.'),
+        ),
+      );
+    await requireOnDefaultBranch(session, binding.default_branch, head.sha, commit.sha);
     const { blobs } = await applyToBase(session, commit.tree_sha, files);
     const diffSha = sha256(input.diff);
     const time = d.clock();

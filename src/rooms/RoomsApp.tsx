@@ -16,12 +16,13 @@ import {
   LogOut,
   UserRound,
 } from 'lucide-react';
-import { withRoomDeadline, type Agent, type Room, type RoomsClient } from './api';
+import { withRoomDeadline, type Agent, type ReadPage, type Room, type RoomsClient } from './api';
 import { JoinRoomSheet } from './JoinRoomSheet';
 import { JoinScreen } from './JoinScreen';
 import { roomSlugOf } from './pendingJoin';
 import { RoomView } from './RoomView';
 import { describe } from './useRoomThread';
+import { ApiError } from '../api';
 import { navigate } from '../shell/navigation';
 import { useTheme } from '../shell/theme';
 import './rooms.css';
@@ -143,10 +144,14 @@ function viewOf(pathname: string): View {
 const readKey = (workspace: string) => `cc.rooms.read.${workspace}`;
 function readMarks(workspace: string): Record<string, number> {
   try {
-    return JSON.parse(window.localStorage.getItem(readKey(workspace)) ?? '{}') as Record<
-      string,
-      number
-    >;
+    const stored: unknown = JSON.parse(window.localStorage.getItem(readKey(workspace)) ?? '{}');
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {};
+    // Only finite whole numbers ≥ 0 are marks; anything else is ignored (read from the start).
+    return Object.fromEntries(
+      Object.entries(stored).filter(
+        (entry): entry is [string, number] => Number.isSafeInteger(entry[1]) && entry[1] >= 0,
+      ),
+    );
   } catch {
     return {};
   }
@@ -157,6 +162,116 @@ function writeMarks(workspace: string, marks: Record<string, number>) {
   } catch {
     // Storage unavailable: unread counts reset on reload.
   }
+}
+
+/**
+ * Unread counts (plan A, audits room-a-live FINDINGS "Unread count plan"). The read marks stay
+ * per device; for a room with messages after its mark, a lookup read (an explicit `since`, which
+ * never moves any cursor, and the console has none) fetches them, and only messages from others
+ * count: never your own posts, never a system line ("The host closed the room.").
+ * room_members.last_read_seq is the AI's cursor and is not used here.
+ */
+type UnreadLookup = {
+  /** The room's latest_seq this lookup has covered. */
+  latest: number;
+  /** Seqs of fetched messages that count (not your own, not a system line). */
+  counted: number[];
+  /** More than one page was waiting: the count is a lower bound. */
+  more: boolean;
+  /** When the newest fetched message was written (latest activity), ms. */
+  at: number | null;
+};
+const LOOKUP_PAGE = 100;
+const LOOKUP_PARALLEL = 4;
+/** Lookups started per rooms list (one poll); the rest wait for the next poll. */
+const LOOKUP_PER_POLL = 10;
+const LOOKUP_BACKOFF_MS = 5_000;
+const LOOKUP_BACKOFF_MAX_MS = 60_000;
+/** The 429 carries no Retry-After the client can read (ApiError has the status only). */
+const LOOKUP_PAUSE_429_MS = 60_000;
+
+function countsAsUnread(message: ReadPage['messages'][number]) {
+  return !message.own && (message as { sender_kind?: string }).sender_kind !== 'system';
+}
+
+/** Badge text: the count, "99+" above 99, and "+" when only a lower bound is known. */
+function unreadLabel(count: number, more: boolean) {
+  if (count > 99) return '99+';
+  return more ? `${count}+` : String(count);
+}
+
+function useUnreadLookups(
+  client: RoomsClient,
+  rooms: Room[] | null,
+  marks: Record<string, number>,
+) {
+  const [lookups, setLookups] = useState<Record<string, UnreadLookup>>({});
+  const known = useRef(lookups);
+  known.current = lookups;
+  const running = useRef(new Set<string>());
+  // A failed lookup waits (per room and latest_seq, backoff 5 s → 60 s) and is retried only
+  // when the effect runs again (the next rooms poll or read mark), never from its own failure.
+  const failures = useRef(new Map<string, { latest: number; attempts: number; until: number }>());
+  // A 429 pauses every lookup: the per-address limiter is shared with the rest of the app.
+  const pausedUntil = useRef(0);
+  // At most LOOKUP_PER_POLL lookups start per rooms list (one poll).
+  const cycle = useRef<{ rooms: Room[] | null; started: number }>({ rooms: null, started: 0 });
+  useEffect(() => {
+    if (!rooms) return;
+    const now = Date.now();
+    if (now < pausedUntil.current) return;
+    if (cycle.current.rooms !== rooms) cycle.current = { rooms, started: 0 };
+    for (const room of rooms) {
+      if (running.current.size >= LOOKUP_PARALLEL) break;
+      if (cycle.current.started >= LOOKUP_PER_POLL) break;
+      const mark = marks[room.id] ?? 0;
+      const previous = known.current[room.id];
+      if (room.latest_seq <= mark || running.current.has(room.id)) continue;
+      if (previous && previous.latest >= room.latest_seq) continue;
+      const failed = failures.current.get(room.id);
+      if (failed && failed.latest >= room.latest_seq && now < failed.until) continue;
+      // Continue after the last lookup when it reaches the mark; otherwise start at the mark.
+      const since = previous && previous.latest >= mark ? previous.latest : mark;
+      running.current.add(room.id);
+      cycle.current.started++;
+      void withRoomDeadline(client.read({ room_id: room.id, since, limit: LOOKUP_PAGE }))
+        .then((page) => {
+          failures.current.delete(room.id);
+          setLookups((current) => {
+            const before = current[room.id];
+            const base = before && before.latest === since ? before : null;
+            const last = page.messages.at(-1);
+            return {
+              ...current,
+              [room.id]: {
+                latest: Math.max(page.latest_seq, room.latest_seq),
+                counted: [
+                  ...(base?.counted ?? []),
+                  ...page.messages.filter(countsAsUnread).map((message) => message.seq),
+                ],
+                more: Boolean(base?.more) || page.has_more,
+                at: last ? Date.parse(last.created_at) : (base?.at ?? null),
+              },
+            };
+          });
+        })
+        .catch((error: unknown) => {
+          // The last known count stays. No state change here, so a failure never re-runs the
+          // effect by itself.
+          const attempts = (failures.current.get(room.id)?.attempts ?? 0) + 1;
+          failures.current.set(room.id, {
+            latest: room.latest_seq,
+            attempts,
+            until:
+              Date.now() + Math.min(LOOKUP_BACKOFF_MS * 2 ** (attempts - 1), LOOKUP_BACKOFF_MAX_MS),
+          });
+          if (error instanceof ApiError && error.status === 429)
+            pausedUntil.current = Date.now() + LOOKUP_PAUSE_429_MS;
+        })
+        .finally(() => running.current.delete(room.id));
+    }
+  }, [client, rooms, marks, lookups]);
+  return lookups;
 }
 
 function NewRoomDialog({
@@ -338,6 +453,11 @@ export function RoomsApp({
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
   const [marks, setMarks] = useState(() => readMarks(workspaceId));
+  const lookups = useUnreadLookups(client, rooms, marks);
+  // Activity this session saw in the rooms list (latest_seq grew between two polls), in ms.
+  const observed = useRef(new Map<string, number>());
+  const roomsRef = useRef(rooms);
+  roomsRef.current = rooms;
   const drafts = useRef(new Map<string, string>());
   const [, setDraftVersion] = useState(0);
 
@@ -487,6 +607,12 @@ export function RoomsApp({
     window.clearTimeout(listRetry.current.timer);
     try {
       const list = await withRoomDeadline(client.listRooms());
+      const before = new Map((roomsRef.current ?? []).map((room) => [room.id, room.latest_seq]));
+      const now = Date.now();
+      for (const room of list) {
+        const seq = before.get(room.id);
+        if (seq !== undefined && room.latest_seq > seq) observed.current.set(room.id, now);
+      }
       setRooms(list);
       setListError('');
       listRetry.current.failures = 0;
@@ -507,19 +633,29 @@ export function RoomsApp({
     return () => window.clearInterval(timer);
   }, [signedIn, loadRooms]);
 
-  // Unread rooms first, then the newest; closed rooms last.
-  const ordered = useMemo(
-    () =>
-      [...(rooms ?? [])].sort(
-        (a, b) =>
-          Number(a.closed) - Number(b.closed) ||
-          b.latest_seq - (marks[b.id] ?? 0) - (a.latest_seq - (marks[a.id] ?? 0)) ||
-          b.created_at.localeCompare(a.created_at),
-      ),
-    // Order is decided when the list loads, not on every read mark.
+  // Open rooms before closed ones, then the latest activity (the newest message a lookup saw, or
+  // new messages this session saw, else the room's creation). Read marks play no part, so opening
+  // a room never reorders the list.
+  const activityKey = Object.entries(lookups)
+    .map(([id, lookup]) => `${id}:${lookup.at ?? ''}`)
+    .join(',');
+  const ordered = useMemo(() => {
+    const activity = (room: Room) =>
+      Math.max(
+        Date.parse(room.created_at) || 0,
+        lookups[room.id]?.at ?? 0,
+        observed.current.get(room.id) ?? 0,
+      );
+    return [...(rooms ?? [])].sort(
+      (a, b) =>
+        Number(a.closed) - Number(b.closed) ||
+        activity(b) - activity(a) ||
+        b.created_at.localeCompare(a.created_at) ||
+        a.id.localeCompare(b.id),
+    );
+    // `lookups` enters through activityKey: only a changed activity time reorders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rooms],
-  );
+  }, [rooms, activityKey]);
 
   const hostingRooms = useMemo(
     () => ordered.filter((room) => room.role === 'host' && !room.closed),
@@ -593,7 +729,14 @@ export function RoomsApp({
         }
       : null);
 
-  const unreadOf = (room: Room) => Math.max(0, room.latest_seq - (marks[room.id] ?? 0));
+  /** Messages from others after this device's read mark (0 until a lookup has counted them). */
+  const unreadOf = (room: Room) => {
+    const mark = marks[room.id] ?? 0;
+    const lookup = lookups[room.id];
+    if (room.latest_seq <= mark || !lookup) return { count: 0, more: false };
+    const count = lookup.counted.filter((seq) => seq > mark).length;
+    return { count, more: lookup.more && lookup.latest >= mark };
+  };
   const openRoom = (event: React.MouseEvent, room: Room) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.button) return;
     event.preventDefault();
@@ -603,7 +746,7 @@ export function RoomsApp({
   const isClosedOpen = closedExpanded || Boolean(open?.closed);
 
   const renderRoomItem = (room: Room) => {
-    const unread = unreadOf(room);
+    const { count: unread, more } = unreadOf(room);
     const current = room.id === open?.id;
     return (
       <li key={room.id}>
@@ -618,8 +761,11 @@ export function RoomsApp({
           <span className="rm-room-item-name rm-room-name">{room.name}</span>
           {room.closed ? <span className="rm-meta rm-closed-tag">(closed)</span> : null}
           {unread && !current ? (
-            <span className="rm-room-item-badge rm-badge" aria-label={`${unread} unread`}>
-              {unread > 99 ? '99+' : unread}
+            <span
+              className="rm-room-item-badge rm-badge"
+              aria-label={`${unreadLabel(unread, more)} unread`}
+            >
+              {unreadLabel(unread, more)}
             </span>
           ) : null}
         </a>
@@ -842,7 +988,7 @@ export function RoomsApp({
             {rooms.length ? (
               <ul className="rm-overview-list" aria-label="All rooms">
                 {ordered.map((room) => {
-                  const unread = unreadOf(room);
+                  const { count: unread, more } = unreadOf(room);
                   const role = room.closed ? 'Closed' : room.role === 'host' ? 'Hosting' : 'Joined';
                   return (
                     <li key={room.id}>
@@ -858,8 +1004,11 @@ export function RoomsApp({
                         <span className="rm-overview-room-name">{room.name}</span>
                         <span className="rm-overview-room-role">{role}</span>
                         {unread ? (
-                          <span className="rm-room-item-badge" aria-label={`${unread} unread`}>
-                            {unread > 99 ? '99+' : unread}
+                          <span
+                            className="rm-room-item-badge"
+                            aria-label={`${unreadLabel(unread, more)} unread`}
+                          >
+                            {unreadLabel(unread, more)}
                           </span>
                         ) : null}
                       </a>

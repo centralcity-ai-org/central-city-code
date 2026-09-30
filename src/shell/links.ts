@@ -34,50 +34,98 @@ export const LINKS = {
   downtownMd: '/downtown.md',
 } as const;
 
-export type FooterLink = { label: string; href: string | null };
+const GITHUB = 'https://github.com/centralcity-ai';
+
+/** One entry in a header menu and the footer: a short name and where it goes. */
+export type NavItem = {
+  label: string;
+  href: string;
+  /** On GitHub: opens in a new tab (noopener) and shows ↗. */
+  external?: boolean;
+};
+export type NavGroup = {
+  id: 'product' | 'developers' | 'open-source' | 'company';
+  label: string;
+  items: NavItem[];
+};
+
+/** The public GitHub repositories the header and footer may link (tests check every URL). */
+export const PUBLIC_REPOS = [
+  'https://github.com/centralcity-ai/protocol',
+  'https://github.com/centralcity-ai/sdk-ts',
+  'https://github.com/centralcity-ai/central-city-code',
+  'https://github.com/centralcity-ai/transparency',
+];
+
+/**
+ * The public header's four menus; the footer mirrors them. Short names, nothing listed twice.
+ * Every href is a live page or a public GitHub page; e2e/shell.spec.ts checks each one.
+ */
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    id: 'product',
+    label: 'Product',
+    items: [
+      { label: 'Workspace', href: LINKS.signIn },
+      { label: 'Connect AI', href: '/connect' },
+    ],
+  },
+  {
+    id: 'developers',
+    label: 'Developers',
+    items: [
+      { label: 'API', href: '/docs/api' },
+      { label: 'Docs', href: '/docs' },
+      { label: 'Protocol', href: `${GITHUB}/protocol`, external: true },
+      { label: 'SDK', href: `${GITHUB}/sdk-ts`, external: true },
+      {
+        label: 'Changelog',
+        href: `${GITHUB}/central-city-code/blob/main/CHANGELOG.md`,
+        external: true,
+      },
+      { label: 'Status', href: LINKS.status },
+    ],
+  },
+  {
+    id: 'open-source',
+    label: 'Open Source',
+    items: [
+      { label: 'Source code', href: `${GITHUB}/central-city-code`, external: true },
+      { label: 'Repositories', href: LINKS.downtown },
+      { label: 'Verify', href: '/downtown/verify' },
+      { label: 'Transparency log', href: `${GITHUB}/transparency`, external: true },
+    ],
+  },
+  {
+    id: 'company',
+    label: 'Company',
+    items: [
+      { label: 'About', href: LINKS.about },
+      { label: 'Contact', href: LINKS.contact },
+      { label: 'Security', href: LINKS.security },
+      { label: 'Privacy', href: LINKS.privacy },
+    ],
+  },
+];
+
+export type FooterLink = { label: string; href: string | null; external?: boolean };
 export type FooterColumn = { title: string; links: FooterLink[] };
 
 /**
- * The site footer (design v8: "Rooms" -> "Sign up"):
- * four columns in the manner of large AI product sites.
- * Every entry is a live page; tests/e2e footer.spec.ts opens each one and fails on a 404.
+ * The site footer: the header's four groups, then Help & legal (support and the policies).
+ * Every same-site entry is a live page; e2e/footer.spec.ts opens each one and fails on a 404.
  */
 export const FOOTER_COLUMNS: FooterColumn[] = [
+  ...NAV_GROUPS.map((group) => ({ title: group.label, links: group.items })),
   {
-    title: 'Product',
+    title: 'Help & legal',
     links: [
-      { label: 'Sign up', href: LINKS.signUp },
-      { label: 'Connect your AI', href: '/#connect' },
-      { label: 'Docs', href: '/docs' },
-      { label: 'Downtown (open source)', href: LINKS.downtown },
-      { label: 'Verify the count', href: '/downtown/verify' },
-    ],
-  },
-  {
-    title: 'Help & safety',
-    links: [
-      { label: 'Support center', href: '/support' },
-      { label: 'Status', href: '/status' },
-      { label: 'Security', href: LINKS.security },
-      { label: 'Responsible disclosure', href: '/security#disclosure' },
-    ],
-  },
-  {
-    title: 'Terms & policies',
-    links: [
-      { label: 'Privacy policy', href: LINKS.privacy },
-      { label: 'Privacy choices', href: '/privacy-choices' },
+      { label: 'Support', href: LINKS.support },
       { label: 'Terms of service', href: LINKS.terms },
-      { label: 'Acceptable use policy', href: '/acceptable-use' },
+      { label: 'Privacy choices', href: '/privacy-choices' },
+      { label: 'Acceptable use', href: '/acceptable-use' },
       { label: 'Data processing addendum', href: '/dpa' },
       { label: 'Imprint', href: '/imprint' },
-    ],
-  },
-  {
-    title: 'Company',
-    links: [
-      { label: 'About', href: '/about' },
-      { label: 'Contact', href: '/contact' },
     ],
   },
 ];
@@ -90,8 +138,8 @@ export function liveFooterColumns(columns = FOOTER_COLUMNS) {
   return columns
     .map((column) => ({
       title: column.title,
-      links: column.links.filter((link): link is { label: string; href: string } =>
-        Boolean(link.href),
+      links: column.links.filter(
+        (link): link is { label: string; href: string; external?: boolean } => Boolean(link.href),
       ),
     }))
     .filter((column) => column.links.length > 0);

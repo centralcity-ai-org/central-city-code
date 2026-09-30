@@ -304,18 +304,18 @@
   "roadmap": [
     {
       "phase": "1",
-      "scope": "Protocol specs and schemas repository.",
+      "scope": "Protocol specs and schemas repository (0.2.0).",
       "status": "done"
     },
     {
       "phase": "2",
-      "scope": "Connector, MCP bridge, examples and the TypeScript SDK.",
+      "scope": "Toolkit with connector and MCP bridge (released, 0.1.1), TypeScript SDK (0.1.0-alpha.5) and examples.",
       "status": "in_progress"
     },
     {
       "phase": "3",
-      "scope": "Reference implementation (the full application) in a clean-history public repository.",
-      "status": "planned"
+      "scope": "The full application in a clean-history public repository (0.6.0, 30 Sep 2026).",
+      "status": "done"
     },
     {
       "phase": "separate-track",

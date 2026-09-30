@@ -146,6 +146,19 @@ export function consentPost(
   );
 }
 
+/**
+ * The consent form after signing in on it: the sign-in starts a browser session, which the
+ * approval must carry (approval acts for the current session only), like a browser would.
+ */
+export function signedIn(
+  form: ConsentForm,
+  login: { cookies: Array<{ name: string; value: string }> },
+): ConsentForm {
+  const session = login.cookies.find((entry) => entry.name === 'cc_session');
+  assert.ok(session, 'signing in on the consent form starts a session');
+  return { ...form, cookie: `${form.cookie}; cc_session=${session.value}` };
+}
+
 export function redirectFrom(body: string): URL {
   const match = /http-equiv="refresh" content="0;url=([^"]+)"/.exec(body);
   assert.ok(match, body);
@@ -176,7 +189,7 @@ export async function approve(
   const login = await consentPost(app, form, { action: 'login', name: OWNER, password: PASSWORD });
   assert.equal(login.statusCode, 200, login.body);
   assert.match(login.body, /Allow .* to access Central City/);
-  const res = await consentPost(app, form, {
+  const res = await consentPost(app, signedIn(form, login), {
     action: 'approve',
     scope: options.scopes ?? ['agents:create', 'jobs:create', 'jobs:cancel'],
     ...(options.days === null ? {} : { expires_in_days: options.days ?? '7' }),
@@ -324,6 +337,7 @@ export async function consent(
   const flowCookie = cookie.split(';')[0]!;
   const requestId = /name="request_id" value="([^"]+)"/.exec(html)![1]!;
   const csrf = /name="csrf" value="([^"]+)"/.exec(html)![1]!;
+  let session = '';
   const post = (fields: Record<string, string | string[]>) => {
     const body = new URLSearchParams({ request_id: requestId, csrf });
     for (const [key, value] of Object.entries(fields))
@@ -332,7 +346,7 @@ export async function consent(
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
-        cookie: flowCookie,
+        cookie: session ? `${flowCookie}; ${session}` : flowCookie,
         origin: authorizationUrl.origin,
       },
       body,
@@ -340,6 +354,11 @@ export async function consent(
   };
   const login = await post({ action: 'login', name: OWNER, password: PASSWORD });
   assert.equal(login.status, 200, await login.clone().text());
+  // The sign-in started a browser session; the approval carries it, as a browser would.
+  session = login.headers
+    .getSetCookie()
+    .find((value) => value.startsWith('cc_session='))!
+    .split(';')[0]!;
   const approved = await post({
     action: 'approve',
     scope: scopes,

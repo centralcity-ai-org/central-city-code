@@ -72,9 +72,40 @@ const MATCHERS = CLIENT_ROUTES.map(
 
 /**
  * True when `pathname` (no query or fragment) is a client route. Matching is exact, like
- * Vercel's: a trailing slash is a different path (see tests/routes.test.ts).
+ * Vercel's: a trailing slash is a different path, which TRAILING_SLASH_REDIRECT sends to the path
+ * without it (see tests/routes.test.ts).
  */
 export function isClientRoute(pathname: string): boolean {
   if (pathname === '/') return true;
   return MATCHERS.some((matcher) => matcher.test(pathname));
+}
+
+/**
+ * `/path/` → `/path` (308, the query string kept) for every non-root path that is not
+ * server-owned. vercel.json has this exact rule (`redirects`); server/index.ts applies
+ * `withoutTrailingSlash` for local and e2e parity.
+ *
+ * - Server-owned prefixes (/api, /mcp, /oauth, /.well-known, /a2a, /j) are never redirected: their
+ *   paths stay exactly as clients send them.
+ * - Files (a last segment with a dot, e.g. /docs/room-tasks.md) are never redirected.
+ * - The path must start with a letter or digit and have no empty segments, so the target can never
+ *   be `//host` or `/\host` (no open redirect). "/" is not matched.
+ */
+const SERVER_OWNED = '(?:api|mcp|oauth|\\.well-known|a2a|j)(?:/|$)';
+// One segment starting with a letter or digit, then more segments; the last has no dot. Only
+// lookaheads and non-capturing groups, which both vercel.json (path-to-regexp) and JS accept.
+const REDIRECTABLE = `(?!${SERVER_OWNED})[A-Za-z0-9](?:[^/.]*|[^/]*(?:/[^/]+)*/[^/.]+)`;
+
+export const TRAILING_SLASH_REDIRECT = Object.freeze({
+  source: `/:path(${REDIRECTABLE})/`,
+  destination: '/:path',
+  permanent: true,
+});
+
+const TRAILING = new RegExp(`^/(${REDIRECTABLE})/$`);
+
+/** The redirect target for `pathname` (no query), or null when it keeps its path. */
+export function withoutTrailingSlash(pathname: string): string | null {
+  const match = TRAILING.exec(pathname);
+  return match ? `/${match[1]}` : null;
 }

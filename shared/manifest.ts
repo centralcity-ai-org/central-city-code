@@ -152,7 +152,7 @@ function unique<T>(key: (item: T) => string, what: string) {
     const seen = new Set<string>();
     items.forEach((item, index) => {
       const value = key(item);
-      if (seen.has(value)) custom(ctx, 'DUPLICATE_NAME', `Duplicate ${what} "${value}".`, [index]);
+      if (seen.has(value)) custom(ctx, 'DUPLICATE_NAME', `Duplicate ${what}.`, [index]);
       seen.add(value);
     });
   };
@@ -464,12 +464,25 @@ export function manifestIssue(
     hint,
   };
 }
+/**
+ * Dotted path into the submitted document. Received values are never echoed: a key segment keeps
+ * only [A-Za-z0-9_-] (anything else becomes `?`, so a key cannot carry text or pose as nesting),
+ * and the path is capped, the same rule as server/validation-errors.ts.
+ */
 export function formatPath(path: readonly PropertyKey[]): string {
-  return path.reduce<string>(
-    (out, part) =>
-      typeof part === 'number' ? `${out}[${part}]` : out ? `${out}.${String(part)}` : String(part),
-    '',
-  );
+  const segment = (part: PropertyKey) =>
+    typeof part === 'symbol' ? '?' : String(part).replace(/[^A-Za-z0-9_-]/g, '?');
+  return path
+    .reduce<string>(
+      (out, part) =>
+        typeof part === 'number'
+          ? `${out}[${part}]`
+          : out
+            ? `${out}.${segment(part)}`
+            : segment(part),
+      '',
+    )
+    .slice(0, 100);
 }
 
 export function zodIssues(error: z.ZodError, prefix: PropertyKey[] = []): ManifestIssue[] {
@@ -478,7 +491,7 @@ export function zodIssues(error: z.ZodError, prefix: PropertyKey[] = []): Manife
     const path = [...prefix, ...issue.path];
     if (issue.code === 'unrecognized_keys') {
       for (const key of issue.keys)
-        issues.push(manifestIssue('UNKNOWN_KEY', [...path, key], `Unknown key "${key}".`));
+        issues.push(manifestIssue('UNKNOWN_KEY', [...path, key], 'Unknown key.'));
       continue;
     }
     const code =

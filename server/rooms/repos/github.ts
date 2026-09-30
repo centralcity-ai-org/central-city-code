@@ -196,10 +196,18 @@ export type ContentsResult =
   | { kind: 'other'; path: string; type: string; sha: string };
 
 /** A repo-scoped handle for one operation; holds its token only for the operation's lifetime. */
+export type CompareStatus = 'ahead' | 'behind' | 'identical' | 'diverged';
+const COMPARE_STATUSES: readonly string[] = ['ahead', 'behind', 'identical', 'diverged'];
+
 export interface RepoSession {
   repo(): Promise<RepoInfo>;
   /** Resolves a branch, tag or SHA to its commit. */
   commit(ref: string): Promise<CommitInfo>;
+  /**
+   * How commit `head` relates to commit `base` (both full SHAs): 'behind' means `head` is an
+   * ancestor of `base`, 'identical' the same commit, 'ahead' or 'diverged' anything else.
+   */
+  compare(base: string, head: string): Promise<{ status: CompareStatus }>;
   /** The tree of a commit's root tree SHA (optionally recursive). */
   tree(treeSha: string, recursive: boolean): Promise<{ entries: TreeEntry[]; truncated: boolean }>;
   /** A file or directory at an exact commit SHA. */
@@ -376,6 +384,21 @@ export function createGitHubApp(
           if (typeof c.sha !== 'string' || typeof treeSha !== 'string')
             throw new GitHubError(502, 'unavailable');
           return { sha: c.sha, tree_sha: treeSha };
+        },
+        async compare(base, head) {
+          if (!/^[0-9a-f]{40}$/.test(base) || !/^[0-9a-f]{40}$/.test(head))
+            throw new GitHubError(404, 'not_found');
+          // per_page=1: only the status is needed, not the commit list.
+          const c = await get<{ status?: unknown }>(`/compare/${base}...${head}?per_page=1`).catch(
+            (error: unknown) => {
+              if (error instanceof GitHubError && error.code === 'unprocessable')
+                throw new GitHubError(404, 'not_found');
+              throw error;
+            },
+          );
+          if (typeof c.status !== 'string' || !COMPARE_STATUSES.includes(c.status))
+            throw new GitHubError(502, 'unavailable');
+          return { status: c.status as CompareStatus };
         },
         async tree(treeSha, recursive) {
           const t = await get<{ tree: TreeEntry[]; truncated?: boolean }>(

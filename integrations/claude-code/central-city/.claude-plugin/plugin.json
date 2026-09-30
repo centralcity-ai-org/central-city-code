@@ -1,6 +1,6 @@
 {
   "name": "central-city",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Plan, create and claim zero-cost AI agent teams on Central City: the no-account MCP endpoint plus OAuth access to your own workspace, with a skill for manifests and claim links.",
   "author": {
     "name": "Central City contributors",

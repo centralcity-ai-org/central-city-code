@@ -1,102 +1,310 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { Menu, X } from 'lucide-react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
+import { ChevronDown, Menu, X } from 'lucide-react';
 import { Lockup, SkipLink } from '../brand';
 import { ThemeToggle } from './theme';
-import { LINKS } from './links';
+import { LINKS, NAV_GROUPS, type NavGroup, type NavItem } from './links';
 import { useInviteHref } from './navigation';
 import './shell.css';
+import { api } from '../api';
+
+/** The phone menu is its own chunk, fetched when the menu button is touched or focused. */
+const loadPhoneMenu = () => import('./PhoneMenu');
+const PhoneMenu = lazy(() => loadPhoneMenu().catch(() => ({ default: PlainLinksMenu })));
+
+/** Moves focus to the fallback menu's first link once, when it mounts (a stable ref callback). */
+const focusIn = (nav: HTMLElement | null) => nav?.querySelector('a')?.focus();
+/**
+ * If the menu's chunk cannot load: the same links as a plain list, never an error page. Like the
+ * real menu, focus moves into it on open and Escape closes it (focus back on the menu button).
+ */
+const PlainLinksMenu = (props: {
+  id: string;
+  renderLink: (item: NavItem) => ReactNode;
+  signIn: ReactNode;
+  onClose: (escape: boolean) => void;
+}) => (
+  <nav
+    ref={focusIn}
+    id={props.id}
+    className="cc-header-menu"
+    aria-label="Menu"
+    onKeyDown={(event) => event.key === 'Escape' && props.onClose(true)}
+  >
+    {NAV_GROUPS.flatMap((group) => group.items).map(props.renderLink)}
+    {props.signIn}
+  </nav>
+);
+const prefetchPhoneMenu = () => void loadPhoneMenu().catch(() => undefined);
 
 export type PublicPage = 'home' | 'connect' | 'signin' | 'downtown' | 'rooms' | 'docs' | 'notfound';
 
-/** The "Developers" section: the public code on GitHub and the protocol district (Docs is in the main nav). */
-function developerLinks() {
-  if (!LINKS.code) return null;
+/** The page each header item stands for, so the item (and its group) can show "current". */
+const CURRENT_HREF: Partial<Record<PublicPage, string>> = {
+  docs: '/docs',
+  downtown: '/downtown',
+};
+
+/** Hover intent: a trigger opens the panel only after the pointer rests on it this long. */
+const OPEN_DELAY_MS = 100;
+/** Leaving the header and the panel closes it after this long (room for a diagonal move). */
+const CLOSE_DELAY_MS = 220;
+
+/** Where the app lives for a signed-in visitor (header "Open app", Product › Workspace). */
+const APP_HREF = '/rooms';
+
+/** A plain text link (header and footer); GitHub items open in a new tab and show ↗. */
+export function NavLink({
+  item,
+  current,
+  signedIn,
+}: {
+  item: NavItem;
+  current: PublicPage;
+  signedIn: boolean;
+}) {
+  return (
+    <a
+      className="cc-nav-link"
+      // Product › Workspace: the sign-in page, or the app itself once signed in.
+      href={signedIn && item.href === LINKS.signIn ? APP_HREF : item.href}
+      aria-current={CURRENT_HREF[current] === item.href ? 'page' : undefined}
+      {...(item.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+    >
+      {item.label}
+      {item.external ? (
+        <>
+          <span className="cc-nav-external" aria-hidden="true">
+            ↗
+          </span>
+          <span className="visually-hidden"> (opens in a new tab)</span>
+        </>
+      ) : null}
+    </a>
+  );
+}
+
+/** The links of one group's panel content, in order (for Tab and the arrow keys). */
+const linksIn = (element: HTMLElement | null | undefined) =>
+  Array.from(element?.querySelectorAll<HTMLAnchorElement>('a') ?? []);
+
+type GroupId = NavGroup['id'];
+
+/**
+ * The wide header's menus, in the manner of openai.com. One persistent panel under the header
+ * fades in with a small drop; between groups its height eases to the active group's content, the
+ * outgoing content fades out quickly and the incoming one fades in from a few pixels below; the
+ * page behind blurs and dims. Hover
+ * intent: resting on a trigger for 100 ms opens it, or switches to it while the panel is open
+ * (passing over a trigger does neither). The triggers span the header's full height (a generous hit area) and leaving
+ * the header and the panel closes it only after 220 ms, so a diagonal move
+ * from a trigger into the panel never closes it. Clicking or Enter/Space/ArrowDown open it too;
+ * Tab from an open trigger enters its links; Escape closes it and returns focus.
+ */
+function DesktopNav({
+  signedIn,
+  current,
+  open,
+  active,
+  show,
+  hide,
+  cancelTimers,
+  intendOpen,
+}: {
+  signedIn: boolean;
+  current: PublicPage;
+  open: boolean;
+  active: GroupId;
+  show: (id: GroupId) => void;
+  hide: () => void;
+  cancelTimers: () => void;
+  intendOpen: (id: GroupId) => void;
+}) {
+  const panelId = useId();
+  const triggers = useRef(new Map<string, HTMLButtonElement>());
+  const contents = useRef(new Map<string, HTMLDivElement>());
+  const [height, setHeight] = useState(0);
+
+  // The panel's height follows the active content (measured, so it eases between NAV_GROUPS).
+  useLayoutEffect(() => {
+    setHeight(contents.current.get(active)?.offsetHeight ?? 0);
+  }, [active, open]);
+
+  const focusTrigger = (index: number) =>
+    triggers.current.get(NAV_GROUPS[(index + NAV_GROUPS.length) % NAV_GROUPS.length]!.id)?.focus();
+
+  // Focus the group's first link as soon as it is focusable (it becomes visible a frame or two
+  // after the panel opens).
+  const focusFirstLink = (id: GroupId, frames = 8) =>
+    requestAnimationFrame(() => {
+      const link = contents.current.get(id)?.querySelector('a');
+      link?.focus();
+      if (frames > 1 && document.activeElement !== link) focusFirstLink(id, frames - 1);
+    });
+
+  const onTriggerKey = (event: ReactKeyboardEvent, index: number) => {
+    const id = NAV_GROUPS[index]!.id;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      show(id);
+      focusFirstLink(id);
+    } else if (event.key === 'Tab' && !event.shiftKey && open && active === id) {
+      event.preventDefault();
+      focusFirstLink(id);
+    }
+  };
+
+  const onContentKey = (event: ReactKeyboardEvent, index: number) => {
+    const id = NAV_GROUPS[index]!.id;
+    const links = linksIn(contents.current.get(id));
+    const at = links.indexOf(document.activeElement as HTMLAnchorElement);
+    if (event.key === 'Tab' && !event.shiftKey && at === links.length - 1) {
+      // Past the last link: on to the next trigger (or out of the menus after the last one).
+      if (index < NAV_GROUPS.length - 1) {
+        event.preventDefault();
+        hide();
+        focusTrigger(index + 1);
+      } else hide();
+    } else if (event.key === 'Tab' && event.shiftKey && at === 0) {
+      event.preventDefault();
+      focusTrigger(index);
+    }
+  };
+
   return (
     <>
-      <a href={LINKS.code} target="_blank" rel="noopener">
-        GitHub
-        <span className="visually-hidden"> (opens in a new tab)</span>
-      </a>
-      <a href={LINKS.protocol}>Protocol</a>
+      <nav className="cc-header-nav nav-links" aria-label="Public">
+        {NAV_GROUPS.map((group, index) => (
+          <button
+            key={group.id}
+            ref={(element) => {
+              if (element) triggers.current.set(group.id, element);
+            }}
+            type="button"
+            className="cc-nav-trigger"
+            aria-expanded={open && active === group.id}
+            aria-controls={`${panelId}-${group.id}`}
+            onPointerEnter={(event: ReactPointerEvent) => {
+              // Open or switch only if the pointer rests here (100 ms), so passing over a
+              // trigger on the way down into the panel changes nothing.
+              if (event.pointerType === 'mouse' && !(open && active === group.id))
+                intendOpen(group.id);
+            }}
+            onPointerLeave={(event: ReactPointerEvent) => {
+              // Passing over a trigger never opens or switches to it.
+              if (event.pointerType === 'mouse') cancelTimers();
+            }}
+            onClick={(event) => {
+              // A pointer click opens (it never toggles shut the panel its hover just opened);
+              // Enter or Space toggle.
+              if (event.detail > 0) show(group.id);
+              else if (open && active === group.id) hide();
+              else show(group.id);
+            }}
+            onKeyDown={(event) => onTriggerKey(event, index)}
+          >
+            {group.label}
+          </button>
+        ))}
+      </nav>
+      <div className="cc-mega" data-open={open ? 'true' : undefined} style={{ height }}>
+        <div className="cc-mega-inner">
+          {NAV_GROUPS.map((group, index) => (
+            <div
+              key={group.id}
+              ref={(element) => {
+                if (element) contents.current.set(group.id, element);
+              }}
+              id={`${panelId}-${group.id}`}
+              className="cc-mega-content"
+              data-active={open && active === group.id ? 'true' : undefined}
+              onKeyDown={(event) => onContentKey(event, index)}
+              onClick={(event) => {
+                if ((event.target as HTMLElement).closest('a')) hide();
+              }}
+            >
+              <p className="cc-mega-label">{group.label}</p>
+              <ul role="list">
+                {group.items.map((item) => (
+                  <li key={item.href}>
+                    <NavLink item={item} current={current} signedIn={signedIn} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
     </>
   );
 }
 
 /**
- * "Developers" in the wide header: a disclosure button (aria-expanded) that shows a short list
- * of links. Escape closes it and returns focus to the button; a click or focus outside closes
- * it; choosing a link closes it.
- */
-function DeveloperMenu() {
-  const [open, setOpen] = useState(false);
-  const panelId = useId();
-  const root = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      setOpen(false);
-      button.current?.focus();
-    };
-    const outside = (event: Event) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener('keydown', keydown);
-    document.addEventListener('pointerdown', outside);
-    document.addEventListener('focusin', outside);
-    return () => {
-      document.removeEventListener('keydown', keydown);
-      document.removeEventListener('pointerdown', outside);
-      document.removeEventListener('focusin', outside);
-    };
-  }, [open]);
-
-  return (
-    <div className="cc-header-dev" ref={root}>
-      <button
-        ref={button}
-        type="button"
-        className="cc-header-dev-button"
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => setOpen((value) => !value)}
-      >
-        Developers
-      </button>
-      <div
-        id={panelId}
-        className="cc-header-dev-panel"
-        hidden={!open}
-        onClick={(event) => {
-          if ((event.target as HTMLElement).closest('a')) setOpen(false);
-        }}
-      >
-        {developerLinks()}
-      </div>
-    </div>
-  );
-}
-
-/**
- * The Central City public header (v8 Design System):
- * Existing logo lockup, Downtown, Docs, a "Developers" disclosure (GitHub, Docs,
- * Protocol), quiet "Sign in", primary "Invite your AI", and theme toggle.
- * Under 900 px the nav (with a labelled Developers group), Sign in and theme toggle move into an
- * accessible drawer menu;
- * the primary action and logo stay visible at every viewport.
+ * The Central City public header (v8 Design System): the logo lockup, four menus (Product,
+ * Developers, Open Source, Company; links.ts NAV_GROUPS), quiet "Sign in" (or "Open app" when
+ * signed in), the primary "Invite your AI" and the theme toggle. Under 900 px the menus become a
+ * full-screen menu with the four groups as expandable sections, Sign in and the theme; the
+ * primary action and logo stay visible at every viewport.
  */
 export function PublicHeader({ current }: { current: PublicPage }) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState<GroupId>('product');
   // One filled button per view: while a page's own "Invite your AI"
   // (#hero-invite) is on screen, the header's copy of it steps back to secondary style.
   const [heroInviteVisible, setHeroInviteVisible] = useState(false);
+  // Signed in? One GET /api/session per page load (one header per page); any failure counts as
+  // signed out, and the header then shows "Sign in".
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    api<{ operator?: unknown }>('/api/session', undefined, 'GET').then(
+      (body) => setSignedIn(Boolean(body.operator)),
+      () => undefined,
+    );
+  }, []);
   const menuId = useId();
+  const header = useRef<HTMLElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
+  const timer = useRef<number | undefined>(undefined);
   const inviteHref = useInviteHref();
+
+  // Hover intent and the close delay share one timer.
+  const cancelTimers = () => {
+    window.clearTimeout(timer.current);
+    timer.current = undefined;
+  };
+  const later = (run: () => void, ms: number) => {
+    cancelTimers();
+    timer.current = window.setTimeout(() => {
+      timer.current = undefined;
+      run();
+    }, ms);
+  };
+  const show = (id: GroupId) => {
+    cancelTimers();
+    setActive(id);
+    setOpen(true);
+  };
+  const hide = () => {
+    cancelTimers();
+    setOpen(false);
+  };
+  const intendOpen = (id: GroupId) => later(() => show(id), OPEN_DELAY_MS);
+  const closeSoon = (event: ReactPointerEvent) => {
+    if (event.pointerType === 'mouse') later(hide, CLOSE_DELAY_MS);
+  };
+  useEffect(() => () => window.clearTimeout(timer.current), []);
 
   useEffect(() => {
     const update = () => setScrolled(window.scrollY > 4);
@@ -128,49 +336,39 @@ export function PublicHeader({ current }: { current: PublicPage }) {
     return () => observer.disconnect();
   }, []);
 
+  // The wide panel: Escape closes it and returns focus to its trigger; focus or a press
+  // outside the header closes it.
   useEffect(() => {
-    if (!menuOpen) return;
-    menu.current?.querySelector<HTMLElement>('a, button')?.focus();
-    const close = (event: KeyboardEvent) => {
+    if (!open) return;
+    const keydown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      setMenuOpen(false);
-      menuButton.current?.focus();
+      const inside = header.current?.contains(document.activeElement);
+      hide();
+      if (inside)
+        header.current
+          ?.querySelector<HTMLButtonElement>(`.cc-nav-trigger[aria-controls$="-${active}"]`)
+          ?.focus();
     };
-    const outside = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!menu.current?.contains(target) && !menuButton.current?.contains(target))
-        setMenuOpen(false);
+    const outside = (event: Event) => {
+      if (!header.current?.contains(event.target as Node)) hide();
     };
-    document.addEventListener('keydown', close);
+    document.addEventListener('keydown', keydown);
+    document.addEventListener('focusin', outside);
     document.addEventListener('pointerdown', outside);
     return () => {
-      document.removeEventListener('keydown', close);
+      document.removeEventListener('keydown', keydown);
+      document.removeEventListener('focusin', outside);
       document.removeEventListener('pointerdown', outside);
     };
-  }, [menuOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, active]);
 
-  const links = (
-    <>
-      <a
-        href={LINKS.downtown}
-        className="nav-link"
-        aria-current={current === 'downtown' ? 'page' : undefined}
-      >
-        Downtown
-      </a>
-      {LINKS.docs ? (
-        <a
-          href={LINKS.docs}
-          className="nav-link"
-          aria-current={current === 'docs' ? 'page' : undefined}
-        >
-          Docs
-        </a>
-      ) : null}
-    </>
-  );
-
-  const signIn = (
+  // Signed in: "Open app" instead of "Sign in" (Product › Workspace follows, see NavLink).
+  const signIn = signedIn ? (
+    <a className="cc-header-signin nav-signin" href={APP_HREF}>
+      Open app
+    </a>
+  ) : (
     <a
       className="cc-header-signin nav-signin"
       href={LINKS.signIn}
@@ -182,15 +380,23 @@ export function PublicHeader({ current }: { current: PublicPage }) {
 
   return (
     <header
-      className={scrolled || menuOpen ? 'cc-header site-nav is-scrolled' : 'cc-header site-nav'}
+      ref={header}
+      className={`cc-header site-nav${scrolled || menuOpen || open ? ' is-scrolled' : ''}${open ? ' is-open' : ''}`}
+      onPointerLeave={closeSoon}
     >
       <SkipLink />
-      <div className="cc-header-inner nav-inner">
+      <div className="cc-header-inner nav-inner" onPointerEnter={cancelTimers}>
         <Lockup href={LINKS.home} label="Central City home" />
-        <nav className="cc-header-nav nav-links" aria-label="Public">
-          {links}
-          {LINKS.code ? <DeveloperMenu /> : null}
-        </nav>
+        <DesktopNav
+          signedIn={signedIn}
+          current={current}
+          open={open}
+          active={active}
+          show={show}
+          hide={hide}
+          cancelTimers={cancelTimers}
+          intendOpen={intendOpen}
+        />
         <div className="cc-header-actions nav-actions">
           <span className="cc-header-wide">{signIn}</span>
           <a
@@ -216,38 +422,41 @@ export function PublicHeader({ current }: { current: PublicPage }) {
             aria-expanded={menuOpen}
             aria-controls={menuOpen ? menuId : undefined}
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-            onClick={() => setMenuOpen((open) => !open)}
+            onPointerDown={prefetchPhoneMenu}
+            onFocus={prefetchPhoneMenu}
+            onClick={() => setMenuOpen((value) => !value)}
           >
             {menuOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
           </button>
         </div>
       </div>
+      {/* The page behind an open panel blurs and dims; a press on it closes the panel. */}
+      <div
+        className="cc-mega-backdrop"
+        data-open={open ? 'true' : undefined}
+        aria-hidden="true"
+        // Only real pointer movement over the page closes the panel (never a mouse that was
+        // resting there when the keyboard opened it); a close already on its way is kept.
+        onPointerMove={(event) => timer.current === undefined && closeSoon(event)}
+        onClick={hide}
+      />
       {menuOpen ? (
-        <div
-          ref={menu}
-          id={menuId}
-          className="cc-header-menu"
-          onClick={(event) => {
-            if ((event.target as HTMLElement).closest('a')) setMenuOpen(false);
-          }}
-        >
-          <nav aria-label="Menu">
-            {links}
-            {LINKS.code ? (
-              <div className="cc-header-menu-group" role="group" aria-labelledby={`${menuId}-dev`}>
-                <span id={`${menuId}-dev`} className="cc-header-menu-group-title">
-                  Developers
-                </span>
-                {developerLinks()}
-              </div>
-            ) : null}
-            {signIn}
-          </nav>
-          <div className="cc-header-menu-theme">
-            <span>Theme</span>
-            <ThemeToggle />
-          </div>
-        </div>
+        <Suspense fallback={null}>
+          <PhoneMenu
+            id={menuId}
+            groups={NAV_GROUPS}
+            renderLink={(item) => (
+              <NavLink key={item.href} item={item} current={current} signedIn={signedIn} />
+            )}
+            signIn={signIn}
+            theme={<ThemeToggle />}
+            chevron={<ChevronDown className="cc-menu-chevron" size={18} aria-hidden="true" />}
+            onClose={(escape) => {
+              setMenuOpen(false);
+              if (escape) menuButton.current?.focus();
+            }}
+          />
+        </Suspense>
       ) : null}
     </header>
   );

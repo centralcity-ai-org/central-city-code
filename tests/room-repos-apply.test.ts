@@ -462,7 +462,7 @@ test('apply needs the host, an approval from another agent, the current revision
   await rejects(apply(f, proposal.id), 409, 'proposal_out_of_date');
 });
 
-test('unrelated movement on main does not block apply; the branch starts at the base commit', async (t) => {
+test('unrelated movement on main does not block apply; the branch is built on the current head', async (t) => {
   const f = await fixture(t);
   const proposal = await approved(f);
   const repo = f.gh.repos[0]!;
@@ -470,7 +470,78 @@ test('unrelated movement on main does not block apply; the branch starts at the 
   repo.branches.main = moved;
   const out = await apply(f, proposal.id);
   const commit = f.gh.writes.commits.get(out.applied.head_sha)!;
-  assert.deepEqual(commit.parents, [head]);
+  assert.deepEqual(commit.parents, [moved]);
+  const tree = f.gh.writes.trees.get(commit.tree)!;
+  assert.equal(tree.base_tree, createHash('sha1').update(`tree:${moved}`).digest('hex'));
+  assert.deepEqual(
+    tree.tree.map((entry) => entry.path),
+    ['src/app.ts'],
+    'only the touched file is replaced; the rest is the head',
+  );
+  assert.ok(f.gh.writes.pulls[0]!.body.includes(`Base commit (reviewed): ${head}`));
+  assert.ok(f.gh.writes.pulls[0]!.body.includes(`Built on: main at ${moved}`));
+});
+
+test('an older base cannot bring back files main removed since (the tree is the head tree)', async (t) => {
+  const f = await fixture(t);
+  const repo = f.gh.repos[0]!;
+  // The reviewed base still has a workflow and a dependency file that main removed afterwards.
+  const oldBase = commitSha('a-old-base');
+  const cleaned = commitSha('a-cleaned');
+  repo.commits = {
+    [oldBase]: {
+      ...repo.commits[head]!,
+      '.github/workflows/old.yml': 'on: push\n',
+      'vendor/old-lib.js': 'module.exports = 1;\n',
+    },
+    [head]: repo.commits[head]!,
+    [cleaned]: { ...repo.commits[head]!, 'README.md': '# Sandbox, cleaned\n' },
+  };
+  repo.parents = { [oldBase]: [], [head]: [oldBase], [cleaned]: [head] };
+  repo.branches.main = cleaned;
+  const proposal = await approved(f, { base: oldBase });
+  const out = await apply(f, proposal.id);
+  const commit = f.gh.writes.commits.get(out.applied.head_sha)!;
+  assert.deepEqual(commit.parents, [cleaned]);
+  const tree = f.gh.writes.trees.get(commit.tree)!;
+  // Built on the cleaned head's tree: the removed workflow and dependency are not in it.
+  assert.equal(tree.base_tree, createHash('sha1').update(`tree:${cleaned}`).digest('hex'));
+  assert.deepEqual(
+    tree.tree.map((entry) => entry.path),
+    ['src/app.ts'],
+  );
+});
+
+test('an interrupted apply is adopted after main moved on, only while its head is still on main', async (t) => {
+  const f = await fixture(t);
+  const repo = f.gh.repos[0]!;
+  // History: base <- head (main). The proposal is on base; the apply builds on head.
+  const base = commitSha('a-adopt-base');
+  repo.commits = { [base]: { ...repo.commits[head]! }, [head]: repo.commits[head]! };
+  repo.parents = { [base]: [], [head]: [base] };
+  const proposal = await approved(f, { base });
+  const out = await apply(f, proposal.id);
+  assert.deepEqual(f.gh.writes.commits.get(out.applied.head_sha)!.parents, [head]);
+  const forget = () =>
+    f.app.city.db.query("UPDATE room_proposals SET status='open', applied=NULL WHERE id=$1", [
+      proposal.id,
+    ]);
+  // Interrupted, then main moves on with an unrelated change: the branch is adopted.
+  await forget();
+  repo.commits[moved] = { ...repo.commits[head]!, 'README.md': '# Sandbox, moved on\n' };
+  repo.parents[moved] = [head];
+  repo.branches.main = moved;
+  const again = await apply(f, proposal.id);
+  assert.equal(again.applied.head_sha, out.applied.head_sha, 'the existing branch is adopted');
+  assert.equal(f.gh.writes.pulls.length, 1);
+  // Main rewritten from the base: the branch's parent (head) is no longer on main. The base still
+  // is, so only the adoption check refuses it.
+  await forget();
+  const rewritten = commitSha('a-adopt-rewritten');
+  repo.commits[rewritten] = { ...repo.commits[head]! };
+  repo.parents[rewritten] = [base];
+  repo.branches.main = rewritten;
+  await rejects(apply(f, proposal.id), 409, 'branch_conflict');
 });
 
 test('evidence: read from GitHub for the PR head, cached 60 s, validated only for the applied commit', async (t) => {
@@ -718,4 +789,38 @@ test('commit and PR text never reference GitHub issues or users from room text',
     'Fixes #\u200b12, other/repo#\u200b3 and GH-\u200b7 for @\u200bdev',
   );
   assert.equal(quoteLine('Heading # not a ref'), 'Heading # not a ref');
+});
+
+test('apply re-checks that the base still lies on the default branch; nothing is written otherwise', async (t) => {
+  // 1. main was rewritten after the approval: the approved base is no longer on it.
+  const f = await fixture(t);
+  const proposal = await approved(f);
+  const repo = f.gh.repos[0]!;
+  const rewritten = commitSha('a-rewritten-root');
+  repo.commits[rewritten] = { ...repo.commits[head]! };
+  repo.parents = { [head]: [], [rewritten]: [] };
+  repo.branches.main = rewritten;
+  await rejects(apply(f, proposal.id), 422, 'base_not_on_default_branch');
+  assert.equal(f.gh.writes.commits.size, 0);
+  assert.equal(f.gh.writes.refs.size, 0);
+  assert.equal(f.gh.writes.pulls.length, 0);
+
+  // 2. A stored proposal whose base is a fork pull request head (ahead of main) is refused too.
+  const g = await fixture(t);
+  const second = await approved(g);
+  const other = g.gh.repos[0]!;
+  const forkPullHead = commitSha('a-fork-pull-head');
+  other.commits[forkPullHead] = {
+    ...other.commits[head]!,
+    '.github/workflows/x.yml': 'on: push\n',
+  };
+  other.parents = { [head]: [], [forkPullHead]: [head] };
+  for (const table of ['room_proposals', 'room_proposal_revisions'])
+    await g.app.city.db.query(
+      `UPDATE ${table} SET base = jsonb_set(base, '{commit}', to_jsonb($1::text))`,
+      [forkPullHead],
+    );
+  await rejects(apply(g, second.id), 422, 'base_not_on_default_branch');
+  assert.equal(g.gh.writes.commits.size, 0);
+  assert.equal(g.gh.writes.refs.size, 0);
 });

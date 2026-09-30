@@ -49,6 +49,8 @@ export const ROOM_LIMITS = {
   defaultPageSize: 50,
   /** Room deletions (every attempt, right name or not) per owner per hour. */
   deletesPerOwnerPerHour: 10,
+  /** How long a removed no-account guest's join source stays blocked from the room (days). */
+  guestBlockDays: 30,
 } as const;
 export type RoomLimits = { -readonly [K in keyof typeof ROOM_LIMITS]: number };
 
@@ -354,6 +356,8 @@ export const roomRenameInput = z
   .refine((v) => v.name !== undefined || v.topic !== undefined, {
     message: 'Pass name or topic.',
   });
+/** Console (POST /api/rooms/:room/notifications): a member mutes the room for itself. */
+export const roomNotificationsInput = z.object({ muted: z.boolean() }).strict();
 /** Host console (DELETE /api/rooms/:room): the current room name, typed exactly. */
 export const roomDeleteInput = z.object({ confirm_name: z.string().max(200) }).strict();
 /** Host console remove (POST /api/rooms/:room/members/:agentId/remove). */
@@ -408,10 +412,14 @@ export interface RoomView {
   /** Host console only (migration 31): people may join as themselves; members may bring their AI. */
   people_may_join?: boolean;
   members_may_bring_ai?: boolean;
+  /** Host console only: networks blocked from joining as guests without an account (active). */
+  guest_blocks?: number;
   /** Console only (migration 35): the host muted the viewer here (it cannot post; it still reads). */
   muted?: boolean;
   /** Console only, with muted: the host's reason (untrusted text), or null. */
   mute_reason?: string | null;
+  /** Console only: the viewer muted this room's notifications for itself (migration 38). */
+  notifications_muted?: boolean;
   /** The host allows hosted responders; true unless the host turned them off. */
   responders_allowed: boolean;
   /** Members that answer automatically when @mentioned, and the provider that receives room text. */
@@ -469,6 +477,12 @@ export interface RoomMember {
   last_active_at: string | null;
   /** The member answers automatically when @mentioned (provider shown); null otherwise. */
   auto_reply: { provider: 'openai' | 'anthropic' } | null;
+  /**
+   * An invited AI that joined through an invite link without any account (it holds a room
+   * credential and has no lasting identity). Not the same as role 'guest' (a read-only member).
+   * Always sent by this server; optional in the wire schema so earlier servers' answers validate.
+   */
+  guest?: boolean;
 }
 export interface RoomLinkView {
   room_id: string;

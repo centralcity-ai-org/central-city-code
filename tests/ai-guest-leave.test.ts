@@ -134,21 +134,17 @@ test('a ban-after-leave means the same guest cannot rejoin with the old link', a
   const guest = joined.guest!;
   const left = await leaveAsGuest(f.transport, guest.credential);
   assert.equal(left.ok, true, left.raw);
-  // Host bans the departed member; the old link no longer admits them.
+  // Host bans the departed member; the old link no longer admits them. A guest without an
+  // account has no lasting identity, so its join source is blocked from the room instead.
   const removed = await f.post(
     `/api/rooms/${f.roomId}/members/${guest.agentId}/remove`,
     {},
     f.host,
   );
-  assert.ok([200, 404].includes(removed.statusCode), removed.body);
+  assert.equal(removed.statusCode, 200, removed.body);
+  assert.equal(removed.json().guest_source_blocked, true);
   const again = await joinWithInvite(f.transport, f.code, SMOKE_GUEST_NAME, randomUUID());
-  if (again.ok) {
-    // A fresh identity after a ban is still not the banned member.
-    assert.notEqual(again.guest!.agentId, guest.agentId);
-    const members = await listMembersAsGuest(f.transport, again.guest!.credential);
-    assert.equal(members.ok, true, members.raw);
-    assert.ok(!members.memberIds.includes(guest.agentId));
-  } else {
-    assert.equal(again.code, 'invite_invalid');
-  }
+  assert.equal(again.ok, false, again.raw);
+  assert.equal(again.code, 'removed_from_room');
+  assert.match(again.raw, /\\?"may_rejoin\\?":false/);
 });

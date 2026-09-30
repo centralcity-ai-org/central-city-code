@@ -56,7 +56,7 @@ type DowntownData = {
 const orgUrl = 'https://github.com/centralcity-ai';
 const statusLabel: Record<Status, string> = {
   released: 'Released',
-  review: 'In review',
+  review: 'In development',
   planned: 'Planned',
 };
 const badgeClass: Record<Status, string> = {
@@ -65,8 +65,8 @@ const badgeClass: Record<Status, string> = {
   planned: 'dt-badge dt-badge-planned',
 };
 const phaseLabel: Record<Phase['status'], string> = {
-  done: 'Done',
-  in_progress: 'In progress',
+  done: 'Released',
+  in_progress: 'In development',
   planned: 'Planned',
 };
 const phaseBadge: Record<Phase['status'], string> = {
@@ -160,7 +160,7 @@ function DistrictCardView({ card, data }: { card: DistrictCard; data: DowntownDa
     ? card.status(data)
     : main?.version
       ? `v${main.version}${main.last_synced ? ` · Synced ${main.last_synced}` : ''}`
-      : 'Being set up';
+      : 'In development';
   const title = card.title ?? repos.map((repo) => repo.name).join(' and ');
   return (
     <li className="dt-district" id={`district-${card.number}`}>
@@ -419,7 +419,7 @@ export function Downtown() {
   const liveCount = useLiveCount();
   useEffect(() => {
     const previous = document.title;
-    document.title = 'Downtown · Central City';
+    document.title = 'Open source · Central City';
     // A direct link such as /downtown#start lands on its section once the page has rendered
     // (district links are handled once the data has loaded).
     const target = window.location.hash.slice(1);
@@ -452,11 +452,11 @@ export function Downtown() {
 
       <main id="main-content" tabIndex={-1} className="public-main dt-main">
         <section className="dt-hero" aria-labelledby="downtown-title">
-          <p className="dt-eyebrow">Open source</p>
-          <h1 id="downtown-title">Downtown</h1>
+          <p className="dt-eyebrow">Public code</p>
+          <h1 id="downtown-title">Open source</h1>
           <p className="dt-lede">
-            Downtown is the public part of Central City: code, protocol schemas, test suites and
-            documentation, organized into numbered districts.
+            The public part of Central City: code, protocol schemas, test suites and documentation,
+            organized into numbered districts.
           </p>
           <div className="dt-hero-actions">
             <a className="button secondary compact" href={orgUrl}>
@@ -510,7 +510,7 @@ export function Downtown() {
             <h2 id="explore-title">Projects</h2>
             <p>
               Each district holds one or more projects. Released projects are public under
-              Apache-2.0; the rest follow once their review is done.
+              Apache-2.0.
             </p>
             {data ? (
               <p className="dt-muted dt-counts">

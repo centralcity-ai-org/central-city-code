@@ -50,7 +50,7 @@
 .nav-links {
   display: flex;
   align-items: center;
-  gap: 28px;
+  gap: 0;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -76,56 +76,228 @@
   color: var(--text-primary);
 }
 
-/* "Developer" disclosure (wide header): a quiet text button and a small panel of links. */
-.cc-header-dev {
-  position: relative;
+/* The four menus (wide header), in the manner of openai.com: plain text triggers; one
+   full-width panel slides down under the header (its height animates) and cross-fades between
+   groups; the page behind blurs and dims. No motion with reduced motion. */
+.cc-header-nav .cc-nav-trigger {
   display: inline-flex;
-}
-
-.cc-header-nav .cc-header-dev-button {
-  min-height: var(--target);
-  padding: 0;
+  align-items: center;
+  /* The full header height: a generous hit area, so moving down into the panel stays inside. */
+  min-height: var(--header-h);
+  padding: 0 12px;
   border: 0;
+  border-radius: var(--radius-s);
   background: none;
   color: var(--text-secondary);
   font-size: 14px;
   font-weight: 500;
-  transition: color var(--dur-2) var(--ease-out);
+  cursor: pointer;
+  letter-spacing: -0.01em;
+  transition: color 150ms ease;
 }
 
-.cc-header-nav .cc-header-dev-button:hover,
-.cc-header-nav .cc-header-dev-button[aria-expanded='true'] {
+.cc-header-nav .cc-nav-trigger:hover,
+.cc-header-nav .cc-nav-trigger[aria-expanded='true'] {
   color: var(--text-primary);
 }
 
-.cc-header-dev-panel {
+.cc-header.is-open {
+  box-shadow: none;
+  border-bottom-color: transparent;
+}
+
+.cc-mega {
+  --mega-curve: cubic-bezier(0.4, 0, 0.2, 1);
   position: absolute;
-  top: calc(100% + var(--space-1));
-  left: calc(-1 * var(--space-3));
-  z-index: 1;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  overflow: hidden;
+  /* A translucent surface over the blurred page (like the open header). */
+  background: rgb(255 255 255 / 0.82);
+  -webkit-backdrop-filter: blur(50px) saturate(2);
+  backdrop-filter: blur(50px) saturate(2);
+  box-shadow:
+    0 1px 0 var(--border),
+    var(--shadow-sm);
+  /* One persistent panel. Open/close: a fade with a 4 px drop (GPU). Between groups: the height
+     (set inline to the active group's content) eases. */
+  opacity: 0;
+  transform: translateY(-4px);
+  visibility: hidden;
+  pointer-events: none;
+  will-change: transform, opacity;
+  transition:
+    opacity 200ms var(--mega-curve),
+    transform 200ms var(--mega-curve),
+    height 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s linear 200ms;
+}
+
+:root[data-theme='dark'] .cc-mega {
+  background: rgb(18 18 20 / 0.82);
+}
+
+.cc-mega[data-open] {
+  box-shadow:
+    0 8px 28px -4px rgb(0 0 0 / 0.08),
+    0 1px 0 var(--border);
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity 200ms var(--mega-curve),
+    transform 200ms var(--mega-curve),
+    height 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s;
+}
+
+/* The open header shares the panel's translucent, blurred surface. A pseudo-element carries the
+   blur, so the header never becomes the containing block of its fixed children. */
+.cc-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgb(255 255 255 / 0.82);
+  -webkit-backdrop-filter: blur(50px) saturate(2);
+  backdrop-filter: blur(50px) saturate(2);
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+:root[data-theme='dark'] .cc-header::before {
+  background: rgb(18 18 20 / 0.82);
+}
+
+.cc-header.is-open {
+  background-color: transparent;
+  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cc-header.is-open::before {
+  opacity: 1;
+}
+
+/* All four groups share one grid cell, each at its own height (the panel measures the active
+   one). The outgoing content fades out quickly; the incoming one fades in from 5 px below. */
+.cc-mega-inner {
   display: grid;
-  gap: var(--space-1);
-  min-width: 208px;
-  padding: var(--space-2);
-  background: var(--bg-surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-m);
-  box-shadow: var(--shadow-elevated);
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 0 24px;
 }
 
-.cc-header-dev-panel[hidden] {
-  display: none;
+.cc-mega-content {
+  grid-area: 1 / 1;
+  align-self: start;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 28px 0 40px;
+  opacity: 0;
+  transform: translateY(2px);
+  visibility: hidden;
+  transition:
+    opacity 120ms var(--mega-curve),
+    transform 0s linear 120ms,
+    visibility 0s linear 120ms;
 }
 
-.cc-header-nav .cc-header-dev-panel a {
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-s);
+.cc-mega[data-open] .cc-mega-content[data-active] {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition:
+    opacity 160ms cubic-bezier(0.16, 1, 0.3, 1) 25ms,
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1) 25ms,
+    visibility 0s;
+}
+
+.cc-mega-label {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.cc-mega-content ul,
+.cc-menu-group-panel {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cc-header .cc-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--target);
   color: var(--text-primary);
-  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 100ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.cc-header-nav .cc-header-dev-panel a:hover {
-  background: var(--bg-surface-hover);
+.cc-header .cc-nav-link:hover {
+  color: var(--text-secondary);
+}
+
+.cc-header .cc-nav-link[aria-current='page'] {
+  color: var(--accent-text, var(--primary));
+}
+
+.cc-nav-external {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* The page behind an open panel: blurred and dimmed; it fades in and out. */
+.cc-mega-backdrop {
+  position: fixed;
+  inset: var(--header-h) 0 0;
+  z-index: 1;
+  background: rgb(0 0 0 / 0.12);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  opacity: 0;
+  visibility: hidden;
+  will-change: opacity;
+  transition:
+    opacity 200ms cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0s linear 200ms;
+}
+
+.cc-mega-backdrop[data-open] {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 200ms cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0s;
+}
+
+/* Reduced motion: no height, transform or fade; an instant swap. */
+@media (prefers-reduced-motion: reduce) {
+  .cc-mega,
+  .cc-mega[data-open],
+  .cc-mega-content,
+  .cc-mega[data-open] .cc-mega-content[data-active],
+  .cc-mega-backdrop,
+  .cc-mega-backdrop[data-open],
+  .cc-header::before,
+  .cc-header.is-open {
+    transition: none;
+  }
+  .cc-mega,
+  .cc-mega-content {
+    transform: none;
+  }
 }
 
 .cc-header-actions,
@@ -222,9 +394,12 @@
 }
 
 .cc-header-menu {
-  position: absolute;
-  inset: 100% 0 auto;
+  position: fixed;
+  inset: var(--header-h) 0 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: grid;
+  align-content: start;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4) var(--space-4);
   background: var(--bg-surface-elevated);
@@ -253,18 +428,63 @@
   background: var(--bg-surface-hover);
 }
 
-.cc-header-menu-group {
-  display: grid;
-  gap: var(--space-1);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border);
+/* The phone menu's four groups: simple expandable sections. */
+.cc-menu-group {
+  border-bottom: 1px solid var(--border);
 }
 
-.cc-header-menu-group-title {
+.cc-menu-group-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 52px;
   padding: 0 var(--space-3);
-  color: var(--text-secondary);
-  font-size: 13px;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font-size: 17px;
   font-weight: 500;
+  cursor: pointer;
+}
+
+.cc-menu-chevron {
+  color: var(--text-muted);
+  transition: transform var(--dur-2) var(--ease-out);
+}
+
+[aria-expanded='true'] > .cc-menu-chevron {
+  transform: rotate(180deg);
+}
+
+.cc-menu-group-panel {
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.cc-menu-group-panel[hidden] {
+  display: none;
+}
+
+/* A section's links arrive softly instead of popping in. */
+.cc-menu-group-panel:not([hidden]) {
+  animation: cc-menu-group-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes cc-menu-group-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-menu-group-panel:not([hidden]) {
+    animation: none;
+  }
+}
+
+.cc-header-menu nav .cc-nav-link {
+  padding: 0;
 }
 
 .cc-header-menu-theme {
@@ -275,6 +495,12 @@
   border-top: 1px solid var(--border);
   color: var(--text-secondary);
   font-size: 14px;
+}
+
+/* The menu's theme toggle keeps the 44 px touch target. */
+.cc-header-menu-theme .theme-toggle-btn {
+  width: var(--target);
+  height: var(--target);
 }
 
 @media (max-width: 899px) {
@@ -290,6 +516,10 @@
   }
   .cc-header .cc-header-menu-button {
     display: inline-grid;
+  }
+  .cc-mega,
+  .cc-mega-backdrop {
+    display: none;
   }
 }
 
@@ -324,7 +554,7 @@
 .cc-footer-inner,
 .footer-grid {
   display: grid;
-  grid-template-columns: 2fr repeat(4, 1fr);
+  grid-template-columns: 2fr repeat(5, 1fr);
   gap: 36px;
   max-width: var(--page-max);
   margin: 0 auto;

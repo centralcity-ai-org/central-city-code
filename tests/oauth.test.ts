@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, randomUUID, sign, type KeyObject } from 'node:crypto';
 import {
+  signedIn,
   approve,
   authorizeUrl,
   consentPost,
@@ -353,11 +354,13 @@ test('consent POST requires the flow cookie, CSRF token, same origin and valid p
   });
   assert.equal(wrong.statusCode, 401);
   assert.match(wrong.body, /Invalid account name or password/);
-  assert.equal((await consentPost(app, form, fields)).statusCode, 200);
-  const approved = await consentPost(app, form, { action: 'approve', expires_in_days: '1' });
+  const login = await consentPost(app, form, fields);
+  assert.equal(login.statusCode, 200);
+  const session = signedIn(form, login);
+  const approved = await consentPost(app, session, { action: 'approve', expires_in_days: '1' });
   assert.ok(redirectFrom(approved.body).searchParams.get('code'));
   // The pending request is consumed.
-  assert.equal((await consentPost(app, form, { action: 'approve' })).statusCode, 400);
+  assert.equal((await consentPost(app, session, { action: 'approve' })).statusCode, 400);
 });
 
 test('PKCE is mandatory and a wrong verifier is rejected', async (t) => {

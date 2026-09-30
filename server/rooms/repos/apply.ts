@@ -24,7 +24,7 @@ import {
   type TokenPermissions,
 } from './github.js';
 import { postObjectMessage } from './message.js';
-import { applyToBase, resolvePaths } from './proposals.js';
+import { applyToBase, requireOnDefaultBranch, resolvePaths } from './proposals.js';
 
 /**
  * Apply and check evidence (docs/ROOM_REPOS.md "Apply and evidence").
@@ -36,8 +36,10 @@ import { applyToBase, resolvePaths } from './proposals.js';
  *   other than the proposing agent; `expected_revision` is compare-and-set;
  * - the default branch head is re-read at apply time: if any touched file changed since the base,
  *   the proposal becomes `out_of_date` and nothing is created (`409 proposal_out_of_date`);
- * - the commit is built with the Git Data API on the base commit, from the base files and the
- *   stored diff (re-applied exactly), and the only ref ever created is
+ * - the commit is built with the Git Data API on the current default branch head (its parent and
+ *   tree), with only the touched files replaced by the stored diff re-applied exactly to them
+ *   (identical at the base and the head, checked above). Every other file is the head's, so
+ *   nothing main removed or changed since the base comes back. The only ref ever created is
  *   `refs/heads/cc/<room-slug>/p<n>-r<rev>` (github.ts guard). Nothing pushes to the default
  *   branch, force-updates or merges;
  * - PR and commit text are built by the server; room text is quoted, and `@` is escaped so the
@@ -275,6 +277,9 @@ export function createRoomApply(d: RepoDependencies): RoomApply {
     const headCommit = await reader
       .commit(binding.default_branch)
       .catch((error) => fromGitHub(error, unavailable));
+    // The base must still lie on the default branch (checked at propose too): the applied branch
+    // starts from the base's whole tree, so a base elsewhere would bring files nobody reviewed.
+    await requireOnDefaultBranch(reader, binding.default_branch, headCommit.sha, row.base.commit);
     const atHead = await resolvePaths(reader, headCommit.tree_sha, row.files);
     const changed: string[] = [];
     for (const path of row.files) {
@@ -304,12 +309,12 @@ export function createRoomApply(d: RepoDependencies): RoomApply {
       );
     }
 
-    // 2. Rebuild the new file contents from the base exactly as validated at propose time.
+    // 2. Rebuild the new file contents on the current head. The touched files are the same there
+    //    as at the reviewed base (step 1), so the change is exactly the reviewed one; every other
+    //    file stays as on the head, so an older base cannot bring back files main has since
+    //    removed or changed (workflows, dependencies).
     const files = parseDiff(row.diff);
-    const baseCommit = await reader
-      .commit(row.base.commit)
-      .catch((error) => fromGitHub(error, unavailable));
-    const { blobs, modes, results } = await applyToBase(reader, baseCommit.tree_sha, files);
+    const { blobs, modes, results } = await applyToBase(reader, headCommit.tree_sha, files);
     for (const path of row.files)
       if ((blobs[path] ?? null) !== (row.base.blobs[path] ?? null))
         refuse(409, 'base_changed', 'The base files no longer match the proposal.', { path });
@@ -351,7 +356,8 @@ export function createRoomApply(d: RepoDependencies): RoomApply {
       `Proposal: P${row.number}, revision ${row.revision} (${link})`,
       `Room: ${p.origin}/r/${room.slug}`,
       ...(names.task ? [`Task: T${names.task}`] : []),
-      `Base commit: ${row.base.commit}`,
+      `Base commit (reviewed): ${row.base.commit}`,
+      `Built on: ${binding.default_branch} at ${headCommit.sha}`,
       `Proposed by: ${nameOf(row.author_agent_id)}`,
       `Approved on this revision by: ${approved.map(nameOf).join(', ')}`,
       '',
@@ -394,7 +400,7 @@ export function createRoomApply(d: RepoDependencies): RoomApply {
       });
     }
     const tree = await writer
-      .createTree(baseCommit.tree_sha, entries)
+      .createTree(headCommit.tree_sha, entries)
       .catch((error) => fromGitHub(error, unavailable));
     const conflict = (): never =>
       refuse(
@@ -405,8 +411,21 @@ export function createRoomApply(d: RepoDependencies): RoomApply {
       );
     const verify = async (sha: string) => {
       const found = await writer.gitCommit(sha).catch((error) => fromGitHub(error, unavailable));
-      if (found.tree !== tree || found.parents.length !== 1 || found.parents[0] !== row.base.commit)
-        conflict();
+      if (found.parents.length !== 1) conflict();
+      const parent = found.parents[0]!;
+      if (parent === headCommit.sha) {
+        if (found.tree !== tree) conflict();
+        return sha;
+      }
+      // An interrupted apply on an earlier head: adopted only while that head is still on the
+      // default branch and the tree is exactly this revision's files on that head's tree.
+      const { status } = await reader.compare(headCommit.sha, parent).catch(conflict);
+      if (status !== 'behind') conflict();
+      const earlier = await reader.commit(parent).catch(conflict);
+      const expected = await writer
+        .createTree(earlier.tree_sha, entries)
+        .catch((error) => fromGitHub(error, unavailable));
+      if (found.tree !== expected) conflict();
       return sha;
     };
     let headSha = await writer.ownRef(ref).catch((error) => fromGitHub(error, unavailable));
@@ -414,7 +433,7 @@ export function createRoomApply(d: RepoDependencies): RoomApply {
       headSha = await verify(headSha);
     } else {
       const commit = await writer
-        .createCommit(message, tree, row.base.commit)
+        .createCommit(message, tree, headCommit.sha)
         .catch((error) => fromGitHub(error, unavailable));
       try {
         await writer.createOwnRef(ref, commit);

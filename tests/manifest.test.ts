@@ -875,3 +875,27 @@ test('Agent Card signatures verify, detect tampering and survive key rotation', 
   forged.jwk.x = exportSigningKey(oldKey).jwk.x;
   assert.throws(() => importSigningKey(forged));
 });
+
+test('issues never echo received keys or values (paths are reduced, messages are generic)', () => {
+  // Paths keep only [A-Za-z0-9_-] per segment (like REST validation errors); messages never
+  // repeat the key or value.
+  const key = 'sk-ant-SECRET.VALUE:0123456789';
+  const unknown = parseAgentManifest(agent(hosted, { labels: { team: 'blue' }, [key]: 1 }));
+  assert.equal(unknown.ok, false);
+  const issues = !unknown.ok ? unknown.issues : [];
+  assert.deepEqual(
+    issues.map(({ code, path, message }) => ({ code, path, message })),
+    [
+      {
+        code: 'UNKNOWN_KEY',
+        path: 'metadata.sk-ant-SECRET?VALUE?0123456789',
+        message: 'Unknown key.',
+      },
+    ],
+  );
+  assert.ok(!JSON.stringify(issues).includes(key));
+  const duplicate = parseAgentManifest(agent({ ...hosted, capabilities: ['extract', 'extract'] }));
+  const dupText = JSON.stringify(!duplicate.ok && duplicate.issues);
+  assert.match(dupText, /DUPLICATE_NAME/);
+  assert.ok(!dupText.includes('"extract"') && !dupText.includes('extract\\"'), dupText);
+});

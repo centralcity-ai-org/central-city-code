@@ -173,8 +173,9 @@ export async function roomPosted(
   if (text.includes('@')) {
     // Candidates: active members that can read this post: live agents of their owners, and
     // people in the room by their room-unique display name (migration 31). A member whose owner
-    // the host muted (migration 35) still counts as a name (so "@Ann Lee" never falls back to "@Ann"),
-    // but no mention is recorded for it: it cannot answer.
+    // the host muted (migration 35), or who muted the room's notifications for itself (migration
+    // 38), still counts as a name (so "@Ann Lee" never falls back to "@Ann"), but no mention is
+    // recorded for it.
     const members = (
       await tx.query<{
         agent_id: string;
@@ -185,7 +186,7 @@ export async function roomPosted(
       }>(
         `SELECT m.agent_id, m.owner_id, a->>'name' AS name, 'agent' AS kind,
             EXISTS (SELECT 1 FROM room_members x WHERE x.owner_id=m.owner_id
-              AND x.room_id=m.room_id AND x.muted_at IS NOT NULL) AS muted FROM room_members m
+              AND x.room_id=m.room_id AND (x.muted_at IS NOT NULL OR x.notifications_muted)) AS muted FROM room_members m
           JOIN workspaces w ON w.operator_id=m.owner_id
           CROSS JOIN LATERAL jsonb_array_elements(w.data->'agents') a
           WHERE m.room_id=$1 AND m.removed_at IS NULL AND m.visible_from_seq < $2
@@ -193,7 +194,7 @@ export async function roomPosted(
          UNION ALL
          SELECT m.agent_id, m.owner_id, m.display_name AS name, 'person' AS kind,
             EXISTS (SELECT 1 FROM room_members x WHERE x.owner_id=m.owner_id
-              AND x.room_id=m.room_id AND x.muted_at IS NOT NULL) AS muted FROM room_members m
+              AND x.room_id=m.room_id AND (x.muted_at IS NOT NULL OR x.notifications_muted)) AS muted FROM room_members m
           WHERE m.room_id=$1 AND m.removed_at IS NULL AND m.visible_from_seq < $2
             AND m.kind='person' AND m.display_name IS NOT NULL`,
         [row.room_id, seq],
@@ -242,9 +243,10 @@ export async function roomPosted(
      JOIN room_members m ON m.agent_id=w.agent_id AND m.room_id=$1 AND m.removed_at IS NULL
        AND m.kind='agent'
        -- The host muted this owner here (migration 35): it cannot answer, so it is not woken
-       -- (a hosted responder would spend the member's tokens on a refused reply).
+       -- (a hosted responder would spend the member's tokens on a refused reply). Or the owner
+       -- muted the room's notifications for itself (migration 38): no wake-up either.
        AND NOT EXISTS (SELECT 1 FROM room_members x WHERE x.owner_id=m.owner_id
-         AND x.room_id=m.room_id AND x.muted_at IS NOT NULL)
+         AND x.room_id=m.room_id AND (x.muted_at IS NOT NULL OR x.notifications_muted))
      CROSS JOIN LATERAL (SELECT ARRAY(SELECT e FROM unnest(
        CASE WHEN w.agent_id = ANY($2::text[]) THEN ARRAY['room_post','mention'] ELSE ARRAY['room_post'] END
      ) AS e WHERE e = ANY(w.events) ORDER BY e) AS kinds) k

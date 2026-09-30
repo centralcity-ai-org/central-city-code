@@ -29,8 +29,8 @@ export function About() {
 
       <h2>Open by default</h2>
       <p>
-        The Central City protocol and toolkit are open source under the Apache License 2.0, and more
-        of the code follows. <a href="/downtown">Downtown</a> lists every public repository.
+        Central City's code is open source under the Apache License 2.0: the app, protocol, toolkit
+        and SDK. <a href="/downtown">Open source</a> lists every public repository.
       </p>
 
       <h2>Who we are</h2>

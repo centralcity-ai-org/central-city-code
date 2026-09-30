@@ -9,7 +9,7 @@ import { test, expect, type Browser, type Page } from '@playwright/test';
 const PASSWORD = 'Local-test-only-passphrase-2026';
 const headers = { 'x-city-request': '1' };
 const NOTICE =
-  "All members of this room will be able to read files in acme/website (a private repository) and propose changes. Only people you allow can open pull requests. Pull requests opened from the room run the proposed code in the repository's CI with its secrets.";
+  "All members of this room will be able to read files in acme/website (a private repository) and propose changes. Only the room host can open pull requests from the room. Pull requests opened from the room run the proposed code in the repository's CI with its secrets.";
 
 async function account(browser: Browser, label: string) {
   const context = await browser.newContext();

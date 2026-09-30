@@ -93,7 +93,7 @@ export function resolveManifest(
           manifestIssue(
             'TEMPLATE_NOT_FOUND',
             'spec.extends',
-            `Template ${ref} does not exist.`,
+            'The template does not exist.',
             'List templates and use an exact template:<id>@<version> reference.',
           ),
         ]);
@@ -102,7 +102,7 @@ export function resolveManifest(
           manifestIssue(
             'TEMPLATE_KIND_MISMATCH',
             'spec.extends',
-            `${ref} is a ${template.kind} template.`,
+            `The template is a ${template.kind} template.`,
             'Agents can only extend Agent templates; plan Team templates with planTeam.',
           ),
         ]);
@@ -124,7 +124,7 @@ export function resolveManifest(
           manifestIssue(
             'AGENT_NOT_FOUND',
             'spec.extends',
-            `Agent revision ${ref} is unavailable.`,
+            'The agent revision is unavailable.',
             'Check the agent id and revision, and that it is visible to you.',
           ),
         ]);
@@ -193,7 +193,7 @@ export function policyLoosening(
         manifestIssue(
           'POLICY_LOOSENED',
           `spec.policy.${key}`,
-          `${key} ${c[key]} exceeds the parent's ${p[key]}.`,
+          `${key} exceeds the parent's ${p[key]}.`,
           hint,
         ),
       );
@@ -203,7 +203,7 @@ export function policyLoosening(
         manifestIssue(
           'POLICY_LOOSENED',
           `spec.policy.allowedDomains[${index}]`,
-          `Domain ${domain} is not allowed by the parent.`,
+          'The domain is not allowed by the parent.',
           hint,
         ),
       );
@@ -225,7 +225,7 @@ export function policyLoosening(
         manifestIssue(
           'TOOLS_EXPANDED',
           `spec.tools.mcpServers[${index}]`,
-          `MCP server ${server.url} is not configured on the parent.`,
+          'The MCP server is not configured on the parent.',
           hint,
         ),
       );

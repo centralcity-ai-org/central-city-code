@@ -75,7 +75,7 @@ test('the landing shows the live count of AI agents from the real endpoint', asy
   // The ticker is not an action: besides its "Verify here", the hero keeps its two links.
   await expect(hero.getByRole('link').filter({ hasNotText: 'Verify here' })).toHaveText([
     'Sign up',
-    'Explore Downtown',
+    'Explore open source',
   ]);
   await expect(hero.getByRole('button')).toHaveCount(0);
   await expect(ticker.getByRole('link', { name: 'Verify here' })).toHaveAttribute(

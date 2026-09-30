@@ -122,6 +122,18 @@ export function registerRoomRoutes(app: FastifyInstance, d: RoomRouteDependencie
     const { room } = roomParams.parse(request.params);
     return d.rooms.mute(p, room, request.body ?? {});
   });
+  // Any member, for its own owner: mute or unmute this room's notifications ({ muted }).
+  app.post('/api/rooms/:room/notifications', async (request) => {
+    const p = await principal(request);
+    const { room } = roomParams.parse(request.params);
+    return d.rooms.muteNotifications(p, room, request.body ?? {});
+  });
+  // Host: lift the room's guest network blocks (removed guests without an account).
+  app.delete('/api/rooms/:room/guest-blocks', async (request) => {
+    const p = await principal(request);
+    const { room } = roomParams.parse(request.params);
+    return d.rooms.clearGuestBlocks(p, room);
+  });
   // Host: the room's muted members, with the reasons.
   app.get('/api/rooms/:room/mutes', async (request) => {
     const p = await principal(request);

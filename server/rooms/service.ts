@@ -21,6 +21,7 @@ import {
   shortCodeHash,
 } from '../links/short-code.js';
 import { pastedLink, sameSite } from '../links/paste.js';
+import { chargeShortCodeAttempt } from '../links/invites.js';
 import { isStressTestHost } from '../stress-allowlist.js';
 import { lineName, memberLabel, postSystemLine } from './system-lines.js';
 import { roomPosted } from '../wake/hooks.js';
@@ -35,6 +36,7 @@ import {
   roomDeleteInput,
   roomMemberCapInput,
   roomMuteInput,
+  roomNotificationsInput,
   roomRenameInput,
   personJoinInput,
   roomCloseToolInput,
@@ -399,6 +401,15 @@ export interface Rooms {
   deleteRoom(p: RoomPrincipal, roomRef: string, body: unknown): Promise<unknown>;
   /** Host console: mute or unmute one member ({ agent_id, muted, reason? }). */
   mute(p: RoomPrincipal, roomRef: string, body: unknown): Promise<unknown>;
+  /** Console: a member mutes or unmutes the room's notifications for itself ({ muted }). */
+  muteNotifications(p: RoomPrincipal, roomRef: string, body: unknown): Promise<unknown>;
+  /**
+   * Host console: lift every guest source block of the room (migration 37), for example when a
+   * shared network (an office, a mobile carrier) keeps other guests out. Removed guests may then
+   * join again from those networks with a live link; rotating the room link is separate and does
+   * not clear blocks. Returns how many active blocks were lifted; an audit row records it.
+   */
+  clearGuestBlocks(p: RoomPrincipal, roomRef: string): Promise<unknown>;
   /** Host console: the room's muted members (active or left), with the reasons. */
   mutes(p: RoomPrincipal, roomRef: string): Promise<unknown>;
   list(p: RoomPrincipal): Promise<{ rooms: RoomView[] }>;
@@ -747,13 +758,16 @@ export function createRooms(d: RoomDependencies): Rooms {
         role: RoomRole | null;
         muted: boolean | null;
         mute_reason: string | null;
+        notifications_muted: boolean | null;
       }>(
         `SELECT count(*) AS n, (SELECT role FROM room_members WHERE room_id=$1 AND owner_id=$2 AND removed_at IS NULL
           ORDER BY (role='host') DESC, joined_at LIMIT 1) AS role,
           (SELECT mute_reason FROM room_members WHERE room_id=$1 AND owner_id=$2
             AND muted_at IS NOT NULL ORDER BY muted_at DESC LIMIT 1) AS mute_reason,
           EXISTS (SELECT 1 FROM room_members WHERE room_id=$1 AND owner_id=$2
-            AND muted_at IS NOT NULL) AS muted
+            AND muted_at IS NOT NULL) AS muted,
+          EXISTS (SELECT 1 FROM room_members WHERE room_id=$1 AND owner_id=$2
+            AND notifications_muted) AS notifications_muted
           FROM room_members WHERE room_id=$1 AND removed_at IS NULL`,
         [room.id, p.operatorId],
       )
@@ -780,6 +794,8 @@ export function createRooms(d: RoomDependencies): Rooms {
         ? {
             people_may_join: room.people_may_join !== false,
             members_may_bring_ai: room.members_may_bring_ai !== false,
+            // Networks currently blocked from joining as guests without an account (migration 37).
+            guest_blocks: await activeGuestBlocks(q, room.id),
           }
         : {}),
       // The host's mute of the viewer (migration 35), in the console only.
@@ -787,11 +803,25 @@ export function createRooms(d: RoomDependencies): Rooms {
         ? {
             muted: stats?.muted === true,
             mute_reason: stats?.muted === true ? (stats.mute_reason ?? null) : null,
+            // The viewer's own notification mute (migration 38).
+            notifications_muted: stats?.notifications_muted === true,
           }
         : {}),
       responders_allowed: room.responders_allowed !== false,
       auto_responders: room.responders_allowed === false ? [] : await autoResponders(q, room.id),
     };
+  }
+  /** Active guest source blocks of a room (migration 37); 0 before that migration ran. */
+  async function activeGuestBlocks(q: Pick<Tx, 'query'>, roomId: string): Promise<number> {
+    if (!(await present(q, 'room_guest_blocks'))) return 0;
+    return Number(
+      (
+        await q.query<{ n: string | number }>(
+          'SELECT count(*) AS n FROM room_guest_blocks WHERE room_id=$1 AND expires_at>$2',
+          [roomId, d.clock()],
+        )
+      ).rows[0]?.n ?? 0,
+    );
   }
   /**
    * Members whose hosted responder is effectively on: enabled, active, with a live wake
@@ -1317,14 +1347,15 @@ export function createRooms(d: RoomDependencies): Rooms {
           SHORT_CODE_LIMITS.attemptsPerAccountPerHour,
           HOUR,
         );
-        if (p.address)
+        // Then the same address tiers (source, /56, /48, /32 or their IPv4 equivalents) and
+        // global budget as /j, bootstrap and /mcp/open (a distributed guess).
+        if (p.address) await chargeShortCodeAttempt(d.limit, p.address);
+        else
           await d.limit(
-            `room-join:short-code-address:${p.address}`,
-            SHORT_CODE_LIMITS.attemptsPerAddressPerHour,
+            'room-join:short-code-global',
+            SHORT_CODE_LIMITS.attemptsGlobalPerHour,
             HOUR,
           );
-        // One global budget over every caller (a distributed guess), shared with /j and /mcp/open.
-        await d.limit('room-join:short-code-global', SHORT_CODE_LIMITS.attemptsGlobalPerHour, HOUR);
       }
       let linkRow: LinkRow | undefined;
       if (presented.kind === 'token')
@@ -1947,6 +1978,18 @@ export function createRooms(d: RoomDependencies): Rooms {
             )
         ).map((item) => [item.agent_id, item.provider] as const),
       );
+      // Invited AIs that joined through an invite link without any account (they hold a room
+      // credential and have no lasting identity), so clients can treat their removal differently.
+      const invited = new Set(
+        live.length && (await present(tx, 'room_invite_credentials'))
+          ? (
+              await tx.query<{ agent_id: string }>(
+                'SELECT agent_id FROM room_invite_credentials WHERE room_id=$1 AND agent_id = ANY($2::text[])',
+                [room!.id, live.map((row) => row.agent_id)],
+              )
+            ).rows.map((row) => row.agent_id)
+          : [],
+      );
       const list: RoomMember[] = live.map((row) => ({
         id: row.agent_id,
         name:
@@ -1960,6 +2003,7 @@ export function createRooms(d: RoomDependencies): Rooms {
         auto_reply: responders.has(row.agent_id)
           ? { provider: responders.get(row.agent_id)! }
           : null,
+        guest: invited.has(row.agent_id),
       }));
       // A page may hold fewer than `limit` members (revoked agents are skipped); next_cursor is
       // present only while more members follow, so a room that fits one page answers as before.
@@ -1973,6 +2017,38 @@ export function createRooms(d: RoomDependencies): Rooms {
 
   // -------------------------------------------------------------------------------------------
   // Host controls
+
+  /**
+   * Blocks the join source of a removed guest without an account from this room (migration 37)
+   * for ROOM_LIMITS.guestBlockDays. Returns whether a source was recorded (false for members
+   * with an account, or before the invite and block migrations ran).
+   */
+  async function blockGuestSource(
+    tx: Pick<Tx, 'query'>,
+    roomId: string,
+    member: MemberRow,
+    time: number,
+  ): Promise<boolean> {
+    if (
+      !(await present(tx, 'room_guest_blocks')) ||
+      !(await present(tx, 'room_invite_credentials'))
+    )
+      return false;
+    const source = (
+      await tx.query<{ source_hash: string }>(
+        'SELECT source_hash FROM room_invite_credentials WHERE agent_id=$1 AND room_id=$2 AND operator_id=$3',
+        [member.agent_id, roomId, member.owner_id],
+      )
+    ).rows[0]?.source_hash;
+    if (!source) return false;
+    await tx.query(
+      `INSERT INTO room_guest_blocks(room_id, source_hash, expires_at) VALUES($1,$2,$3)
+        ON CONFLICT (room_id, source_hash)
+        DO UPDATE SET expires_at=GREATEST(room_guest_blocks.expires_at, EXCLUDED.expires_at)`,
+      [roomId, source, time + limits.guestBlockDays * DAY],
+    );
+    return true;
+  }
 
   async function remove(p: RoomPrincipal, body: unknown, guard?: RoomGuard) {
     const values = roomRemoveToolInput.parse(body);
@@ -2016,7 +2092,12 @@ export function createRooms(d: RoomDependencies): Rooms {
       // never dodges a removal.
       const banLeft = row!.removed_at !== null && row!.removed_by === LEFT;
       if (row!.removed_at !== null && !banLeft)
-        return { room_id: room.id, agent_id: row!.agent_id, removed: false };
+        return {
+          room_id: room.id,
+          agent_id: row!.agent_id,
+          removed: false,
+          guest_source_blocked: false,
+        };
       await tx.query(
         banLeft
           ? 'UPDATE room_members SET removed_by=$4, removal_reason=$5, rejoin_allowed=$6 WHERE room_id=$1 AND agent_id=$2 AND removed_at <= $3'
@@ -2035,6 +2116,11 @@ export function createRooms(d: RoomDependencies): Rooms {
         );
       // The removed agent's room results for this room are revoked with it.
       await revokeRoomResults(tx, room.id, row!.agent_id, time, p.actor);
+      // A guest without an account has no lasting identity (each join is a new anonymous
+      // owner), so the owner-level block cannot hold it: its join source is blocked from
+      // this room for a while instead (migration 37). Only the keyed source hash is kept.
+      const guestSourceBlocked =
+        !rejoinAllowed && (await blockGuestSource(tx, room.id, row!, time));
       const host = workspaces.get(p.operatorId)!;
       event(
         host,
@@ -2054,7 +2140,12 @@ export function createRooms(d: RoomDependencies): Rooms {
           }${reason ? ` The host's reason (their words): ${reason}` : ''}`,
           row!.agent_id,
         );
-      return { room_id: room.id, agent_id: row!.agent_id, removed: true };
+      return {
+        room_id: room.id,
+        agent_id: row!.agent_id,
+        removed: true,
+        guest_source_blocked: guestSourceBlocked,
+      };
     });
   }
 
@@ -2585,7 +2676,7 @@ export function createRooms(d: RoomDependencies): Rooms {
         [room.id, time, DELETED],
       );
       await tx.query(
-        'UPDATE room_members SET display_name=NULL, removal_reason=NULL, muted_at=NULL, mute_reason=NULL WHERE room_id=$1',
+        'UPDATE room_members SET display_name=NULL, removal_reason=NULL, muted_at=NULL, mute_reason=NULL, notifications_muted=false WHERE room_id=$1',
         [room.id],
       );
       // Content. Children before parents (the foreign keys have no cascade).
@@ -2624,6 +2715,7 @@ export function createRooms(d: RoomDependencies): Rooms {
         ['room_messages', 'DELETE FROM room_messages WHERE room_id=$1'],
         ['room_receipts', 'DELETE FROM room_receipts WHERE room_id=$1'],
         ['room_join_receipts', 'DELETE FROM room_join_receipts WHERE room_id=$1'],
+        ['room_guest_blocks', 'DELETE FROM room_guest_blocks WHERE room_id=$1'],
       ];
       for (const [table, sql] of purge)
         if (await present(tx, table)) await tx.query(sql, [room.id]);
@@ -2741,6 +2833,49 @@ export function createRooms(d: RoomDependencies): Rooms {
     });
   }
 
+  /**
+   * Host console: lift every guest source block of the room (migration 37). Rotating the room
+   * link does not do this. Returns how many active blocks were lifted; an audit row records it.
+   */
+  async function clearGuestBlocks(p: RoomPrincipal, roomRef: string) {
+    if (!p.console) roomNotFound();
+    return d.db.transaction(async (tx) => {
+      const time = d.clock();
+      const room = await hostOnly(tx, await findRoom(tx, roomRef, true), p.operatorId);
+      let cleared = 0;
+      if (await present(tx, 'room_guest_blocks')) {
+        const rows = (
+          await tx.query<{ active: boolean }>(
+            'DELETE FROM room_guest_blocks WHERE room_id=$1 RETURNING expires_at>$2 AS active',
+            [room.id, time],
+          )
+        ).rows;
+        cleared = rows.filter((row) => row.active).length;
+      }
+      await audit(tx, room, p, 'guest_blocks.cleared', null, time);
+      return { room_id: room.id, cleared };
+    });
+  }
+
+  /**
+   * Console: a member mutes or unmutes this room's notifications for its own owner (migration
+   * 38). While muted, posts here wake none of the owner's webhooks or hosted responders and
+   * record no @mention for it; it still reads and posts. Every member row of the owner in the
+   * room carries the flag, those that left included, so it holds when the owner rejoins.
+   */
+  async function muteNotifications(p: RoomPrincipal, roomRef: string, body: unknown) {
+    if (!p.console) roomNotFound();
+    const values = roomNotificationsInput.parse(body);
+    return d.db.transaction(async (tx) => {
+      const { room } = await access(tx, await findRoom(tx, roomRef, true), p.operatorId);
+      await tx.query(
+        'UPDATE room_members SET notifications_muted=$3 WHERE room_id=$1 AND owner_id=$2',
+        [room.id, p.operatorId, values.muted],
+      );
+      return { room_id: room.id, notifications_muted: values.muted };
+    });
+  }
+
   /** Host console: every muted member of the room (active or left), newest mute first. */
   async function mutes(p: RoomPrincipal, roomRef: string) {
     if (!p.console) roomNotFound();
@@ -2817,6 +2952,8 @@ export function createRooms(d: RoomDependencies): Rooms {
     deleteRoom,
     mute,
     mutes,
+    clearGuestBlocks,
+    muteNotifications,
     list,
     hostInvite,
     describeInvite,

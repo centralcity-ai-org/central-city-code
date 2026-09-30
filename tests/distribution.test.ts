@@ -15,6 +15,7 @@ import { ASSISTANT_SCOPES } from '../shared/assistant.js';
 import { ANONYMOUS_TOOLS } from '../shared/assistant-tools.js';
 import { isClientRoute } from '../shared/routes.js';
 import { ROOM_TASK_TOOLS } from '../server/rooms/tasks-tools.js';
+import { ROOM_REPO_TOOLS } from '../server/rooms/repos/tools.js';
 import { renderPublicDocs } from '../scripts/public-docs/build.js';
 import { fixture, fullFlow, mcpCall, rpcResult, type App } from './oauth-helpers.js';
 
@@ -39,7 +40,13 @@ const OPEN_TOOLS: string[] = [...ANONYMOUS_TOOLS];
 /** Invitation tools on /mcp/open, live where CITY_INVITE_FLOW=1 (production). */
 const INVITE_TOOLS = Object.keys(openInviteInputSchemas);
 /** Room task tools on /mcp, live where CITY_ROOM_TASKS=1 (production). */
-const LIVE_TOOLS = new Set([...OAUTH_TOOLS, ...ROOM_TASK_TOOLS, ...OPEN_TOOLS, ...INVITE_TOOLS]);
+const LIVE_TOOLS = new Set([
+  ...OAUTH_TOOLS,
+  ...ROOM_TASK_TOOLS,
+  ...ROOM_REPO_TOOLS,
+  ...OPEN_TOOLS,
+  ...INVITE_TOOLS,
+]);
 /** Streamable HTTP exists from this revision on; the 2026 revision is served statelessly. */
 const FIRST_STREAMABLE_HTTP_VERSION = '2025-03-26';
 const MODERN_PROTOCOL_VERSION = '2026-07-28';
@@ -637,7 +644,9 @@ test('GitHub links, relative links and anchors in the distribution files resolve
 
 test('vercel.json keeps every existing route and serves the discovery files correctly', () => {
   assert.equal(vercel.framework, 'vite');
-  assert.equal(vercel.buildCommand, 'pnpm build');
+  // The deploy drops Vite's build manifest (it lists the source files; the bundle budget reads it
+  // in CI, before this step): /.vite/manifest.json is never public.
+  assert.equal(vercel.buildCommand, 'pnpm build && rm -rf dist/.vite');
   assert.equal(vercel.outputDirectory, 'dist');
   assert.deepEqual(vercel.functions, { 'api/index.ts': { maxDuration: 30 } });
   const agent = randomUUID();

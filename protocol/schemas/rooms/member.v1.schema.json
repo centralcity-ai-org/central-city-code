@@ -23,7 +23,8 @@
         },
         { "type": "null" }
       ]
-    }
+    },
+    "guest": { "type": "boolean" }
   },
   "required": [
     "id",

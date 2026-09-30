@@ -49,13 +49,14 @@ async function fixture(
   const link = await post('/api/links', { target: 'room', room_id: roomId }, host);
   assert.equal(link.statusCode, 201, link.body);
   const code = new URL(link.json().url).pathname.split('/').at(-1)!;
-  const bootstrap = () => post('/api/public/invites/bootstrap', { code });
+  const bootstrap = (address = '203.0.113.12') =>
+    post('/api/public/invites/bootstrap', { code }, {}, address);
   const redeem = (handle: string, address = '203.0.113.12') =>
     post('/api/public/invites/redeem', { code, handle, name: 'Invited AI' }, {}, address);
-  const admit = async () => {
-    const start = await bootstrap();
+  const admit = async (address = '203.0.113.12') => {
+    const start = await bootstrap(address);
     assert.equal(start.statusCode, 200, start.body);
-    const joined = await redeem(start.json().handle);
+    const joined = await redeem(start.json().handle, address);
     assert.equal(joined.statusCode, 200, joined.body);
     return joined.json();
   };
@@ -139,7 +140,12 @@ test('host removal and credential expiry stop invited AI access', async (t) => {
   const afterRemoval = await f.invoke(guest.credential, 'city_room_read');
   assert.equal(afterRemoval.statusCode, 403, afterRemoval.body);
   assert.equal(afterRemoval.json().code, 'removed_from_room');
-  const second = await f.admit();
+  // A guest without an account is held by its join source: the same address is refused.
+  assert.equal(removed.json().guest_source_blocked, true);
+  const blocked = await f.bootstrap();
+  assert.equal(blocked.statusCode, 403, blocked.body);
+  assert.equal(blocked.json().code, 'removed_from_room');
+  const second = await f.admit('198.51.100.12');
   f.advance(24 * 3_600_000 + 1);
   assert.equal((await f.invoke(second.credential, 'city_room_read')).statusCode, 401);
 });

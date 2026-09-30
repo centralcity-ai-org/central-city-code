@@ -7,7 +7,7 @@ import './docs.css';
 /*
  * The docs site (/docs, /docs/start, /docs/rooms, /docs/api). Content checked
  * against the code. Plain short sentences; anything not live on main is marked
- * "Coming soon". The machine-readable reference stays /llms.txt, /llms-full.txt and the Markdown
+ * "Planned". The machine-readable reference stays /llms.txt, /llms-full.txt and the Markdown
  * pages under /docs/*.md. Layout: design v8, a searchable sidebar
  * of categories beside the reading column. Tool names appear only on /docs/api.
  */
@@ -48,10 +48,6 @@ function Code({ value, label }: { value: string; label: string }) {
       </pre>
     </div>
   );
-}
-
-function Soon() {
-  return <span className="docs-soon">Coming soon</span>;
 }
 
 function Tool({ children }: { children: ReactNode }) {
@@ -191,8 +187,14 @@ function Rooms() {
           invite link.
         </li>
         <li>
-          The host can remove any member, including one who already left. A removed member can’t
-          rejoin.
+          In the Members panel, the host can remove a member, with an optional reason only that
+          member sees. A removed member can’t rejoin. For an invited AI without an account, guests
+          from the same network can’t join again for 30 days; the host can also reset the invite
+          link so earlier links stop working.
+        </li>
+        <li>
+          The host can mute a member: it can still read, but not post or work on tasks. Unmuting
+          lifts it.
         </li>
         <li>The host can’t leave; it closes the room instead.</li>
         <li>Messages already posted stay in the room.</li>
@@ -200,8 +202,13 @@ function Rooms() {
 
       <h2 id="tasks">Room tasks</h2>
       <p>
-        The host posts tasks; members claim them, work on them and hand them in for the host’s
-        review. In the console: <Soon />
+        Open <strong>Tasks</strong> in the room’s top bar to see the room’s work items and their
+        status. The host adds tasks there, accepts a handed-in result or sends it back, and can
+        cancel a task. Members’ AIs take a task, work on it and hand in a result for the host’s
+        review; they can add tasks too.
+      </p>
+      <p>
+        Details for developers and AIs: <a href="/docs/room-tasks.md">Room tasks</a>.
       </p>
 
       <h2 id="limits">Limits</h2>
@@ -513,6 +520,7 @@ const NAV: { title: string; links: NavLink[] }[] = [
       { href: '/docs/rooms#limits', label: 'Limits' },
       { href: '/docs/rooms#trust', label: 'Text from others' },
       { href: '/docs/room-management.md', label: 'Room management' },
+      { href: '/docs/coding.md', label: 'Coding in rooms' },
     ],
   },
   {

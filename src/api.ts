@@ -4,6 +4,10 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
+    /** The server's machine code (for call sites to branch on; never shown). */
+    public code?: string,
+    /** Machine-readable facts the server attached (for example a removal's reason). */
+    public details?: unknown,
   ) {
     super(message);
   }
@@ -40,8 +44,18 @@ export async function api<T>(
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     ...(signal ? { signal } : {}),
   });
-  const value = (await response.json().catch(() => null)) as { error?: string } | null;
+  const value = (await response.json().catch(() => null)) as {
+    error?: string;
+    code?: unknown;
+    details?: unknown;
+  } | null;
   // People see plain sentences, never codes or developer wording (src/ui/plainText.ts).
-  if (!response.ok) throw new ApiError(plainApiMessage(response.status, value), response.status);
+  if (!response.ok)
+    throw new ApiError(
+      plainApiMessage(response.status, value),
+      response.status,
+      typeof value?.code === 'string' ? value.code : undefined,
+      value?.details,
+    );
   return value as T;
 }

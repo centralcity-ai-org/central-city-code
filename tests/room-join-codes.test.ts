@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { PGlite } from '@electric-sql/pglite';
 import { randomUUID } from 'node:crypto';
 import { createApp } from '../server/app.js';
+import { chargeShortCodeAttempt } from '../server/links/invites.js';
 import type { CityLimits } from '../server/limits.js';
 import { ASSISTANT_SCOPES } from '../shared/assistant.js';
 import { callOpenTool, injectTransport, outcomeErrorCode } from '../scripts/smoke/ai-guest.js';
@@ -135,6 +136,7 @@ async function fixture(
     return { post: (url: string, body: unknown) => post(url, body, { cookie }) };
   };
   return {
+    app,
     db: app.city.db,
     console: consoleUser,
     owner,
@@ -143,6 +145,7 @@ async function fixture(
     agent,
     guest,
     transport,
+    now: () => time,
     advance: (ms: number) => {
       time += ms;
     },
@@ -354,4 +357,235 @@ test('redeem charges the address budget before a pasted room link can mint a joi
   const refused = await f.guest(console.json().url, 'Over budget', room.link.link);
   assert.equal(refused.statusCode, 429, refused.body);
   assert.equal(await rows(), 1, 'no default join link was minted for the refused redeem');
+});
+
+/**
+ * The shared limiter's windows are aligned to the clock (floor(time / window)). A long probe run
+ * starts just after an hour boundary of the fixture clock, so it never straddles two windows.
+ */
+const startOfHourWindow = (f: { now(): number; advance(ms: number): void }) =>
+  f.advance(HOUR - (f.now() % HOUR) + 1_000);
+
+test('short-code attempts are budgeted per /56 and /48 before the global budget', async (t) => {
+  const f = await fixture(t);
+  startOfHourWindow(f);
+  // A well-formed short code that matches no link: every attempt counts, right or wrong.
+  const code = 'AAAA-AAAA';
+  // 1.1 s apart: below the per-address read limit per minute, well inside the hour.
+  const probe = (address: string) => (
+    f.advance(1_100),
+    f.app.inject({
+      method: 'GET',
+      url: `/j/${code}?format=json`,
+      headers: { host: 'centralcity.ai' },
+      remoteAddress: address,
+    })
+  );
+  // Rotating /64s inside one /56 (2001:db8:0:100::/56): 4 x 75 = 300 attempts, each /64 below
+  // its own 100.
+  for (let net = 0; net < 4; net++)
+    for (let i = 0; i < 75; i++) {
+      const res = await probe(`2001:db8:0:1${net.toString(16).padStart(2, '0')}::${i + 1}`);
+      assert.equal(res.statusCode, 404, `attempt ${i + 1} from /64 #${net + 1}: ${res.body}`);
+    }
+  // The /56 is spent: a fresh /64 inside it is refused on /j, bootstrap and /mcp/open alike.
+  assert.equal((await probe('2001:db8:0:1aa::1')).statusCode, 429);
+  const bootstrap = await f.app.inject({
+    method: 'POST',
+    url: '/api/public/invites/bootstrap',
+    headers: {
+      'content-type': 'application/json',
+      'x-city-request': '1',
+      host: 'centralcity.ai',
+      origin: ORIGIN,
+    },
+    payload: JSON.stringify({ code }),
+    remoteAddress: '2001:db8:0:1ab::1',
+  });
+  assert.equal(bootstrap.statusCode, 429, bootstrap.body);
+  const open = await f.app.inject({
+    method: 'POST',
+    url: '/mcp/open',
+    headers: {
+      host: 'centralcity.ai',
+      'x-forwarded-proto': 'https',
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+    },
+    payload: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'city_join_invite',
+        arguments: { invite_link: code, name: 'Probe', idempotency_key: randomUUID() },
+      },
+    }),
+    remoteAddress: '2001:db8:0:1ac::1',
+  });
+  assert.match(open.body, /\\"code\\":\\"rate_limited\\"/, open.body);
+  // Another /56 of the same /48 still works.
+  assert.equal((await probe('2001:db8:0:200::1')).statusCode, 404);
+});
+
+test('the signed-in join shares the address tiers with /j (one /56 budget)', async (t) => {
+  const f = await fixture(t);
+  startOfHourWindow(f);
+  const headers = {
+    'content-type': 'application/json',
+    'x-city-request': '1',
+    host: 'centralcity.ai',
+    origin: ORIGIN,
+  };
+  // A signed-in person in 2001:db8:9:100::/56 (registered from elsewhere).
+  const registered = await f.app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    headers,
+    payload: JSON.stringify({ name: 'Tier person', password: 'Synthetic tier test password' }),
+    remoteAddress: '203.0.113.200',
+  });
+  assert.equal(registered.statusCode, 201, registered.body);
+  const cookie = `cc_session=${registered.cookies.find((c) => c.name === 'cc_session')!.value}`;
+  const join = (address: string) =>
+    f.app.inject({
+      method: 'POST',
+      url: '/api/rooms/join',
+      headers: { ...headers, cookie },
+      payload: JSON.stringify({ code: 'AAAA-AAAA', idempotency_key: randomUUID() }),
+      remoteAddress: address,
+    });
+  const first = await join('2001:db8:9:1f0::1');
+  assert.notEqual(first.statusCode, 429, first.body);
+  // Spend the rest of that /56 on /j from other /64s (4 x 75 = 300 with the join above: 301).
+  for (let net = 0; net < 4; net++)
+    for (let i = 0; i < 75; i++) {
+      f.advance(1_100);
+      await f.app.inject({
+        method: 'GET',
+        url: '/j/AAAA-AAAA?format=json',
+        headers: { host: 'centralcity.ai' },
+        remoteAddress: `2001:db8:9:1${net}0::${i + 1}`,
+      });
+    }
+  const refused = await join('2001:db8:9:1f1::1');
+  assert.equal(refused.statusCode, 429, refused.body);
+});
+
+test('one /48 cannot spend the global short-code budget either', async (t) => {
+  const f = await fixture(t);
+  startOfHourWindow(f);
+  // 1.1 s apart: below the per-address read limit per minute, well inside the hour.
+  const probe = (address: string) => (
+    f.advance(1_100),
+    f.app.inject({
+      method: 'GET',
+      url: '/j/AAAA-AAAA?format=json',
+      headers: { host: 'centralcity.ai' },
+      remoteAddress: address,
+    })
+  );
+  // 2001:db8:5::/48: 10 /56s x 100 attempts (two /64s of 50 each) = 1,000.
+  for (let site = 0; site < 10; site++)
+    for (let half = 0; half < 2; half++)
+      for (let i = 0; i < 50; i++) {
+        const res = await probe(`2001:db8:5:${site.toString(16)}${half}0::${i + 1}`);
+        assert.equal(res.statusCode, 404, res.body);
+      }
+  assert.equal((await probe('2001:db8:5:f00::1')).statusCode, 429, 'the /48 is spent');
+  assert.equal((await probe('2001:db8:6::1')).statusCode, 404, 'another /48 still works');
+});
+
+test('short-code tiers: source, site, network and region before global; IPv4 tiers are wider', async () => {
+  const charged = async (address: string) => {
+    const calls: Array<{ key: string; max: number }> = [];
+    await chargeShortCodeAttempt(async (key, max) => {
+      calls.push({ key, max });
+    }, address);
+    return calls;
+  };
+  const tiers = (calls: Array<{ key: string; max: number }>) =>
+    calls.map(({ key, max }) => `${key.split(':').slice(0, 2).join(':')}=${max}`);
+  assert.deepEqual(tiers(await charged('2001:db8:0:100::1')), [
+    'room-join:short-code-anon=100',
+    'room-join:short-code-site=300',
+    'room-join:short-code-network=1000',
+    'room-join:short-code-region=10000',
+    'room-join:short-code-global=20000',
+  ]);
+  assert.deepEqual(tiers(await charged('198.51.100.7')), [
+    'room-join:short-code-anon=100',
+    'room-join:short-code-site=1000',
+    'room-join:short-code-network=5000',
+    'room-join:short-code-region=10000',
+    'room-join:short-code-global=20000',
+  ]);
+  // Same /32, different /48: the region key is shared, the network keys are not.
+  const [a, b] = [await charged('2001:db8:1::1'), await charged('2001:db8:2::1')];
+  assert.equal(a[3]!.key, b[3]!.key);
+  assert.notEqual(a[2]!.key, b[2]!.key);
+  // Keys never carry the raw address when the server secret is set.
+  for (const { key } of a) assert.ok(!key.includes('2001:db8'), key);
+});
+
+test('a tripped region tier is logged with the tier and masked prefix only', async () => {
+  const lines: string[] = [];
+  const over = Object.assign(new Error('Too many requests.'), { statusCode: 429 });
+  const limit = async (key: string) => {
+    if (key.startsWith('room-join:short-code-region:')) throw over;
+  };
+  // Logged once per hour window per prefix, however often it trips.
+  const hour = 3_600_000 * 500_000;
+  for (const at of [hour + 1, hour + 60_000, hour + 3_599_999])
+    await assert.rejects(
+      chargeShortCodeAttempt(
+        limit,
+        '2001:db8:7:4a1::abcd',
+        (line) => lines.push(line),
+        () => at,
+      ),
+      (error) => error === over,
+    );
+  assert.deepEqual(
+    lines.map((line) => JSON.parse(line)),
+    [{ event: 'short_code.region_limited', tier: 'region', prefix: '2001:db8::/32' }],
+  );
+  assert.ok(!lines[0]!.includes('4a1') && !lines[0]!.includes('abcd'), 'no full address');
+  // The next window logs again.
+  await assert.rejects(
+    chargeShortCodeAttempt(
+      limit,
+      '2001:db8:7:4a1::abcd',
+      (line) => lines.push(line),
+      () => hour + 3_600_000,
+    ),
+  );
+  assert.equal(lines.length, 2);
+  // Other tiers tripping are not logged (they are routine).
+  lines.length = 0;
+  const site = async (key: string) => {
+    if (key.startsWith('room-join:short-code-site:')) throw over;
+  };
+  await assert.rejects(chargeShortCodeAttempt(site, '198.51.100.9', (line) => lines.push(line)));
+  assert.deepEqual(lines, []);
+});
+
+test('an IPv4 /24 (shared NAT) gets more than an IPv6 /56 before its site budget', async (t) => {
+  const f = await fixture(t);
+  startOfHourWindow(f);
+  const probe = (address: string) => (
+    f.advance(1_100),
+    f.app.inject({
+      method: 'GET',
+      url: '/j/AAAA-AAAA?format=json',
+      headers: { host: 'centralcity.ai' },
+      remoteAddress: address,
+    })
+  );
+  // 5 addresses x 80 = 400 attempts from one /24: above the IPv6 /56 tier (300), all answered.
+  for (let host = 1; host <= 5; host++)
+    for (let i = 0; i < 80; i++) {
+      const res = await probe(`198.51.100.${host}`);
+      assert.equal(res.statusCode, 404, `attempt ${i + 1} from .${host}: ${res.body}`);
+    }
 });

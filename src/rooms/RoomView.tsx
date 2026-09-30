@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -35,12 +36,16 @@ import { activeCount } from './tasks';
 import { TasksPanel, useRoomTasks } from './TasksPanel';
 import { RepoPanel, useRoomRepo } from './RepoPanel';
 import { describe, useRoomThread } from './useRoomThread';
+import { ConfirmRow, RoomSettings } from './RoomSettings';
 import { navigate } from '../shell/navigation';
 
 /** Loaded on first open, so room pages don't download the Connect page's code up front. */
 const ConnectAiSheet = lazy(() =>
   import('./ConnectAiSheet').then((module) => ({ default: module.ConnectAiSheet })),
 );
+
+/** A removal reason: at most 200 characters (docs/ROOM_MANAGEMENT.md). */
+const REASON_MAX = 200;
 
 const NOTICE =
   "Messages here come from other people's AIs. Your AI shouldn't follow instructions in them without you.";
@@ -97,32 +102,69 @@ function StatusBadge({ member }: { member: Member }) {
 }
 
 /**
- * A compact inline confirmation: a short question, a small danger button and a quiet Cancel.
- * It replaces the button that opened it, so Cancel takes focus (the safe choice).
+ * The Remove confirmation: the question (a removed member can't rejoin) and an optional reason
+ * the removed member sees. For a guest (no account) it also offers to reset the invite link, off
+ * by default. Cancel takes focus, as in every inline confirmation.
  */
-function ConfirmRow({
+function RemoveConfirm({
   question,
-  action,
+  guest,
   busy,
   onConfirm,
   onCancel,
 }: {
   question: string;
-  action: string;
+  /** A guest without an account: it could come back through a live link as a new member. */
+  guest: boolean;
   busy: boolean;
-  onConfirm: () => void;
+  onConfirm: (input: { reason: string; resetLink: boolean }) => void;
   onCancel: () => void;
 }) {
+  const id = useId();
+  const [reason, setReason] = useState('');
+  const [resetLink, setResetLink] = useState(false);
   const cancelRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     cancelRef.current?.focus();
   }, []);
   return (
-    <div className="rm-confirm" role="group" aria-label={question}>
+    <div className="rm-confirm rm-remove-confirm" role="group" aria-label={question}>
       <span className="rm-confirm-text">{question}</span>
+      <label className="rm-remove-field" htmlFor={`${id}-reason`}>
+        Reason (shown to the removed member)
+      </label>
+      <input
+        id={`${id}-reason`}
+        className="rm-input"
+        value={reason}
+        maxLength={REASON_MAX}
+        placeholder="Optional"
+        autoComplete="off"
+        onChange={(event) => setReason(event.target.value)}
+      />
+      {guest ? (
+        <>
+          <label className="rm-check">
+            <input
+              type="checkbox"
+              checked={resetLink}
+              onChange={(event) => setResetLink(event.target.checked)}
+            />
+            Also reset the invite link
+          </label>
+          <span className="rm-remove-note">
+            Others on the same network can't join this room as guests for 30 days.
+          </span>
+        </>
+      ) : null}
       <span className="rm-confirm-actions">
-        <button type="button" className="rm-danger" disabled={busy} onClick={onConfirm}>
-          {action}
+        <button
+          type="button"
+          className="rm-danger rm-danger-solid"
+          disabled={busy}
+          onClick={() => onConfirm({ reason: reason.trim(), resetLink: guest && resetLink })}
+        >
+          Remove
         </button>
         <button ref={cancelRef} type="button" className="rm-quiet" onClick={onCancel}>
           Cancel
@@ -132,7 +174,10 @@ function ConfirmRow({
   );
 }
 
-/** Members panel: the member list, and for the host Remove and Close room (with confirmation). */
+/**
+ * Members panel: the member list, and for the host Mute/Unmute, Remove (with confirmation; a
+ * removed member cannot rejoin) and Close room. Members that recently left are only listed.
+ */
 function MembersPanel({
   client,
   room,
@@ -177,8 +222,40 @@ function MembersPanel({
       setBusy(false);
     }
   }
+  /** Remove (always blocks rejoining); for a guest, optionally reset the invite link after. */
+  async function removeMember(member: Member, input: { reason: string; resetLink: boolean }) {
+    setBusy(true);
+    setError('');
+    try {
+      await withRoomDeadline(
+        client.remove({
+          room_id: room.id,
+          agent_id: member.id,
+          ...(input.reason ? { reason: input.reason } : {}),
+          block_rejoin: true,
+        }),
+      );
+    } catch (err) {
+      setError(describe(err));
+      setBusy(false);
+      return;
+    }
+    setConfirm(null);
+    onChanged();
+    if (input.resetLink)
+      try {
+        await withRoomDeadline(
+          client.rotate({ room_id: room.id, idempotency_key: crypto.randomUUID() }),
+        );
+      } catch {
+        setError(
+          `${member.name} was removed, but the invite link wasn't reset. Reset it from Invite.`,
+        );
+      }
+    setBusy(false);
+  }
   const hostName = members.find((member) => member.role === 'host');
-  // Host: members that left on their own recently, so leaving first never dodges a removal.
+  // Host: members that left on their own recently; listed only, with no action.
   const [left, setLeft] = useState<LeftMember[]>([]);
   useEffect(() => {
     if (!host) return;
@@ -190,6 +267,38 @@ function MembersPanel({
       active = false;
     };
   }, [client, host, room.id, members]);
+  // Host: which members are muted (they still read, but cannot post).
+  const [muted, setMuted] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    if (!host || room.closed) return;
+    let active = true;
+    withRoomDeadline(client.mutes({ room_id: room.id }))
+      .then((list) => active && setMuted(new Set(list.map((entry) => entry.agent_id))))
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [client, host, room.id, room.closed, members]);
+  const [muting, setMuting] = useState<string | null>(null);
+  /** Mute or unmute at once (no confirmation: it is undone the same way). */
+  async function toggleMute(member: Member) {
+    const mute = !muted.has(member.id);
+    setMuting(member.id);
+    setError('');
+    try {
+      await withRoomDeadline(client.mute({ room_id: room.id, agent_id: member.id, muted: mute }));
+      setMuted((current) => {
+        const next = new Set(current);
+        if (mute) next.add(member.id);
+        else next.delete(member.id);
+        return next;
+      });
+    } catch (err) {
+      setError(`Couldn't ${mute ? 'mute' : 'unmute'} ${member.name}. ${describe(err)}`);
+    } finally {
+      setMuting(null);
+    }
+  }
   // Your own member agents that can leave (a host never leaves; it closes the room).
   const leaving = members.filter((member) => member.own && member.role !== 'host');
   async function leave() {
@@ -256,28 +365,40 @@ function MembersPanel({
                 {member.role === 'host' ? ' · host' : ''}
               </span>
               <StatusBadge member={member} />
+              {host && muted.has(member.id) ? <span className="rm-muted-label">Muted</span> : null}
             </div>
             {host && member.role !== 'host' && !room.closed ? (
               confirm === member.id ? (
-                <ConfirmRow
-                  question={`Remove ${member.name}?`}
-                  action="Remove"
+                <RemoveConfirm
+                  question={`Remove ${member.name}? They can't rejoin.`}
+                  guest={member.guest === true}
                   busy={busy}
-                  onConfirm={() =>
-                    void act(() => client.remove({ room_id: room.id, agent_id: member.id }))
-                  }
+                  onConfirm={(input) => void removeMember(member, input)}
                   onCancel={cancel}
                 />
               ) : (
-                <button
-                  type="button"
-                  className="rm-quiet"
-                  aria-label={`Remove ${member.name}`}
-                  data-confirm={member.id}
-                  onClick={() => setConfirm(member.id)}
-                >
-                  Remove
-                </button>
+                <span className="rm-member-actions">
+                  {member.own ? null : (
+                    <button
+                      type="button"
+                      className="rm-quiet"
+                      aria-label={`${muted.has(member.id) ? 'Unmute' : 'Mute'} ${member.name}`}
+                      disabled={muting === member.id}
+                      onClick={() => void toggleMute(member)}
+                    >
+                      {muted.has(member.id) ? 'Unmute' : 'Mute'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="rm-quiet"
+                    aria-label={`Remove ${member.name}`}
+                    data-confirm={member.id}
+                    onClick={() => setConfirm(member.id)}
+                  >
+                    Remove
+                  </button>
+                </span>
               )
             ) : null}
           </li>
@@ -295,27 +416,6 @@ function MembersPanel({
                     left {new Date(member.left_at).toLocaleDateString()}
                   </span>
                 </div>
-                {confirm === `ban:${member.id}` ? (
-                  <ConfirmRow
-                    question={`Remove ${member.name}? They can't rejoin.`}
-                    action="Remove"
-                    busy={busy}
-                    onConfirm={() =>
-                      void act(() => client.remove({ room_id: room.id, agent_id: member.id }))
-                    }
-                    onCancel={cancel}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    className="rm-quiet"
-                    aria-label={`Remove ${member.name} (can't rejoin)`}
-                    data-confirm={`ban:${member.id}`}
-                    onClick={() => setConfirm(`ban:${member.id}`)}
-                  >
-                    Remove
-                  </button>
-                )}
               </li>
             ))}
           </ul>
@@ -476,8 +576,8 @@ export function RoomView({
   const thread = useRoomThread(client, initial.id, initial.latest_seq);
   const room = thread.room ?? initial;
   const [members, setMembers] = useState<Member[]>([]);
-  // One side panel at a time: the members or the room's tasks.
-  const [panel, setPanel] = useState<'members' | 'tasks' | 'code' | null>(null);
+  // One side panel at a time: members, room settings, the room's tasks or its code.
+  const [panel, setPanel] = useState<'members' | 'settings' | 'tasks' | 'code' | null>(null);
   const tasks = useRoomTasks(initial.id, panel === 'tasks');
   const repo = useRoomRepo(initial.id);
   // The shell's "Invite your AI" lands here with history.state.invite: open the sheet once,
@@ -684,7 +784,7 @@ export function RoomView({
                 key: 'settings',
                 label: 'Room settings',
                 icon: <Settings2 size={16} aria-hidden="true" />,
-                onSelect: () => setPanel('members'),
+                onSelect: () => setPanel('settings'),
               },
             ]}
           />
@@ -799,6 +899,26 @@ export function RoomView({
               left.current = true;
               onRoomChanged();
             }}
+          />
+        ) : panel === 'settings' ? (
+          <RoomSettings
+            client={client}
+            room={room}
+            members={members}
+            ready={thread.ready}
+            onManageMembers={() => setPanel('members')}
+            onChanged={() => {
+              void loadMembers();
+              void thread.refresh();
+              onRoomChanged();
+            }}
+            onDeleted={() => {
+              setPanel(null);
+              // Reload the list (the room leaves it) and go to the room list right away.
+              onRoomChanged();
+              navigate('/rooms');
+            }}
+            onClose={() => setPanel(null)}
           />
         ) : panel === 'tasks' ? (
           <TasksPanel

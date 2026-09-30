@@ -37,7 +37,7 @@ const allowedLinks = [
     ...(LINKS.code ? [LINKS.code] : []),
   ]),
 ];
-const statusLabel = { released: 'Released', review: 'In review', planned: 'Planned' };
+const statusLabel = { released: 'Released', review: 'In development', planned: 'Planned' };
 
 /*
  * /downtown is a client route. Vercel rewrites it to index.html; the local test server
@@ -52,7 +52,7 @@ async function openDowntown(page: Page, path = '/downtown') {
     await route.fulfill({ response });
   });
   await page.goto(path);
-  await expect(page.getByRole('heading', { level: 1, name: 'Downtown' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Open source' })).toBeVisible();
   await expect(page.locator('#explore .dt-row').first()).toBeVisible();
 }
 
@@ -62,11 +62,11 @@ test('downtown shows the exact copy and only actions with working destinations',
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await openDowntown(page);
-  await expect(page).toHaveTitle('Downtown · Central City');
-  const hero = page.getByRole('region', { name: 'Downtown' });
+  await expect(page).toHaveTitle('Open source · Central City');
+  const hero = page.getByRole('region', { name: 'Open source' });
   await expect(
     hero.getByText(
-      'Downtown is the public part of Central City: code, protocol schemas, test suites and documentation, organized into numbered districts.',
+      'The public part of Central City: code, protocol schemas, test suites and documentation, organized into numbered districts.',
       { exact: true },
     ),
   ).toBeVisible();
@@ -92,11 +92,12 @@ test('downtown shows the exact copy and only actions with working destinations',
     `${toolkit}/blob/main/CONTRIBUTING.md`,
   );
   // The shared public footer (src/shell), not a page-specific one.
-  await expect(page.locator('footer')).toContainText('Open source under Apache-2.0');
+  await expect(page.locator('footer')).toContainText('Our code is open source (Apache-2.0)');
 
-  // GitHub links: only public repositories, released sources, changelogs and the guide.
+  // GitHub links: only public repositories, released sources, changelogs and the guide. (The
+  // header's menus and the footer link GitHub too; shell.spec.ts and footer.spec.ts check those.)
   const hrefs = await page
-    .locator('a[href]')
+    .locator('main a[href]')
     .evaluateAll((links) => links.map((link) => link.getAttribute('href')!));
   const github = [...new Set(hrefs.filter((href) => /github\.com/i.test(href)))];
   expect(github.filter((href) => !allowedLinks.includes(href))).toEqual([]);
@@ -136,7 +137,7 @@ test('downtown shows the exact copy and only actions with working destinations',
     // The badge follows the district's main repository (the first one listed).
     if ((await card.getByRole('link', { name: /on GitHub$/ }).count()) === 1)
       await expect(card.locator('.dt-pill')).toContainText(
-        repo.version ? `v${repo.version}` : 'Being set up',
+        repo.version ? `v${repo.version}` : 'In development',
       );
   }
   await expect(
@@ -196,11 +197,11 @@ test('downtown shows the exact copy and only actions with working destinations',
     }
     if (district.note) await expect(row).toContainText(district.note);
   }
-  // Roadmap: Phase 1 (the protocol repository) is done.
+  // Roadmap: only Released, In development and Planned. Phase 3 (the application) is released.
   const phases = page.locator('#next .dt-roadmap li');
-  await expect(phases.nth(0).locator('.dt-badge')).toHaveText('Done');
-  await expect(phases.nth(1).locator('.dt-badge')).toHaveText('In progress');
-  await expect(phases.nth(2).locator('.dt-badge')).toHaveText('Planned');
+  await expect(phases.nth(0).locator('.dt-badge')).toHaveText('Released');
+  await expect(phases.nth(1).locator('.dt-badge')).toHaveText('In development');
+  await expect(phases.nth(2).locator('.dt-badge')).toHaveText('Released');
 
   // Start building scrolls to its section.
   await actions.nth(2).click();
@@ -524,11 +525,37 @@ test('downtown GitHub links resolve for a signed-out visitor', async ({ playwrig
   // A fresh context with no cookies or tokens: every released link must be public (HTTP 200).
   // Opt out with DOWNTOWN_SKIP_NETWORK=1 on machines without internet access.
   test.skip(process.env.DOWNTOWN_SKIP_NETWORK === '1', 'network checks disabled');
+  // GitHub rate-limits anonymous requests from shared CI runners. Each link gets 3 tries with a
+  // backoff, HEAD first and GET as the fallback. A 4xx that persists after the retries fails the
+  // test (a broken or private link), except 403 and 429 (GitHub's rate limits); those, 5xx and
+  // network errors after the retries are recorded as an annotation.
+  test.setTimeout(180_000);
   const anonymous = await playwright.request.newContext();
+  const status = async (url: string): Promise<number | string> => {
+    try {
+      const head = await anonymous.head(url, { maxRedirects: 5 });
+      if (head.status() === 200) return 200;
+      return (await anonymous.get(url, { maxRedirects: 5 })).status();
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  };
   try {
     for (const url of allowedLinks) {
-      const response = await anonymous.get(url, { maxRedirects: 5 });
-      expect(response.status(), url).toBe(200);
+      let last: number | string = 0;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+        last = await status(url);
+        if (last === 200) break;
+      }
+      const persistentClientError =
+        typeof last === 'number' && last >= 400 && last < 500 && last !== 403 && last !== 429;
+      expect(persistentClientError, `${url} answered ${last} after 3 tries`).toBe(false);
+      if (last !== 200)
+        test.info().annotations.push({
+          type: 'unverified link',
+          description: `${url}: ${last} after 3 tries (rate limit, server or network)`,
+        });
     }
   } finally {
     await anonymous.dispose();

@@ -17,6 +17,21 @@ export function describe(err: unknown): string {
       return "You don't have access to this room. Ask the host for a new link.";
     if (err.code === 'invite_invalid')
       return 'This invite link is invalid or has expired. Ask the host for a new link.';
+    if (err.code === 'deleted') return 'The host deleted this room. Its messages are gone.';
+    if (err.code === 'removed') {
+      // The reason is the host's own words: callers render this string as plain text only.
+      const reason = err.removal?.reason ? ` Their reason: “${err.removal.reason}”` : '';
+      const rejoin = err.removal?.mayRejoin
+        ? ' You can rejoin with a new invite link.'
+        : " You can't rejoin it.";
+      return `The host removed you from this room.${reason}${rejoin}`;
+    }
+    if (err.code === 'muted') {
+      // The reason is the host's own words: callers render this string as plain text only.
+      const reason = err.muteReason ? ` Their reason: “${err.muteReason}”` : '';
+      return `The host muted you in this room. You can still read, but not post.${reason}`;
+    }
+    if (err.code === 'member_gone') return 'That member is no longer in this room.';
   }
   const copy = describeError(err, {
     offline: typeof navigator !== 'undefined' && navigator.onLine === false,
@@ -93,7 +108,10 @@ export function useRoomThread(client: RoomsClient, roomId: string, latestHint: n
           }
         } catch (err) {
           if (!active) return;
-          if (err instanceof RoomsError && err.code === 'access_denied') {
+          if (
+            err instanceof RoomsError &&
+            (err.code === 'access_denied' || err.code === 'removed' || err.code === 'deleted')
+          ) {
             store.current = { byId: new Map(), from: 0, pending: [] };
             loaded = false;
             setReady(false);
@@ -154,11 +172,17 @@ export function useRoomThread(client: RoomsClient, roomId: string, latestHint: n
       if (document.visibilityState === 'visible') void run(poll, false);
       schedule();
     };
+    // Scrolling to the top while a poll is in flight must not drop the older page: run() skips a
+    // non-queued task while busy, and nothing would ask again (scrollTop stays 0, no new scroll
+    // event). So older() queues behind the poll, one at a time.
+    let olderQueued = false;
     actions.current = {
       refresh: () => run(poll, true),
       older: () =>
-        loaded
-          ? run(async () => {
+        loaded && !olderQueued
+          ? ((olderQueued = true),
+            run(async () => {
+              olderQueued = false;
               const { oldest } = bounds();
               const floor = store.current.from;
               if (!(oldest > floor + 1)) return;
@@ -172,7 +196,7 @@ export function useRoomThread(client: RoomsClient, roomId: string, latestHint: n
               } finally {
                 if (active) setLoadingOlder(false);
               }
-            }, false)
+            }, true))
           : Promise.resolve(),
       merge: (messages) => {
         merge(messages);

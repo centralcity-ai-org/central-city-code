@@ -1,5 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
-import { LINKS } from '../src/shell/links';
+import { test, expect, type Locator, type Page } from '@playwright/test';
+import { NAV_GROUPS } from '../src/shell/links';
 
 /*
  * The app shell (design system v8; src/shell/tokens.css and src/shell/shell.css): tokens, the
@@ -203,7 +203,13 @@ test('one font file: Inter latin, hashed, preloaded, and no Space Grotesk', asyn
   expect([...new Set(fonts)]).toEqual([href]);
 });
 
-test('public header: logo, nav, Sign in, one primary action and the theme toggle', async ({
+const GROUP_LABELS = NAV_GROUPS.map((group) => group.label);
+
+/** The open panel's content for a trigger (the panel is one region; each group has its own). */
+const contentOf = async (page: Page, trigger: Locator) =>
+  page.locator(`[id="${await trigger.getAttribute('aria-controls')}"]`);
+
+test('public header: logo, four plain menus, Sign in, one primary action and the theme toggle', async ({
   page,
 }) => {
   await page.goto('/');
@@ -213,12 +219,22 @@ test('public header: logo, nav, Sign in, one primary action and the theme toggle
     '/',
   );
   const nav = header.getByRole('navigation', { name: 'Public' });
-  await expect(nav.getByRole('link')).toHaveText(['Downtown', 'Docs']);
-  // Balanced: logo and Downtown on the left, Sign in and Invite your AI on the right.
+  expect(GROUP_LABELS).toEqual(['Product', 'Developers', 'Open Source', 'Company']);
+  await expect(nav.getByRole('button')).toHaveText(GROUP_LABELS);
+  for (const trigger of await nav.getByRole('button').all()) {
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    // Plain text: no chevron or other icon.
+    await expect(trigger.locator('svg')).toHaveCount(0);
+  }
+  // No "Downtown" as a nav word (the /downtown URL stays; its page is "Open source").
+  await expect(header).not.toContainText('Downtown');
+  // Nothing is listed twice across the menus.
+  const hrefs = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.href));
+  expect(new Set(hrefs).size).toBe(hrefs.length);
+  // Balanced: logo and the menus on the left, Sign in and Invite your AI on the right.
   const left = (await nav.boundingBox())!;
   const right = (await header.locator('.cc-header-actions').boundingBox())!;
   expect(left.x + left.width).toBeLessThan(right.x);
-  await expect(header.getByRole('link', { name: 'Docs' })).toHaveAttribute('href', '/docs');
   await expect(header.getByRole('link', { name: 'Sign in', exact: true })).toHaveAttribute(
     'href',
     '/#signin',
@@ -238,99 +254,523 @@ test('public header: logo, nav, Sign in, one primary action and the theme toggle
   await expect.poll(background).toBe('rgb(255, 255, 255)');
 });
 
-test('public header: Developers disclosure with GitHub and Protocol', async ({ page }) => {
-  test.skip(!LINKS.code, 'The Developers section appears once the public code repository is live.');
+test('public header: every menu link is a plain link; GitHub opens in a new tab', async ({
+  page,
+}) => {
+  // The links, not the motion, are under test here.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
-  const header = page.getByRole('banner');
-  const nav = header.getByRole('navigation', { name: 'Public' });
-  const button = nav.getByRole('button', { name: 'Developers' });
-  await expect(button).toHaveAttribute('aria-expanded', 'false');
-  const code = nav.getByRole('link', { name: /GitHub/ });
-  await expect(code).toBeHidden();
-
-  // Opens on click; the links are the public code (new tab, noopener), Docs and Protocol.
-  await button.click();
-  await expect(button).toHaveAttribute('aria-expanded', 'true');
-  const panel = page.locator(`#${await button.getAttribute('aria-controls')}`);
-  await expect(panel.getByRole('link')).toHaveText([/^GitHub/, 'Protocol']);
-  await expect(code).toHaveAttribute('href', LINKS.code!);
-  await expect(code).toHaveAttribute('target', '_blank');
-  await expect(code).toHaveAttribute('rel', /noopener/);
-  await expect(code).toHaveAccessibleName('GitHub (opens in a new tab)');
-  await expect(panel.getByRole('link', { name: 'Protocol' })).toHaveAttribute(
-    'href',
-    '/downtown#district-protocol',
-  );
-  for (const link of await panel.getByRole('link').all())
-    expect((await link.boundingBox())!.height, await link.innerText()).toBeGreaterThanOrEqual(44);
-
-  // Keyboard: Tab reaches the first link, Escape closes and returns focus to the button.
-  await page.keyboard.press('Tab');
-  await expect(code).toBeFocused();
-  await page.keyboard.press('Escape');
-  await expect(button).toHaveAttribute('aria-expanded', 'false');
-  await expect(code).toBeHidden();
-  await expect(button).toBeFocused();
-
-  // Enter toggles it; a click outside closes it.
-  await page.keyboard.press('Enter');
-  await expect(code).toBeVisible();
-  await page.mouse.click(700, 500);
-  await expect(code).toBeHidden();
-
-  // Choosing a same-site link closes it and navigates.
-  await button.click();
-  await panel.getByRole('link', { name: 'Protocol' }).click();
-  await expect(page).toHaveURL(/\/downtown#district-protocol$/);
-  await expect(code).toBeHidden();
+  const nav = page.getByRole('banner').getByRole('navigation', { name: 'Public' });
+  const seen = new Set<string>();
+  for (const group of NAV_GROUPS) {
+    const trigger = nav.getByRole('button', { name: group.label, exact: true });
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const content = await contentOf(page, trigger);
+    await expect(content).toHaveAttribute('data-active', 'true');
+    await expect(content).toBeVisible();
+    await expect(nav.locator('[aria-expanded="true"]')).toHaveCount(1);
+    const links = content.getByRole('link');
+    await expect(links).toHaveCount(group.items.length);
+    // Plain text links: no descriptions, chips, badges or icons (GitHub shows only ↗).
+    await expect(content.locator('svg, img')).toHaveCount(0);
+    for (const [index, item] of group.items.entries()) {
+      const link = links.nth(index);
+      await expect(link).toHaveAttribute('href', item.href);
+      if (item.external) {
+        expect(item.href).toMatch(/^https:\/\/github\.com\/centralcity-ai\//);
+        await expect(link).toHaveAttribute('target', '_blank');
+        await expect(link).toHaveAttribute('rel', /noopener/);
+        await expect(link).toHaveAccessibleName(`${item.label} (opens in a new tab)`);
+        await expect(link.locator('.cc-nav-external')).toHaveText('↗');
+      } else {
+        await expect(link).toHaveAccessibleName(item.label);
+        await expect(link).not.toHaveAttribute('target', /.*/);
+        await expect(link).toHaveText(item.label);
+        seen.add(item.href.split('#')[0]!);
+      }
+      expect(Math.round((await link.boundingBox())!.height), item.label).toBeGreaterThanOrEqual(44);
+    }
+  }
+  // Every same-site link is a live page (no 404); hash routes resolve to /.
+  for (const path of seen) {
+    const response = await page.request.get(path);
+    expect(response.status(), path).toBe(200);
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('public header at 360 px: short primary label, menu with nav, Sign in and theme', async ({
+/** What each same-site header target must show: its h1 (and the anchor, when it has one). */
+const TARGET_HEADINGS: Record<string, string | RegExp> = {
+  // The sign-in page (on a fresh install without accounts it offers the first account).
+  '/#signin': /^(Welcome back\.|Create your account\.)$/,
+  '/connect': 'Connect your AI',
+  '/docs/api': 'API and SDK',
+  '/docs': 'Docs',
+  '/status': 'Status',
+  '/downtown': 'Open source',
+  '/downtown/verify': 'Verify the agent count',
+  '/about': 'About Central City',
+  '/contact': 'Contact',
+  '/security': 'Security',
+  '/privacy': 'Privacy Policy',
+};
+test('public header: every same-site target shows its expected page, and its anchor exists', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 360, height: 780 });
+  const targets = NAV_GROUPS.flatMap((group) => group.items).filter((item) => !item.external);
+  // Every same-site target has an expected heading (a new link needs one here).
+  expect(targets.map((item) => item.href).sort()).toEqual(Object.keys(TARGET_HEADINGS).sort());
+  for (const { href } of targets) {
+    // A fresh load each time (a hash-only change would not re-route).
+    await page.goto('about:blank');
+    await page.goto(href);
+    const heading = page.getByRole('heading', { level: 1 }).first();
+    await expect(heading, href).toHaveText(TARGET_HEADINGS[href]!);
+    const id = new URL(href, page.url()).hash.slice(1);
+    if (id && !['connect', 'signin'].includes(id))
+      await expect(page.locator(`[id="${id}"]`), href).toHaveCount(1);
+  }
+});
+
+test('public header: the panel spans the width, blurs the page and follows the pointer', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const nav = page.getByRole('banner').getByRole('navigation', { name: 'Public' });
+  const product = nav.getByRole('button', { name: 'Product' });
+  const developers = nav.getByRole('button', { name: 'Developers' });
+  const company = nav.getByRole('button', { name: 'Company' });
+  const panel = page.locator('.cc-mega');
+  const backdrop = page.locator('.cc-mega-backdrop');
+  // Hover opens it: full width, under the header, the page behind blurred.
+  await product.hover();
+  await expect(product).toHaveAttribute('aria-expanded', 'true');
+  await expect(await contentOf(page, product)).toBeVisible();
+  await expect(backdrop).toBeVisible();
+  // The measured motion: the page blurs 16 px under a 12 % dim that fades in 200 ms; the panel
+  // is a translucent, blurred surface that fades and drops 4 px in 200 ms (cubic-bezier(0.4, 0,
+  // 0.2, 1)) and glides its height between groups in 260 ms (cubic-bezier(0.16, 1, 0.3, 1)).
+  const styleOf = (locator: Locator) =>
+    locator.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        property: style.transitionProperty,
+        duration: style.transitionDuration,
+        timing: style.transitionTimingFunction,
+        backdrop: style.backdropFilter,
+        background: style.backgroundColor,
+        willChange: style.willChange,
+      };
+    });
+  const backdropStyle = await styleOf(backdrop);
+  expect(backdropStyle.backdrop).toBe('blur(16px)');
+  expect(backdropStyle.background).toBe('rgba(0, 0, 0, 0.12)');
+  expect(backdropStyle.property).toContain('opacity');
+  expect(backdropStyle.duration).toContain('0.2s');
+  expect(backdropStyle.timing).toContain('cubic-bezier(0.4, 0, 0.2, 1)');
+  const panelStyle = await styleOf(panel);
+  expect(panelStyle.backdrop).toBe('blur(50px) saturate(2)');
+  expect(panelStyle.property).toMatch(/opacity.*transform.*height/);
+  expect(panelStyle.duration).toMatch(/^0\.2s, 0\.2s, 0\.26s/);
+  expect(panelStyle.timing).toMatch(
+    /^cubic-bezier\(0\.4, 0, 0\.2, 1\), cubic-bezier\(0\.4, 0, 0\.2, 1\), cubic-bezier\(0\.16, 1, 0\.3, 1\)/,
+  );
+  expect(panelStyle.willChange).toContain('transform');
+  // From here on the pointer behaviour is under test, not the animation: no motion, so every
+  // measurement is of a settled state.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  // Full width, directly under the header (inside its bottom border).
+  await expect
+    .poll(async () => (await panel.boundingBox())!.width)
+    .toBe(await page.evaluate(() => document.documentElement.clientWidth));
+  const headerBox = (await page.locator('header.cc-header').boundingBox())!;
+  expect(
+    Math.abs((await panel.boundingBox())!.y - (headerBox.y + headerBox.height)),
+  ).toBeLessThanOrEqual(1);
+  // One persistent panel: its height follows the active group's content.
+  const settledHeight = async () => {
+    let last = -1;
+    await expect
+      .poll(async () => {
+        const now = Math.round((await panel.boundingBox())!.height);
+        const same = now === last;
+        last = now;
+        return same;
+      })
+      .toBe(true);
+    return last;
+  };
+  const productHeight = await settledHeight();
+  await developers.hover();
+  await expect(developers).toHaveAttribute('aria-expanded', 'true');
+  await expect(product).toHaveAttribute('aria-expanded', 'false');
+  await expect(panel).toHaveAttribute('data-open', 'true');
+  await expect(await contentOf(page, developers)).toBeVisible();
+  await expect(await contentOf(page, product)).toBeHidden();
+  const developersHeight = await settledHeight();
+  expect(developersHeight).toBeGreaterThan(productHeight);
+  expect(developersHeight).toBe(
+    Math.round(
+      await (
+        await contentOf(page, developers)
+      ).evaluate((element) => (element as HTMLElement).offsetHeight),
+    ),
+  );
+  // Resting on another trigger switches to it; the panel never closes in between.
+  await company.hover();
+  await expect(company).toHaveAttribute('aria-expanded', 'true');
+  await expect(panel).toHaveAttribute('data-open', 'true');
+  // A click on the trigger its hover opened keeps it open, however slow (it never toggles it
+  // shut; Enter and Space toggle).
+  await page.waitForTimeout(800);
+  await company.click();
+  await expect(company).toHaveAttribute('aria-expanded', 'true');
+  // A diagonal move from a trigger down into the panel never closes it.
+  await developers.hover();
+  const trigger = (await developers.boundingBox())!;
+  const firstLink = (await contentOf(page, developers)).getByRole('link').first();
+  const link = (await firstLink.boundingBox())!;
+  await page.mouse.move(trigger.x + trigger.width / 2, trigger.y + trigger.height / 2);
+  await page.mouse.move(link.x + 10, link.y + link.height / 2, { steps: 12 });
+  await page.waitForTimeout(400);
+  // It never closes on the way (the triggers span the header's height, and closing waits).
+  await expect(panel).toHaveAttribute('data-open', 'true');
+  // Leaving header and panel closes it shortly after; the blur fades out.
+  await page.mouse.move(700, 800);
+  await expect(developers).toHaveAttribute('aria-expanded', 'false');
+  await expect(backdrop).toBeHidden();
+  // A click on the blurred page closes it too.
+  await product.click();
+  await expect(product).toHaveAttribute('aria-expanded', 'true');
+  await page.mouse.click(700, 800);
+  await expect(product).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('public header: a diagonal across another trigger into the panel keeps the group', async ({
+  page,
+}) => {
+  // The page's clock is controlled, so the 100 ms hover intent does not depend on how fast the
+  // machine moves the mouse.
+  await page.clock.install();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  const nav = page.getByRole('banner').getByRole('navigation', { name: 'Public' });
+  const developers = nav.getByRole('button', { name: 'Developers' });
+  const openSource = nav.getByRole('button', { name: 'Open Source' });
+  await expect(developers).toBeVisible();
+  // From here, time moves only when the test says so.
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 100));
+  await openSource.hover();
+  await page.clock.runFor(150);
+  await expect(openSource).toHaveAttribute('aria-expanded', 'true');
+  const from = (await openSource.boundingBox())!;
+  const via = (await developers.boundingBox())!;
+  const first = (await contentOf(page, openSource)).getByRole('link').first();
+  const to = (await first.boundingBox())!;
+  // Down-left across Developers (no time passes on it) and into Open Source's first link.
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.move(via.x + via.width / 2, via.y + via.height - 4, { steps: 2 });
+  await page.clock.runFor(50);
+  await page.mouse.move(to.x + 8, to.y + to.height / 2, { steps: 2 });
+  await page.clock.runFor(300);
+  await expect(openSource).toHaveAttribute('aria-expanded', 'true');
+  await expect(developers).toHaveAttribute('aria-expanded', 'false');
+  await expect(first).toBeVisible();
+  // Resting on Developers past the 100 ms intent does switch.
+  await developers.hover();
+  await page.clock.runFor(150);
+  await expect(developers).toHaveAttribute('aria-expanded', 'true');
+  await expect(openSource).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('public header: a menu opened from the keyboard stays open under a resting mouse', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const developers = page
+    .getByRole('banner')
+    .getByRole('navigation', { name: 'Public' })
+    .getByRole('button', { name: 'Developers' });
+  // The mouse rests over the page, where the blurred backdrop will appear.
+  await page.mouse.move(700, 600);
+  await developers.focus();
+  await page.keyboard.press('Enter');
+  await expect(developers).toHaveAttribute('aria-expanded', 'true');
+  await page.waitForTimeout(600);
+  await expect(developers).toHaveAttribute('aria-expanded', 'true');
+  // Real movement over the page closes it (shortly after).
+  await page.mouse.move(720, 640, { steps: 4 });
+  await expect(developers).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('public header: hover intent: passing over a trigger does not open the panel', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const nav = page.getByRole('banner').getByRole('navigation', { name: 'Public' });
+  const developers = nav.getByRole('button', { name: 'Developers' });
+  const box = (await developers.boundingBox())!;
+  // Sweep across the triggers quickly (well under the 100 ms intent delay) and off the header.
+  await page.mouse.move(box.x - 150, box.y + box.height / 2);
+  await page.mouse.move(box.x + box.width + 300, box.y + box.height / 2, { steps: 3 });
+  await page.mouse.move(box.x + box.width + 300, 600);
+  await page.waitForTimeout(300);
+  await expect(nav.locator('[aria-expanded="true"]')).toHaveCount(0);
+  await expect(page.locator('.cc-mega')).not.toHaveAttribute('data-open', /.*/);
+  // Resting on a trigger opens it.
+  await developers.hover();
+  await expect(developers).toHaveAttribute('aria-expanded', 'true');
+});
+
+test('public header: the panel does not animate with reduced motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  const product = page
+    .getByRole('banner')
+    .getByRole('navigation', { name: 'Public' })
+    .getByRole('button', { name: 'Product' });
+  await product.click();
+  await expect(await contentOf(page, product)).toBeVisible();
+  // No transition (the global reduced-motion rule may leave a near-zero duration).
+  for (const selector of [
+    '.cc-mega',
+    '.cc-mega-backdrop',
+    '.cc-mega-content[data-active]',
+    'header.cc-header',
+  ]) {
+    const durations = await page
+      .locator(selector)
+      .evaluate((element) => getComputedStyle(element).transitionDuration);
+    for (const duration of durations.split(','))
+      expect(parseFloat(duration), `${selector}: ${durations}`).toBeLessThanOrEqual(0.01);
+  }
+  // No transform either: the panel and its content are simply there.
+  for (const selector of ['.cc-mega', '.cc-mega-content[data-active]'])
+    expect(
+      await page.locator(selector).evaluate((element) => getComputedStyle(element).transform),
+      selector,
+    ).toBe('none');
+});
+
+test('public header at 390 px: the menu still lists every link if its chunk fails to load', async ({
+  page,
+}) => {
+  await page.route(/\/assets\/PhoneMenu-[^/]*\.js$/, (route) => route.abort());
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const header = page.getByRole('banner');
+  await header.getByRole('button', { name: 'Open menu' }).click();
+  const menu = header.getByRole('navigation', { name: 'Menu' });
+  const items = NAV_GROUPS.flatMap((group) => group.items);
+  await expect(menu.getByRole('link')).toHaveCount(items.length + 1);
+  for (const item of items)
+    await expect(
+      menu.getByRole('link', {
+        name: item.external ? `${item.label} (opens in a new tab)` : item.label,
+        exact: true,
+      }),
+    ).toHaveAttribute('href', item.href);
+  await expect(menu.getByRole('link', { name: 'Sign in', exact: true })).toBeVisible();
+  // Like the real menu: focus moves into it on open, and Escape closes it with focus back on the
+  // menu button.
+  await expect(menu.getByRole('link').first()).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(header.getByRole('button', { name: 'Open menu' })).toBeFocused();
+  // The page stays: no error screen, no reload.
+  await expect(page.getByRole('heading', { level: 1, name: 'Every AI. One room.' })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('public header: signed out shows Sign in; signed in shows Open app, and Workspace opens the app', async ({
+  page,
+}) => {
+  const sessions: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/session') sessions.push(request.url());
+  });
+  // Signed out.
+  await page.goto('/docs');
+  const header = page.getByRole('banner');
+  const nav = header.getByRole('navigation', { name: 'Public' });
+  await expect(header.getByRole('link', { name: 'Sign in', exact: true })).toHaveAttribute(
+    'href',
+    '/#signin',
+  );
+  await expect(header.getByRole('link', { name: 'Open app' })).toHaveCount(0);
+  await nav.getByRole('button', { name: 'Product' }).click();
+  await expect(header.getByRole('link', { name: 'Workspace', exact: true })).toHaveAttribute(
+    'href',
+    '/#signin',
+  );
+  // The header reads the session once per page load and never polls (the app shell makes its
+  // own read on the same load, so at most two, and no more later).
+  await page.waitForTimeout(500);
+  const firstLoad = sessions.length;
+  expect(firstLoad).toBeGreaterThanOrEqual(1);
+  expect(firstLoad).toBeLessThanOrEqual(2);
+  await page.waitForTimeout(2000);
+  expect(sessions).toHaveLength(firstLoad);
+
+  // Signed in (a throwaway account on the test server).
+  const created = await page.request.post('/api/auth/register', {
+    headers: { 'x-city-request': '1' },
+    data: {
+      name: `Header-${crypto.randomUUID().slice(0, 8)}`,
+      password: 'Local-test-only-passphrase-2026',
+    },
+  });
+  expect(created.status()).toBe(201);
+  await page.goto('/docs');
+  await expect(header.getByRole('link', { name: 'Open app' })).toHaveAttribute('href', '/rooms');
+  await expect(header.getByRole('link', { name: 'Sign in', exact: true })).toHaveCount(0);
+  await nav.getByRole('button', { name: 'Product' }).click();
+  await expect(header.getByRole('link', { name: 'Workspace', exact: true })).toHaveAttribute(
+    'href',
+    '/rooms',
+  );
+  await header.getByRole('link', { name: 'Open app' }).click();
+  await expect(page).toHaveURL(/\/rooms$/);
+  await expect(page.getByRole('navigation', { name: 'Rooms' })).toBeVisible();
+  // The phone menu shows the same.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/downtown');
+  await header.getByRole('button', { name: 'Open menu' }).click();
+  const menu = header.getByRole('navigation', { name: 'Menu' });
+  await expect(menu.getByRole('link', { name: 'Open app' })).toHaveAttribute('href', '/rooms');
+  await menu.getByRole('button', { name: 'Product' }).click();
+  await expect(menu.getByRole('link', { name: 'Workspace', exact: true })).toHaveAttribute(
+    'href',
+    '/rooms',
+  );
+});
+
+test('public header menus work with the keyboard', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  const nav = page.getByRole('banner').getByRole('navigation', { name: 'Public' });
+  const product = nav.getByRole('button', { name: 'Product' });
+  const developers = nav.getByRole('button', { name: 'Developers' });
+  await product.focus();
+  // Enter opens; Tab enters its links and moves through them; Shift+Tab from the first link
+  // returns to the trigger.
+  await page.keyboard.press('Enter');
+  await expect(product).toHaveAttribute('aria-expanded', 'true');
+  const productLinks = (await contentOf(page, product)).getByRole('link');
+  await page.keyboard.press('Tab');
+  await expect(productLinks.first()).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(product).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(productLinks.first()).toBeFocused();
+  for (let index = 1; index < (await productLinks.count()); index++)
+    await page.keyboard.press('Tab');
+  await expect(productLinks.last()).toBeFocused();
+  // Tab past the last link moves on to the next trigger and closes the panel.
+  await page.keyboard.press('Tab');
+  await expect(developers).toBeFocused();
+  await expect(product).toHaveAttribute('aria-expanded', 'false');
+  // ArrowDown opens a menu on its first link; Escape closes it and returns focus to its trigger.
+  await page.keyboard.press('ArrowDown');
+  await expect(developers).toHaveAttribute('aria-expanded', 'true');
+  const developerLinks = (await contentOf(page, developers)).getByRole('link');
+  await expect(developerLinks.first()).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(developers).toHaveAttribute('aria-expanded', 'false');
+  await expect(developers).toBeFocused();
+  await expect(developerLinks.first()).toBeHidden();
+  // Shift+Tab moves back between triggers; Space toggles.
+  await page.keyboard.press('Shift+Tab');
+  await expect(product).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(product).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Space');
+  await expect(product).toHaveAttribute('aria-expanded', 'false');
+  // Choosing a same-site link closes the panel and navigates.
+  await nav.getByRole('button', { name: 'Open Source' }).click();
+  await page.getByRole('banner').getByRole('link', { name: 'Repositories', exact: true }).click();
+  await expect(page).toHaveURL(/\/downtown$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Open source' })).toBeVisible();
+  await expect(page).toHaveTitle('Open source · Central City');
+  const openSource = page
+    .getByRole('banner')
+    .getByRole('navigation', { name: 'Public' })
+    .getByRole('button', { name: 'Open Source' });
+  await expect(openSource).toHaveAttribute('aria-expanded', 'false');
+  // The current page's link is marked inside its group.
+  await openSource.click();
+  await expect(
+    page.getByRole('banner').getByRole('link', { name: 'Repositories', exact: true }),
+  ).toHaveAttribute('aria-current', 'page');
+});
+
+test('public header at 390 px: a full-screen menu with the four groups as sections', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   const header = page.getByRole('banner');
   const invite = header.getByRole('link', { name: 'Invite your AI' });
   expect(await invite.innerText()).toBe('Invite AI');
   await expect(header.getByRole('navigation', { name: 'Public' })).toBeHidden();
   const box = await page.locator('.cc-header-inner').boundingBox();
-  expect(box!.height).toBeLessThanOrEqual(56);
+  expect(box!.height).toBeLessThanOrEqual(64);
   const menuButton = header.getByRole('button', { name: 'Open menu' });
   await expect(menuButton).toHaveAttribute('aria-expanded', 'false');
   await menuButton.click();
   const menu = header.getByRole('navigation', { name: 'Menu' });
-  await expect(menu.getByRole('link')).toHaveText(
-    LINKS.code
-      ? ['Downtown', 'Docs', /^GitHub/, 'Protocol', 'Sign in']
-      : ['Downtown', 'Docs', 'Sign in'],
-  );
-  const developer = menu.getByRole('group', { name: 'Developers' });
-  if (LINKS.code)
-    await expect(developer.getByRole('link', { name: /GitHub/ })).toHaveAttribute(
-      'href',
-      LINKS.code,
-    );
-  else await expect(developer).toHaveCount(0);
-  await expect(menu.getByRole('link').first()).toBeFocused();
+  // Full screen: from under the header to the bottom of the viewport.
+  const sheet = (await page.locator('.cc-header-menu').boundingBox())!;
+  expect(Math.round(sheet.y + sheet.height)).toBe(844);
+  expect(Math.round(sheet.width)).toBe(390);
+  // The same four groups, collapsed, then Sign in; the theme below.
+  const groups = menu.locator('.cc-menu-group-button');
+  await expect(groups).toHaveText(GROUP_LABELS);
+  for (const group of await groups.all())
+    await expect(group).toHaveAttribute('aria-expanded', 'false');
+  await expect(groups.first()).toBeFocused();
+  await expect(menu.getByRole('link')).toHaveText(['Sign in']);
   await expect(header.getByRole('button', { name: /Use (dark|light) theme/ })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(menu).toHaveCount(0);
-  await expect(header.getByRole('button', { name: 'Open menu' })).toBeFocused();
-  // Choosing a link closes the menu.
-  await header.getByRole('button', { name: 'Open menu' }).click();
-  await menu.getByRole('link', { name: 'Downtown' }).click();
-  await expect(menu).toHaveCount(0);
-  await expect(page).toHaveURL(/\/downtown$/);
+  await expect(header).not.toContainText('Downtown');
+  // Each section opens on its own links, with the same hrefs and new-tab rules as the wide menus.
+  for (const group of NAV_GROUPS) {
+    const button = menu.getByRole('button', { name: group.label, exact: true });
+    await button.click();
+    await expect(button).toHaveAttribute('aria-expanded', 'true');
+    const panel = page.locator(`[id="${await button.getAttribute('aria-controls')}"]`);
+    const links = panel.getByRole('link');
+    await expect(links).toHaveCount(group.items.length);
+    for (const [index, item] of group.items.entries()) {
+      await expect(links.nth(index)).toHaveAttribute('href', item.href);
+      if (item.external) {
+        await expect(links.nth(index)).toHaveAttribute('target', '_blank');
+        await expect(links.nth(index)).toHaveAttribute('rel', /noopener/);
+      }
+    }
+    await button.click();
+    await expect(panel).toBeHidden();
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   for (const control of await header.locator('a:visible, button:visible').all()) {
     const size = await control.boundingBox();
     expect(size!.height, await control.innerText()).toBeGreaterThanOrEqual(44);
   }
+  // Escape closes the menu and returns focus to its button.
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(header.getByRole('button', { name: 'Open menu' })).toBeFocused();
+  // Choosing a link closes the menu.
+  await header.getByRole('button', { name: 'Open menu' }).click();
+  await menu.getByRole('button', { name: 'Open Source' }).click();
+  await menu.getByRole('link', { name: 'Repositories', exact: true }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(page).toHaveURL(/\/downtown$/);
 });
 
-test('footer bottom row has 44 px targets; the font licence lives on Downtown', async ({
+test('footer bottom row has 44 px targets; the font licence lives on the open source page', async ({
   page,
 }) => {
   await serveSpa(page, /\/downtown\/?$/);

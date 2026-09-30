@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
-import { FOOTER_COLUMNS, LINKS, liveFooterColumns } from '../src/shell/links.js';
+import {
+  FOOTER_COLUMNS,
+  LINKS,
+  NAV_GROUPS,
+  PUBLIC_REPOS,
+  liveFooterColumns,
+} from '../src/shell/links.js';
 import {
   THEME_STORAGE_KEY,
   getEffectiveTheme,
@@ -129,19 +135,50 @@ test('theme controller exports and default behavior', () => {
   assert.equal(getEffectiveTheme('light'), 'light');
 });
 
-test('links.ts has docs and footer has Sign up instead of Rooms', () => {
+test('links.ts has docs, and the footer mirrors the header groups, then Help & legal', () => {
   assert.equal(LINKS.docs, '/docs');
   assert.equal(LINKS.signUp, '/#signin');
 
+  assert.deepEqual(
+    FOOTER_COLUMNS.map((col) => col.title),
+    [...NAV_GROUPS.map((group) => group.label), 'Help & legal'],
+  );
   const productCol = FOOTER_COLUMNS.find((col) => col.title === 'Product');
   assert.ok(productCol, 'Product column exists');
-  assert.equal(productCol.links[0].label, 'Sign up');
-  assert.equal(productCol.links[0].href, '/#signin');
+  assert.deepEqual(productCol.links, NAV_GROUPS[0]!.items);
+  assert.equal(productCol.links[0]!.label, 'Workspace');
 
   const live = liveFooterColumns();
   const liveProduct = live.find((col) => col.title === 'Product');
   assert.ok(liveProduct, 'Live product column exists');
-  assert.equal(liveProduct.links[0].label, 'Sign up');
+  assert.equal(liveProduct.links[0]!.label, 'Workspace');
+  const legal = live.find((col) => col.title === 'Help & legal');
+  assert.ok(
+    legal?.links.some((link) => link.href === '/imprint'),
+    'Imprint stays linked',
+  );
+});
+
+test('every external header and footer link is one of the public GitHub repositories', () => {
+  const links = [
+    ...NAV_GROUPS.flatMap((group) => group.items),
+    ...FOOTER_COLUMNS.flatMap((column) => column.links),
+  ];
+  const external = links.filter((link) => link.href && !link.href.startsWith('/'));
+  assert.ok(external.length > 0);
+  for (const link of external) {
+    assert.equal(link.external, true, `${link.label} opens in a new tab`);
+    assert.ok(
+      PUBLIC_REPOS.some((repo) => link.href === repo || link.href!.startsWith(`${repo}/`)),
+      `${link.label}: ${link.href} is not an allowed public repository`,
+    );
+  }
+  // Only these repositories, and all of them public GitHub URLs of the organization.
+  for (const repo of PUBLIC_REPOS)
+    assert.match(repo, /^https:\/\/github\.com\/centralcity-ai\/[a-z-]+$/);
+  // Same-site links never claim to be external.
+  for (const link of links.filter((item) => item.href?.startsWith('/')))
+    assert.notEqual(link.external, true, link.label);
 });
 
 test('no token is defined as a reference to itself', () => {

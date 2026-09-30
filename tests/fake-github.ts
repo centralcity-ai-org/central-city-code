@@ -33,6 +33,11 @@ export interface FakeRepo {
   symlinks?: Record<string, string[]>;
   /** Paths that are executable (mode 100755) at every commit. */
   executables?: string[];
+  /**
+   * commit sha → parent shas. A commit not listed here has the commit added before it in
+   * `commits` as its only parent (linear history in insertion order).
+   */
+  parents?: Record<string, string[]>;
 }
 
 export interface FakePull {
@@ -153,6 +158,24 @@ export function fakeGitHub(options: {
     );
     return full;
   }
+  /** Every ancestor of `sha` (itself included), from `parents` or insertion order. */
+  function ancestors(repo: FakeRepo, sha: string): Set<string> {
+    const order = Object.keys(repo.commits);
+    const parentsOf = (item: string) => {
+      if (repo.parents?.[item]) return repo.parents[item]!;
+      const index = order.indexOf(item);
+      return index > 0 ? [order[index - 1]!] : [];
+    };
+    const seen = new Set<string>();
+    const queue = [sha];
+    while (queue.length) {
+      const item = queue.pop()!;
+      if (seen.has(item)) continue;
+      seen.add(item);
+      queue.push(...parentsOf(item));
+    }
+    return seen;
+  }
   function listDir(repo: FakeRepo, commit: string, dir: string) {
     const files = Object.keys(repo.commits[commit] ?? {});
     const prefix = dir ? `${dir}/` : '';
@@ -251,6 +274,22 @@ export function fakeGitHub(options: {
         return sha
           ? json(200, { sha, commit: { tree: { sha: treeSha(sha) } } })
           : json(422, { message: 'No commit found' });
+      }
+      if (rest[0] === 'compare' && rest.length === 2) {
+        // GET /compare/{base}...{head}: head relative to base.
+        const [baseRef, headRef] = rest[1]!.split('...');
+        const base = resolve(repo, baseRef ?? '');
+        const head = resolve(repo, headRef ?? '');
+        if (!base || !head) return notFound();
+        const status =
+          base === head
+            ? 'identical'
+            : ancestors(repo, base).has(head)
+              ? 'behind'
+              : ancestors(repo, head).has(base)
+                ? 'ahead'
+                : 'diverged';
+        return json(200, { status });
       }
       if (rest[0] === 'contents') {
         const ref = url.searchParams.get('ref') ?? '';

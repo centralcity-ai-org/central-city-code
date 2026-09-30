@@ -6,10 +6,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { CLIENT_ROUTES, isClientRoute } from '../shared/routes.js';
+import {
+  CLIENT_ROUTES,
+  isClientRoute,
+  TRAILING_SLASH_REDIRECT,
+  withoutTrailingSlash,
+} from '../shared/routes.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const vercel = JSON.parse(readFileSync(join(root, 'vercel.json'), 'utf8')) as {
+  redirects: Array<{ source: string; destination: string; permanent: boolean }>;
   rewrites: Array<{ source: string; destination: string }>;
 };
 
@@ -106,6 +112,57 @@ test('client-route matching agrees between the table and the vercel.json sources
   for (const path of UNKNOWN) assert.ok(!isClientRoute(path), path);
 });
 
+/** Paths that end in a slash and move to the path without it. */
+const SLASHED: Array<[string, string]> = [
+  ['/connect/', '/connect'],
+  ['/docs/', '/docs'],
+  ['/docs/rooms/', '/docs/rooms'],
+  ['/about/', '/about'],
+  ['/rooms/', '/rooms'],
+  ['/rooms/room_123/', '/rooms/room_123'],
+  ['/r/launch-plan/', '/r/launch-plan'],
+  ['/no-such-page/', '/no-such-page'],
+  ['/jobs/', '/jobs'],
+];
+/** Paths that keep their exact form: root, server-owned paths, files, and unsafe shapes. */
+const KEPT = [
+  '/',
+  '/connect',
+  '/api/',
+  '/api/session/',
+  '/mcp/',
+  '/mcp/open/',
+  '/oauth/authorize/',
+  '/.well-known/jwks.json/',
+  '/.well-known/oauth-protected-resource/mcp/',
+  '/a2a/x/',
+  '/j/abc/',
+  '/docs/room-tasks.md',
+  '/docs/room-tasks.md/',
+  '/llms.txt/',
+  '//evil.example/',
+  '/\\evil.example/',
+  '/%2F%2Fevil.example/',
+  '/about//',
+];
+
+test('a trailing slash redirects to the path without it; vercel.json has the same rule', () => {
+  assert.deepEqual(vercel.redirects, [TRAILING_SLASH_REDIRECT], 'one redirect: the shared rule');
+  assert.equal(TRAILING_SLASH_REDIRECT.permanent, true, '308');
+  // The vercel.json source (path-to-regexp; `:path(...)` is one group) agrees with the server.
+  const source = new RegExp(
+    `^${TRAILING_SLASH_REDIRECT.source.replace(/^\/:path\((.*)\)\/$/, '/($1)/')}$`,
+  );
+  for (const [from, to] of SLASHED) {
+    assert.equal(withoutTrailingSlash(from), to, from);
+    assert.equal(`/${source.exec(from)?.[1]}`, to, `vercel.json: ${from}`);
+  }
+  for (const path of KEPT) {
+    assert.equal(withoutTrailingSlash(path), null, path);
+    assert.equal(source.exec(path), null, `vercel.json: ${path}`);
+  }
+});
+
 test('the 404 page is static, script-free and keeps the SPA copy', () => {
   const page = readFileSync(join(root, 'public', '404.html'), 'utf8');
   assert.doesNotMatch(page, /<script/i);
@@ -176,7 +233,7 @@ test('the local server serves client routes with 200 and everything else with a 
     assert.equal(response.status, 200, path);
     assert.match(await response.text(), /spa-shell-marker/, path);
   }
-  for (const path of ['/no-such-page', '/some/deep/link', '/rooms/', '/r/a.b']) {
+  for (const path of ['/no-such-page', '/some/deep/link', '/r/a.b']) {
     const response = await fetch(`${base}${path}`);
     assert.equal(response.status, 404, path);
     assert.match(response.headers.get('content-type') ?? '', /text\/html/, path);
@@ -192,4 +249,55 @@ test('the local server serves client routes with 200 and everything else with a 
   const session = await fetch(`${base}/api/session`);
   assert.equal(session.status, 200);
   assert.equal(typeof (await session.json()), 'object');
+});
+
+test('the local server redirects /path/ to /path with 308 and keeps the query', async (t) => {
+  const base = await startLocalServer(t);
+  for (const [from, to] of SLASHED) {
+    const response = await fetch(`${base}${from}?x=1&y=2`, { redirect: 'manual' });
+    assert.equal(response.status, 308, from);
+    assert.equal(response.headers.get('location'), `${to}?x=1&y=2`, from);
+  }
+  const plain = await fetch(`${base}/connect/`, { redirect: 'manual' });
+  assert.equal(plain.headers.get('location'), '/connect');
+  // Followed, a slashed client route ends on the SPA.
+  const followed = await fetch(`${base}/docs/`);
+  assert.equal(followed.status, 200);
+  assert.equal(new URL(followed.url).pathname, '/docs');
+  assert.match(await followed.text(), /spa-shell-marker/);
+  // Server-owned paths and root are never redirected.
+  for (const path of [
+    '/',
+    '/api/session/',
+    '/api/',
+    '/mcp/',
+    '/.well-known/jwks.json/',
+    '/j/abc/',
+  ]) {
+    const response = await fetch(`${base}${path}`, { redirect: 'manual' });
+    assert.notEqual(response.status, 308, path);
+    assert.equal(response.headers.get('location'), null, path);
+  }
+  // Only GET and HEAD move; a POST keeps its path.
+  const post = await fetch(`${base}/connect/`, { method: 'POST', redirect: 'manual' });
+  assert.notEqual(post.status, 308);
+  const head = await fetch(`${base}/about/`, { method: 'HEAD', redirect: 'manual' });
+  assert.equal(head.status, 308);
+  assert.equal(head.headers.get('location'), '/about');
+});
+
+test('unknown routes never echo the path or query string', async (t) => {
+  const { createApp } = await import('../server/app.js');
+  const app = await createApp({ dataDir: ':memory:', startWorkers: false });
+  t.after(() => app.close());
+  for (const url of [
+    '/api/does-not-exist?probe=ccw_SECRETVALUE0123456789',
+    '/oauth/not-a-route?token=ccw_SECRETVALUE0123456789',
+  ]) {
+    const res = await app.inject({ method: 'GET', url });
+    assert.equal(res.statusCode, 404, res.body);
+    assert.ok(!res.body.includes('SECRETVALUE') && !res.body.includes('does-not-exist'), res.body);
+  }
+  const api = await app.inject({ method: 'GET', url: '/api/nope?x=1' });
+  assert.deepEqual(api.json(), { error: 'Unknown API route' });
 });
