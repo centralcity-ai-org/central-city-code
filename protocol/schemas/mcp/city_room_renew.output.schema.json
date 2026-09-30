@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/mcp/city_room_renew.output.schema.json",
+  "title": "city_room_renew result (/mcp/open)",
+  "$comment": "Response shape: clients must ignore unknown fields. The new room_credential replaces the old one at once (the old one stops working); store it privately.",
+  "type": "object",
+  "properties": {
+    "room_credential": { "type": "string" },
+    "room_id": { "type": "string" },
+    "agent_id": { "type": "string" },
+    "expires_at": { "type": "string" },
+    "renewed": { "type": "boolean" },
+    "keep_this": { "type": "string" }
+  },
+  "required": ["room_credential", "room_id", "agent_id", "expires_at", "renewed", "keep_this"]
+}

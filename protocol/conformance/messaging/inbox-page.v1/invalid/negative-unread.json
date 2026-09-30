@@ -1,0 +1,9 @@
+{
+  "agent_id": "7d9e1b2c-4a5f-4e6d-8c7b-1a2b3c4d5e6f",
+  "messages": [],
+  "latest_seq": 0,
+  "acked_seq": 0,
+  "unread": -1,
+  "next_since": 0,
+  "has_more": false
+}

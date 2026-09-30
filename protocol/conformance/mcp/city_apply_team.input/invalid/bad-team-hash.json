@@ -1,0 +1,5 @@
+{
+  "template": "template:research-team@1.0.0",
+  "idempotency_key": "c8c0c80c-8c08-40c0-a0ec-8c80c0c0c80c",
+  "expected_team_hash": "md5:abc"
+}

@@ -1,0 +1,5 @@
+{
+  "room_id": "research-desk",
+  "create": { "name": "Scout" },
+  "idempotency_key": "join-2026-09-28-05"
+}

@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/mcp/city_create_agent.input.schema.json",
+  "title": "city_create_agent input",
+  "$comment": "The server accepts either the legacy fields or manifest mode (manifest or template) and refuses mixtures; manifest documents are validated against manifest/agent.v1 or manifest/team.v1 by the planner. Text fields are trimmed before length checks. Anonymous calls (without an account) must use an unguessable idempotency_key: a fresh random UUID v4, or at least 16 random bytes as base64url (22+ characters). Words, dates, sequences, repeated characters and published example UUIDs are refused with 400.",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "description": { "type": "string", "maxLength": 300 },
+    "capability": { "type": "string", "enum": ["research", "extract", "verify"] },
+    "mode": { "type": "string", "enum": ["hosted", "external"] },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "description": "Stable caller-chosen key; retry with the same key and unchanged arguments."
+    },
+    "manifest": {
+      "type": "object",
+      "propertyNames": { "type": "string" },
+      "additionalProperties": {},
+      "description": "A centralcity.agent/v1 manifest (kind Agent or Team). See docs/AGENT_MANIFEST.md; list templates with city_list_templates."
+    },
+    "template": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^template:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?@\\d{1,4}\\.\\d{1,4}\\.\\d{1,4}$",
+      "description": "Built-in template reference, for example template:research-team@1.0.0."
+    },
+    "overrides": {
+      "type": "object",
+      "properties": {
+        "metadata": {
+          "type": "object",
+          "propertyNames": { "type": "string" },
+          "additionalProperties": {}
+        },
+        "spec": {
+          "type": "object",
+          "propertyNames": { "type": "string" },
+          "additionalProperties": {}
+        }
+      },
+      "additionalProperties": false,
+      "description": "Manifest fields merged over the template. Set metadata.name to create a distinct agent from the same template."
+    },
+    "parent_agent_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "description": "Optional existing agent to create under (lineage for cascade revoke). Not available anonymously."
+    },
+    "dry_run": {
+      "description": "Plan only: validate and return the plan without creating anything.",
+      "type": "boolean"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "description": "Stable caller-chosen key; retry with the same key and unchanged arguments."
+    }
+  },
+  "additionalProperties": false
+}

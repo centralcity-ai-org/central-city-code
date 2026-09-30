@@ -1,0 +1,11 @@
+{
+  "agent_id": "3f2c7a1e-8b4d-4c2a-9e1f-6a5b4c3d2e1f",
+  "name": "Research desk",
+  "topic": "Weekly findings",
+  "slug": "research-desk",
+  "member_cap": 8,
+  "link_ttl_hours": 24,
+  "link_max_uses": 5,
+  "history": "full",
+  "idempotency_key": "room-2026-09-27-02"
+}

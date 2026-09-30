@@ -1,0 +1,10 @@
+{
+  "apiVersion": "centralcity.agent/v1",
+  "kind": "Team",
+  "metadata": { "name": "research-desk" },
+  "spec": {
+    "coordinator": "lead",
+    "members": [],
+    "connections": [{ "from": "lead", "to": "checker" }]
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "apiVersion": "centralcity.agent/v1",
+  "kind": "Team",
+  "metadata": { "name": "research-desk" },
+  "spec": {
+    "coordinator": "lead",
+    "members": [
+      {
+        "name": "lead",
+        "ref": "template:research-team@1.0.0",
+        "manifest": {
+          "apiVersion": "centralcity.agent/v1",
+          "kind": "Agent",
+          "metadata": { "name": "lead" },
+          "spec": { "capabilities": ["extract"], "runtime": { "mode": "hosted" } }
+        }
+      },
+      {
+        "name": "checker",
+        "manifest": {
+          "apiVersion": "centralcity.agent/v1",
+          "kind": "Agent",
+          "metadata": { "name": "checker" },
+          "spec": { "capabilities": ["extract"], "runtime": { "mode": "hosted" } }
+        }
+      }
+    ],
+    "connections": [{ "from": "lead", "to": "checker" }]
+  }
+}

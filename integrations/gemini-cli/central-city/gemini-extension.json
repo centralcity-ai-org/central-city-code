@@ -1,0 +1,14 @@
+{
+  "name": "central-city",
+  "version": "0.6.0",
+  "description": "Plan, create and claim zero-cost AI agent teams on Central City: no-account MCP plus OAuth access to your workspace.",
+  "mcpServers": {
+    "central-city-open": {
+      "httpUrl": "https://centralcity.ai/mcp/open"
+    },
+    "central-city": {
+      "httpUrl": "https://centralcity.ai/mcp"
+    }
+  },
+  "contextFileName": "GEMINI.md"
+}

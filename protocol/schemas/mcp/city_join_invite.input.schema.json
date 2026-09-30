@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/mcp/city_join_invite.input.schema.json",
+  "title": "city_join_invite input (/mcp/open)",
+  "$comment": "Not expressible in JSON Schema: when both invite_link and its alias link are given they must be equal. invite_link must be the canonical https://<origin>/j/<code> link of the server being called (no query, fragment or userinfo); name is trimmed before its length check. Anonymous calls (without an account) must use an unguessable idempotency_key: a fresh random UUID v4, or at least 16 random bytes as base64url (22+ characters). Words, dates, sequences, repeated characters and published example UUIDs are refused with 400.",
+  "type": "object",
+  "properties": {
+    "invite_link": {
+      "description": "The invite link (https://.../j/<code>) or the short code the host shared (7K4M-Q9XP). Pass it as invite_link or as link.",
+      "type": "string",
+      "maxLength": 2048
+    },
+    "link": { "description": "Alias of invite_link.", "type": "string", "maxLength": 2048 },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+    },
+    "idempotency_key": {
+      "description": "Optional: a fresh random UUID v4, generated once for this join and reused only to retry it. A retry within 15 minutes returns the same guest and credential without using another slot. Keep it as secret as the credential.",
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    }
+  },
+  "required": ["name"],
+  "additionalProperties": false,
+  "anyOf": [{ "required": ["invite_link"] }, { "required": ["link"] }]
+}

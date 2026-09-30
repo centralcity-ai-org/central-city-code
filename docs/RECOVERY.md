@@ -1,0 +1,32 @@
+# Offline local backup and isolated recovery
+
+This procedure supports the current single-process PGlite schema. It is a local recovery mechanism, not managed account recovery, a production disaster-recovery service, or a physical PostgreSQL backup. The source database must be offline. Stop every application and connector first; older application builds do not participate in the new cooperative directory lock. Do not open the same PGlite directory from other tools.
+
+Use an existing private backup directory outside the application, Git repository and database. From the application directory:
+
+```powershell
+pnpm exec tsx scripts/recovery.ts backup C:\private-city\data C:\private-backups\city-backup.json
+pnpm exec tsx scripts/recovery.ts restore C:\private-backups\city-backup.json C:\private-city\recovered-new
+```
+
+Both destination paths must be new. Restore refuses even an existing empty directory. Paths must be direct local paths: user-created symbolic links, junctions, hard-linked files, parent traversal, network paths and Windows reserved aliases are rejected. OS-owned links above the data path, such as macOS `/var` and `/tmp`, are resolved to their real path: a followed link must be owned by root inside a root-owned directory that is not group- or world-writable, every component of its target is checked by the same rules, and at most 40 links are followed. The lock and backup paths then use the resolved spelling. This removes link aliases but is not a unique canonical name: macOS firmlink spellings such as `/System/Volumes/Data/private/tmp/...` contain no links and are accepted as written. A link at or inside the data directory is always rejected, and Windows junctions are never followed. When the tool runs as root, links that root created in root-owned directories that are not group- or world-writable meet the same rule and are followed; run backup and restore as an ordinary user, or keep such links out of the data path. No source database is selected by default. The command never starts the application or changes its configured data path.
+
+The version 1 logical format stores a coherent transaction containing operator accounts and workspace records, including agents, directional grants, retained jobs, results, acceptance, optional source-brief workflows and events. It is bounded to 32 MiB, 1,000 operators/workspaces, and the current per-workspace limits. It rejects unknown fields, unsupported table layouts, invalid relationships and incompatible versions. External artifact files are not part of the current application; only results stored in workspace JSON are included. The v0.4 reader accepts v1 backups that predate workflows. Older strict readers reject new workflow-bearing backups: this is forward migration support, not downgrade compatibility. Further schema changes require explicit format/version review.
+
+Backups contain password hashes, salts and private task content. They are **not encrypted**. Keep them in an access-controlled encrypted local volume; never upload them to source control, public assets or shared output folders. New files use mode 0600 and new directories mode 0700 where supported. On Windows, inherited NTFS permissions remain authoritative; provision a private parent directory first. SHA-256 detects accidental corruption, not deliberate modification by someone who can replace the backup. Restore only a trusted backup. The tool never prints its contents.
+
+Restoration preserves stable identities and history but deliberately changes live authority:
+
+- Sessions, external runtime credential hashes and replay nonces are omitted from the backup and absent after restore.
+- All workspaces are paused, presence timestamps are cleared, heartbeat sequences reset and job lease authority removed.
+- Queued and running jobs become canceled with a recovery explanation. They never replay when the workspace resumes. Completed/failed/canceled history and accepted artifacts remain retained.
+- Unaccepted source-brief workflows become canceled, including those awaiting owner review; their completed job outputs remain. Accepted, failed and canceled workflow history is preserved. A recovered workflow never starts a checker automatically.
+- A `workspace.recovered` event records the pause and invalidation. The existing 1,000-event retention bound still applies, so a full event history loses its oldest event when this entry is added.
+
+After a successful restore, start the application with its data directory explicitly pointed at the new path. Sign in with the existing operator name and password. The old sessions and runtime credentials no longer work. For each non-revoked external agent, use the owner's **Rotate credential** action and reconnect its runtime with the newly issued token. Verify agent identities, grants and accepted results; inspect any possible effects of previously running external code before creating new jobs. Resume the workspace only after that inspection. Recovery cannot stop external code or undo its effects and cannot recover a forgotten account password.
+
+The sibling `<data-directory>.central-city.lock` is held from before database open until after database close. A second cooperating application, backup or restore fails while it exists. It is never automatically removed as stale: after a crash, stop all database users, inspect the recorded PID and local process state, and remove the lock manually only after confirming no owner remains. This assumes a normal local filesystem and trusted local users; it does not prevent uncooperative tools or hostile filesystem races.
+
+A failed restore may leave a new directory containing `.central-city-recovery-incomplete`; the application refuses to open it. Preserve it for inspection or remove that isolated failed directory after checking its exact path; retry into another new directory. Do not remove its marker to force startup. A failed backup write may leave an incomplete file; restore validation rejects it. Retry with a new filename. Files are flushed before success, but device failure, directory-entry durability and disk encryption are outside these guarantees.
+
+Rollback: stop the restored application and point it back at the untouched original database, after checking for external effects and diverging work. Recovery never overwrites the original. Do not merge two diverged databases by copying files. Run `pnpm exec tsx --test tests/recovery.test.ts` for the synthetic recovery and refusal cases; the tests never use the default live data directory.

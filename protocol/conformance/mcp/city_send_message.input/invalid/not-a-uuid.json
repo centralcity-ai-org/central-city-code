@@ -1,0 +1,7 @@
+{
+  "to_agent_id": "7d9e1b2c-4a5f-4e6d-8c7b-1a2b3c4d5e6f",
+  "text": "Ready for review.",
+  "context_id": "leads:fabric",
+  "idempotency_key": "status-2026-09-27-01",
+  "from_agent_id": "agent-1"
+}

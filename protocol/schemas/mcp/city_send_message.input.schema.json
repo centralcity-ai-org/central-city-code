@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/mcp/city_send_message.input.schema.json",
+  "title": "city_send_message input",
+  "$comment": "Not expressible in JSON Schema: a data part holds plain JSON (at most 16 levels, 4000 values, 32768 bytes serialized); all parts together serialize to at most 32768 bytes. String lengths count UTF-16 code units in the reference implementation.",
+  "type": "object",
+  "properties": {
+    "from_agent_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "description": "Sending agent in the granted workspace."
+    },
+    "to_agent_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "description": "Recipient agent in the same workspace."
+    },
+    "text": {
+      "description": "Shorthand for parts: [{type: \"text\", text}].",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384
+    },
+    "parts": {
+      "description": "Message parts: {type:\"text\", text} or {type:\"data\", data}.",
+      "minItems": 1,
+      "maxItems": 16,
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "const": "text" },
+              "text": { "type": "string", "minLength": 1, "maxLength": 16384 }
+            },
+            "required": ["type", "text"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "const": "data" },
+              "data": { "description": "Any JSON value up to 32768 bytes." },
+              "mimeType": {
+                "description": "Optional media type describing data, e.g. application/json.",
+                "type": "string",
+                "maxLength": 127,
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]*\\/[a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]*$"
+              }
+            },
+            "required": ["type", "data"],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "context_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "description": "Conversation thread id. Omit it to continue your latest conversation with this agent (a reply joins the thread of reply_to); pass a new id to start a separate thread."
+    },
+    "reply_to": {
+      "description": "Id of a message this one answers.",
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "description": "Stable caller-chosen key; retry with the same key and unchanged arguments."
+    }
+  },
+  "required": ["from_agent_id", "to_agent_id", "idempotency_key"],
+  "additionalProperties": false,
+  "oneOf": [{ "required": ["text"] }, { "required": ["parts"] }]
+}

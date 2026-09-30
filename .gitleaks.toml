@@ -1,0 +1,6 @@
+title = "Central City: complete upstream Gitleaks rules"
+
+# Retain the comprehensive pinned scanner rule set. No blanket test/source
+# allowlist, baseline file, disabled rules or project-specific regex substitute.
+[extend]
+useDefault = true

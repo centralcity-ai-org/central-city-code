@@ -1,0 +1,78 @@
+import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { e2eOrigin } from './port';
+
+test('owner grants assistant agent creation, downloads config and revokes it', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('/#signin');
+  // #signin opens in sign-in mode once the session check answers; switch to registration and
+  // wait for it, instead of branching on an instant isVisible() snapshot.
+  await expect(page.getByLabel('Account name')).toBeVisible();
+  const createOne = page.getByRole('button', { name: 'Create an account', exact: true });
+  await expect(createOne).toBeVisible();
+  await createOne.click();
+  await expect(page.getByRole('button', { name: 'Create account', exact: true })).toBeVisible();
+  await page.getByLabel('Account name').fill(`Assistant-${randomUUID().slice(0, 8)}`);
+  await page.getByLabel('Password', { exact: true }).fill(`Synthetic-${randomUUID()}`);
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();
+  // A new account lands on the console Overview.
+  await expect(page.getByRole('heading', { name: 'Everything, at a glance.' })).toBeVisible();
+  await page.getByRole('button', { name: 'AI connections', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'AI connections.' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Create access', exact: true })).toBeDisabled();
+  await expect(page.getByLabel('See your workspace', { exact: false })).toBeChecked();
+  await expect(page.getByLabel('Create agents', { exact: false })).not.toBeChecked();
+  await page.getByLabel('Connection name').fill('Browser Assistant');
+  await page.getByLabel('Create agents', { exact: false }).check();
+  await page.getByLabel('I allow these actions', { exact: false }).check();
+  await page.getByRole('button', { name: 'Create access', exact: true }).click();
+  const pending = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download private connection file' }).click();
+  const downloaded = await pending;
+  const config = JSON.parse(await readFile((await downloaded.path())!, 'utf8')) as {
+    baseUrl: string;
+    token: string;
+  };
+  expect(config.baseUrl).toBe(e2eOrigin());
+  expect(typeof config.token).toBe('string');
+  const args = {
+    name: 'Prompt-created Scout',
+    description: 'Created through delegated assistant access.',
+    capability: 'research',
+    mode: 'external',
+    idempotencyKey: 'browser-create-scout',
+  };
+  const response = await page.request.post('/api/assistant/tools/city_create_agent', {
+    headers: { Authorization: `Bearer ${config.token}`, 'X-City-Request': '1' },
+    data: args,
+  });
+  expect(response.status()).toBe(200);
+  const created = await response.json();
+  expect(created.agent.name).toBe(args.name);
+  expect(created.runtimeSetupRequired).toBe(true);
+  expect(created.token).toBeUndefined();
+  await page.getByRole('button', { name: 'I saved it — dismiss' }).click();
+  await page.reload();
+  await page.getByRole('button', { name: 'AI connections', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Download private connection file' })).toHaveCount(
+    0,
+  );
+  await expect(page.getByText('Browser Assistant', { exact: true })).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Remove access for Browser Assistant', exact: true })
+    .click();
+  await expect(page.getByText('Removed', { exact: true })).toBeVisible();
+  const denied = await page.request.post('/api/assistant/tools/city_workspace', {
+    headers: { Authorization: `Bearer ${config.token}`, 'X-City-Request': '1' },
+    data: {},
+  });
+  expect(denied.status()).toBe(401);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: 'test-results/assistant-access-mobile.png', fullPage: true });
+  expect(errors).toEqual([]);
+});

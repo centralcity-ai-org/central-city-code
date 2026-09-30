@@ -1,0 +1,195 @@
+import assert from 'node:assert/strict';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { CLIENT_ROUTES, isClientRoute } from '../shared/routes.js';
+
+const root = fileURLToPath(new URL('..', import.meta.url));
+const vercel = JSON.parse(readFileSync(join(root, 'vercel.json'), 'utf8')) as {
+  rewrites: Array<{ source: string; destination: string }>;
+};
+
+/** Server-owned rewrites that must stay exactly as they are (API, MCP, OAuth, A2A, /j). */
+const SERVER_REWRITES = [
+  { source: '/api/:path*', destination: '/api' },
+  { source: '/mcp', destination: '/api' },
+  { source: '/mcp/open', destination: '/api' },
+  { source: '/mcp/server-card', destination: '/.well-known/mcp/server-card.json' },
+  { source: '/mcp/open/server-card', destination: '/.well-known/mcp/server-card.json' },
+  { source: '/oauth/:path*', destination: '/api' },
+  { source: '/.well-known/oauth-protected-resource', destination: '/api' },
+  { source: '/.well-known/oauth-protected-resource/:path*', destination: '/api' },
+  { source: '/.well-known/oauth-authorization-server', destination: '/api' },
+  { source: '/.well-known/jwks.json', destination: '/api' },
+  { source: '/a2a/:path*', destination: '/api' },
+  { source: '/j/:path*', destination: '/api' },
+  // The Markdown docs index (scripts/public-docs/build.ts) lives outside dist/docs/, so /docs
+  // stays the docs app for browsers.
+  { source: '/docs/index.md', destination: '/docs-index.md' },
+  { source: '/docs.md', destination: '/docs-index.md' },
+];
+
+/** The vercel.json source syntax used here: literal segments and unnamed regex groups. */
+const sourceRegExp = (source: string) => new RegExp(`^${source}$`);
+
+const KNOWN = [
+  '/',
+  '/how',
+  '/about',
+  '/signin',
+  '/invite',
+  '/connect',
+  '/downtown',
+  '/privacy',
+  '/terms',
+  '/security',
+  '/support',
+  '/status',
+  '/privacy-choices',
+  '/acceptable-use',
+  '/dpa',
+  '/imprint',
+  '/contact',
+  '/r/launch-plan',
+  '/r/A_b-9',
+  '/rooms',
+  '/rooms/room_123',
+  '/agents',
+  '/agents/7d9e2c1a-0b3f-4c5d-8e6f-1a2b3c4d5e6f',
+  '/answers',
+  '/settings',
+  '/settings/requests',
+];
+const UNKNOWN = [
+  '/no-such-page',
+  '/some/deep/link',
+  '/rooms/a/b',
+  '/r/',
+  '/r/a.b',
+  `/r/${'x'.repeat(65)}`,
+  '/rooms/',
+  '/settings/a/b',
+  '/api/session',
+  '/j/abc',
+  '/mcp',
+  '/index.htm',
+  '/AGENTS.md',
+];
+
+test('vercel.json rewrites match the shared route table exactly', () => {
+  const client = vercel.rewrites.filter((item) => item.destination === '/index.html');
+  assert.deepEqual(
+    client.map((item) => item.source),
+    CLIENT_ROUTES.map((entry) => entry.vercelSource),
+    'one explicit /index.html rewrite per client route, in table order',
+  );
+  // Nothing else may reach the SPA: no catch-all, so unmatched paths get 404.html with 404.
+  assert.deepEqual(
+    vercel.rewrites.filter((item) => item.destination !== '/index.html'),
+    SERVER_REWRITES,
+    'API, MCP, OAuth, .well-known, A2A, /j and docs-index rewrites are unchanged',
+  );
+  assert.ok(!vercel.rewrites.some((item) => item.source.includes('.*')), 'no catch-all rewrite');
+});
+
+test('client-route matching agrees between the table and the vercel.json sources', () => {
+  const sources = CLIENT_ROUTES.map((entry) => sourceRegExp(entry.vercelSource));
+  for (const path of [...KNOWN, ...UNKNOWN]) {
+    const vercelMatch = path === '/' || sources.some((source) => source.test(path));
+    assert.equal(isClientRoute(path), vercelMatch, path);
+  }
+  for (const path of KNOWN) assert.ok(isClientRoute(path), path);
+  for (const path of UNKNOWN) assert.ok(!isClientRoute(path), path);
+});
+
+test('the 404 page is static, script-free and keeps the SPA copy', () => {
+  const page = readFileSync(join(root, 'public', '404.html'), 'utf8');
+  assert.doesNotMatch(page, /<script/i);
+  assert.match(page, /<title>Page not found · Central City<\/title>/);
+  assert.match(page, /This page doesn’t exist\./);
+  assert.match(page, /<a href="\/">Go home<\/a>/);
+});
+
+async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      server.close(() =>
+        typeof address === 'object' && address ? resolve(address.port) : reject(new Error('port')),
+      );
+    });
+  });
+}
+
+async function startLocalServer(t: test.TestContext) {
+  const temp = mkdtempSync(join(tmpdir(), 'cc-routes-'));
+  const dist = join(temp, 'dist');
+  mkdirSync(dist);
+  writeFileSync(join(dist, 'index.html'), '<!doctype html><title>spa-shell-marker</title>');
+  writeFileSync(join(dist, '404.html'), readFileSync(join(root, 'public', '404.html')));
+  const port = await freePort();
+  const child: ChildProcess = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      CITY_DIST_DIR: dist,
+      CITY_DATA_DIR: join(temp, 'data'),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout!.on('data', (chunk) => (output += chunk));
+  child.stderr!.on('data', (chunk) => (output += chunk));
+  t.after(async () => {
+    if (child.exitCode === null) {
+      const exited = new Promise((resolve) => child.once('exit', resolve));
+      child.kill('SIGTERM');
+      await exited;
+    }
+    rmSync(temp, { recursive: true, force: true });
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    if (child.exitCode !== null) throw new Error(`server exited early:\n${output}`);
+    try {
+      if ((await fetch(`${base}/api/session`)).ok) return base;
+    } catch {
+      // not listening yet
+    }
+    if (Date.now() > deadline) throw new Error(`server did not start:\n${output}`);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
+
+test('the local server serves client routes with 200 and everything else with a real 404', async (t) => {
+  const base = await startLocalServer(t);
+  for (const path of ['/', '/rooms', '/r/launch-plan', '/downtown', '/settings/requests']) {
+    const response = await fetch(`${base}${path}`);
+    assert.equal(response.status, 200, path);
+    assert.match(await response.text(), /spa-shell-marker/, path);
+  }
+  for (const path of ['/no-such-page', '/some/deep/link', '/rooms/', '/r/a.b']) {
+    const response = await fetch(`${base}${path}`);
+    assert.equal(response.status, 404, path);
+    assert.match(response.headers.get('content-type') ?? '', /text\/html/, path);
+    assert.match(await response.text(), /This page doesn’t exist\./, path);
+  }
+  const head = await fetch(`${base}/rooms`, { method: 'HEAD' });
+  assert.equal(head.status, 200);
+  // Only GET and HEAD reach the SPA or the 404 page; API 404s stay JSON.
+  assert.equal((await fetch(`${base}/rooms`, { method: 'POST' })).status, 404);
+  const api = await fetch(`${base}/api/no-such-route`);
+  assert.equal(api.status, 404);
+  assert.deepEqual(await api.json(), { error: 'Unknown API route' });
+  const session = await fetch(`${base}/api/session`);
+  assert.equal(session.status, 200);
+  assert.equal(typeof (await session.json()), 'object');
+});

@@ -1,0 +1,9 @@
+{
+  "ask_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+  "result_id": "9d2e4f6a-3b5c-4d7e-9f0a-1b2c3d4e5f6a",
+  "used": true,
+  "reason": "used",
+  "tokens_avoided": 1200,
+  "latency_avoided_ms": 3000,
+  "baseline_method": "One web search and a summary"
+}

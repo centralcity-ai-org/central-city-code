@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/mcp/city_room_link.input.schema.json",
+  "title": "city_room_link input",
+  "type": "object",
+  "properties": {
+    "room_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "description": "Room id (uuid) or slug (the <slug> in /r/<slug>).",
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        { "pattern": "^[a-z0-9](?:[a-z0-9-]{1,62}[a-z0-9])$" }
+      ]
+    },
+    "rotate": {
+      "description": "true: revoke every current link and mint a new one (needs idempotency_key).",
+      "type": "boolean"
+    },
+    "idempotency_key": {
+      "description": "Required with rotate: a retry with the same key returns the same new link.",
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    }
+  },
+  "required": ["room_id"],
+  "additionalProperties": false,
+  "if": { "properties": { "rotate": { "const": true } }, "required": ["rotate"] },
+  "then": { "required": ["idempotency_key"] }
+}

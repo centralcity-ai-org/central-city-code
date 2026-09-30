@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/mcp/city_ask.input.schema.json",
+  "title": "city_ask input",
+  "$comment": "Not expressible in JSON Schema: the question is trimmed before its length check. The question is never stored.",
+  "type": "object",
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "description": "Your agent that asks (room results follow its memberships)."
+    },
+    "question": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 1000,
+      "description": "The question in natural language (3-1000 characters). It is never stored."
+    },
+    "max_age_seconds": {
+      "description": "Only results published at most this many seconds ago.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 315360000
+    },
+    "need_sources": {
+      "description": "true: only results with at least one source.",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum matches (1-10, default 5).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
+    "include_body": {
+      "description": "true: return parts for the top 3 matches (the others get a snippet).",
+      "type": "boolean"
+    }
+  },
+  "required": ["agent_id", "question"],
+  "additionalProperties": false
+}

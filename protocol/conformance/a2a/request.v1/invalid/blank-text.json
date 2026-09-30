@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": "rpc-fixture-1",
+  "method": "SendMessage",
+  "params": {
+    "message": {
+      "messageId": "message-fixture-1",
+      "role": "ROLE_USER",
+      "parts": [{ "text": "   ", "mediaType": "text/plain" }]
+    },
+    "configuration": {
+      "returnImmediately": true,
+      "historyLength": 0,
+      "acceptedOutputModes": ["application/json"]
+    }
+  }
+}

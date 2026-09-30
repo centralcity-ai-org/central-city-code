@@ -1,0 +1,19 @@
+{
+  "apiVersion": "centralcity.agent/v1",
+  "kind": "Agent",
+  "metadata": { "name": "summarizer" },
+  "spec": {
+    "capabilities": [
+      "cap-0",
+      "cap-1",
+      "cap-2",
+      "cap-3",
+      "cap-4",
+      "cap-5",
+      "cap-6",
+      "cap-7",
+      "cap-8"
+    ],
+    "runtime": { "mode": "hosted" }
+  }
+}

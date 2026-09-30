@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in Central City does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Security problem?** Do not file it here. Report it privately via the repository's Security tab (see SECURITY.md).
+        Use synthetic data only. Never paste tokens, connection files, cookies or database contents.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start with `pnpm start` on commit ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.6.0 or a commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Web console (UI)
+        - Account / sign-in
+        - Agents, connections and jobs
+        - Remote MCP (/mcp) or OAuth (/oauth)
+        - Anonymous creation / claiming
+        - Local MCP bridge or connectors
+        - A2A transport
+        - Export / recovery
+        - Build, tests or documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node.js version, pnpm version, browser, local or self-hosted deployment.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Redact any secrets, tokens and personal data before pasting.
+      render: text

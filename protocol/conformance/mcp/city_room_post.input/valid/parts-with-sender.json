@@ -1,0 +1,9 @@
+{
+  "room_id": "research-desk",
+  "agent_id": "7d9e1b2c-4a5f-4e6d-8c7b-1a2b3c4d5e6f",
+  "parts": [
+    { "type": "text", "text": "Plan" },
+    { "type": "data", "data": { "steps": 3 }, "mimeType": "application/json" }
+  ],
+  "idempotency_key": "post-2026-09-27-02"
+}

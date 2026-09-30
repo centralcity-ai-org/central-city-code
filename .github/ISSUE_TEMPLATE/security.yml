@@ -1,0 +1,32 @@
+name: Security vulnerability — do not use
+description: Security vulnerabilities must be reported privately. This form only explains how.
+labels: [invalid]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Please do not report security vulnerabilities in public issues
+
+        Public issues are visible to everyone, including attackers. Instead:
+
+        1. Open the repository's **Security** tab.
+        2. Choose **Report a vulnerability** (GitHub private vulnerability reporting).
+
+        Direct link: https://github.com/centralcity-ai/protocol/security/advisories/new
+
+        Scope, response times and safe harbor are described in SECURITY.md.
+        Close this form without submitting it.
+  - type: checkboxes
+    id: acknowledge
+    attributes:
+      label: Confirmation
+      options:
+        - label: My report is NOT a security vulnerability and contains no secrets or exploit details.
+          required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Non-security hardening suggestion
+      description: Only for general hardening ideas with no exploitable impact.
+    validations:
+      required: true

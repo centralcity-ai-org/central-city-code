@@ -1,0 +1,10 @@
+# Central City MCP servers for the OpenAI Codex CLI and IDE extension.
+# Copy into ~/.codex/config.toml (or a trusted project's .codex/config.toml).
+
+# No account: plan and create unclaimed, zero-cost agents that a person claims later.
+[mcp_servers.central-city-open]
+url = "https://centralcity.ai/mcp/open"
+
+# Your own workspace over OAuth 2.1. Sign in once with: codex mcp login central-city
+[mcp_servers.central-city]
+url = "https://centralcity.ai/mcp"

@@ -1,0 +1,6 @@
+{
+  "template": "template:research-team@1.0.0",
+  "overrides": { "metadata": { "name": "my-research" } },
+  "dry_run": true,
+  "idempotency_key": "80c0c80c-8c8c-4c80-a080-c8c0e0c0c808"
+}

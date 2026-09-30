@@ -1,0 +1,18 @@
+/* Composer Preview (the toggle sits beside Send). */
+.rm-preview {
+  flex: 1;
+  min-width: 0;
+  max-height: 40vh;
+  overflow: auto;
+  padding: var(--space-1) 0;
+}
+.rm-preview-toggle {
+  align-self: end;
+  min-height: var(--target);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: var(--type-ui);
+  cursor: pointer;
+}

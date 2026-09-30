@@ -1,0 +1,297 @@
+name: Verify application
+on:
+  push:
+    branches: [main]
+  # Portability (Windows) runs weekly and on demand only; macOS is never scheduled (10x cost).
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+permissions:
+  contents: read
+concurrency:
+  # Superseded branch and pull request runs are canceled; every main run gets its own group.
+  group: ${{ github.ref == 'refs/heads/main' && format('check-main-{0}', github.run_id) || format('check-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      code: ${{ steps.paths.outputs.code }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Guard CI cost and secret-scan policy
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { pathToFileURL } from 'node:url';
+          import assert from 'node:assert/strict';
+          const text = readFileSync('.github/workflows/check.yml', 'utf8').replaceAll('\r\n', '\n');
+          const jobsText = text.split('\njobs:\n')[1];
+          const names = [...jobsText.matchAll(/^  ([A-Za-z0-9_-]+):\n/gm)].map(match => match[1]);
+          const job = name => text.split(`  ${name}:\n`)[1].split(/^  [A-Za-z0-9_-]+:\n/m)[0];
+          assert.deepEqual(names, ['changes', 'secrets', 'unit', 'browser', 'portability', 'verify'], 'jobs changed: update this guard and verify');
+          // Draft and docs policy: every job except changes, secrets and verify is gated on the classification.
+          for (const name of names.filter(name => !['changes', 'secrets', 'verify'].includes(name)))
+            assert.match(job(name), /^    if: needs\.changes\.outputs\.code == 'true'/m, `${name} must be gated on changes`);
+          for (const name of ['unit', 'browser']) {
+            assert.doesNotMatch(job(name), /continue-on-error/, `${name} may not ignore failures`);
+            assert.match(job(name), /fail-fast: false/, `${name} reports every shard`);
+          }
+          assert.match(job('portability'), /github.event_name == 'schedule' \|\| github.event_name == 'workflow_dispatch'/);
+          assert.doesNotMatch(job('portability'), /event_name == 'push'|event_name == 'pull_request'|macos/);
+          assert.doesNotMatch(job('secrets'), /^    if:/m);
+          assert.match(job('secrets'), /node scripts\/check-secrets.mjs/);
+          assert.match(job('changes'), /! heavy_allowed pull_request true/);
+          // verify waits for every job and checks each one's result.
+          const verify = job('verify');
+          assert.match(verify, /^    if: always\(\)$/m);
+          const needs = /^    needs: \[([^\]]+)\]$/m.exec(verify)[1].split(', ');
+          assert.deepEqual(needs, names.filter(name => name !== 'verify'), 'verify must need every job');
+          for (const name of needs) {
+            const variable = `${name.toUpperCase().replaceAll('-', '_')}_RESULT`;
+            assert.match(verify, new RegExp(`${variable}: \\$\\{\\{ needs\\.${name}\\.result \\}\\}`), `verify reads ${name}`);
+            assert.match(verify.split('run: |')[1], new RegExp(`"\\$${variable}" == success`), `verify requires ${name} success`);
+          }
+          for (const name of ['unit', 'browser'])
+            assert.match(verify, new RegExp(`"\\$${name.toUpperCase()}_RESULT" == skipped`), `verify requires ${name} skipped for docs and drafts`);
+          // The shards cover every check the single job ran, each test file exactly once.
+          const { UNIT_SHARDS, assignShards, testFiles } = await import(pathToFileURL(`${process.cwd()}/scripts/test-shard.mjs`));
+          const range = count => `[${Array.from({ length: count }, (_, index) => index + 1).join(', ')}]`;
+          assert.match(job('unit'), new RegExp(`shard: \\${range(UNIT_SHARDS)}\\n`));
+          assert.match(job('unit'), new RegExp(`pnpm test:shard \\$\\{\\{ matrix\\.shard \\}\\}/${UNIT_SHARDS}\\n`));
+          const files = testFiles();
+          const sharded = assignShards(files, UNIT_SHARDS).flatMap(shard => shard.files).sort();
+          assert.deepEqual(sharded, files, 'every test file runs in exactly one unit shard');
+          const browserShards = Number(/pnpm test:browser --shard=\$\{\{ matrix\.shard \}\}\/(\d+)\n/.exec(job('browser'))[1]);
+          assert.match(job('browser'), new RegExp(`shard: \\${range(browserShards)}\\n`));
+          for (const command of ['pnpm build', 'pnpm check:boundaries', 'pnpm format:check'])
+            assert.ok(job('unit').includes(`run: ${command}`) || job('browser').includes(`run: ${command}`), command);
+          assert.match(job('unit'), /run: pnpm install --frozen-lockfile/);
+          assert.match(job('browser'), /run: pnpm install --frozen-lockfile/);
+          NODE
+      - id: paths
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          classify_path() {
+            case "$1" in
+              # Tests read protocol/ (schema and leak checks) and public/ is served: always code.
+              integrations/*|docs/DISTRIBUTION.md|protocol/*|public/*) echo true ;;
+              *.md|docs/*) echo false ;;
+              *) echo true ;;
+            esac
+          }
+          # Regression checks use the same classifier as the PR diff below.
+          [[ "$(classify_path integrations/claude/README.md)" == true ]]
+          [[ "$(classify_path docs/DISTRIBUTION.md)" == true ]]
+          [[ "$(classify_path protocol/ROOMS.md)" == true ]]
+          [[ "$(classify_path public/downtown.md)" == true ]]
+          [[ "$(classify_path docs/guide.md)" == false ]]
+          [[ "$(classify_path README.md)" == false ]]
+          [[ "$(classify_path src/app.ts)" == true ]]
+          [[ "$(classify_path .github/workflows/check.yml)" == true ]]
+          # Draft policy regression checks (secrets has no draft condition).
+          heavy_allowed() { [[ "$1" != pull_request || "$2" != true ]]; }
+          ! heavy_allowed pull_request true
+          heavy_allowed pull_request false
+          heavy_allowed push true
+          if ! heavy_allowed "$EVENT_NAME" "$IS_DRAFT"; then
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          code=true
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            # A failed diff must fail the job, never silently classify as documentation.
+            git diff --name-only --no-renames -z "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/changed-paths"
+            code=false
+            while IFS= read -r -d '' path; do
+              if [[ "$(classify_path "$path")" == true ]]; then code=true; fi
+            done < "$RUNNER_TEMP/changed-paths"
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+  secrets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.23.3
+      - name: Install checksum-pinned Gitleaks
+        shell: bash
+        run: |
+          set -euo pipefail
+          scanner_dir="$RUNNER_TEMP/central-city-gitleaks"
+          mkdir -p "$scanner_dir"
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 --max-time 120 \
+            'https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz' \
+            --output "$scanner_dir/gitleaks.tar.gz"
+          echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  '"$scanner_dir/gitleaks.tar.gz" | sha256sum --check --strict
+          tar -xzf "$scanner_dir/gitleaks.tar.gz" -C "$scanner_dir" gitleaks
+          echo "GITLEAKS_BIN=$scanner_dir/gitleaks" >> "$GITHUB_ENV"
+      - name: Scan repository history and current files
+        run: node scripts/check-secrets.mjs
+      - name: Test scanner safeguards
+        run: node --test tests/secret-scan.test.ts
+  # The former single `application` job, split so its parts run in parallel (docs/CI.md,
+  # "Parallel jobs"). Same checks: every Node test file runs in exactly one `unit` shard
+  # (scripts/test-shard.mjs), every browser scenario in one `browser` shard.
+  unit:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keep equal to UNIT_SHARDS in scripts/test-shard.mjs (checked in `changes`).
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # pnpm first, so setup-node can restore the pnpm store cache (keyed on pnpm-lock.yaml).
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0, Node 24
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.23.3
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test:shard ${{ matrix.shard }}/4
+        env:
+          # Scanner coverage stays on hosted Linux in the unconditional secrets job.
+          CI: ''
+  browser:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # pnpm first, so setup-node can restore the pnpm store cache (keyed on pnpm-lock.yaml).
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0, Node 24
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.23.3
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm check:boundaries
+        if: matrix.shard == 1
+      - run: pnpm format:check
+        if: matrix.shard == 1
+      - id: playwright
+        shell: bash
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - id: browsers
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}-chromium
+      - run: pnpm exec playwright install --with-deps chromium
+        if: runner.os == 'Linux' && steps.browsers.outputs.cache-hit != 'true'
+      # Cached browser: only the system libraries are missing on a fresh Linux runner.
+      - run: pnpm exec playwright install-deps chromium
+        if: runner.os == 'Linux' && steps.browsers.outputs.cache-hit == 'true'
+      - run: pnpm exec playwright install chromium
+        if: runner.os != 'Linux'
+      - run: pnpm test:browser --shard=${{ matrix.shard }}/2
+  portability:
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    # Cost: portability runs weekly (Sunday) and on manual dispatch only, never per merge or PR.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.23.3
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0, Node 24
+        with:
+          version: 11.19.0
+      - name: Use the long-form runner temp directory on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "TEMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "TMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+        env:
+          # The secret scanner is covered by the Ubuntu job; an empty CI lets its tests skip here.
+          CI: ''
+  verify:
+    # Always report the required check, including classification errors and docs-only PRs.
+    if: always()
+    needs: [changes, secrets, unit, browser, portability]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Report verification result
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+          SECRETS_RESULT: ${{ needs.secrets.result }}
+          PORTABILITY_RESULT: ${{ needs.portability.result }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          BROWSER_RESULT: ${{ needs.browser.result }}
+        run: |
+          set -euo pipefail
+          [[ "$CHANGES_RESULT" == success && "$SECRETS_RESULT" == success ]] || exit 1
+          if [[ "$CODE" == false ]]; then
+            [[ "$UNIT_RESULT" == skipped && "$BROWSER_RESULT" == skipped && "$PORTABILITY_RESULT" == skipped ]] || exit 1
+            if [[ "$IS_DRAFT" == true ]]; then
+              echo "draft: tests deferred"
+            else
+              echo "Documentation-only PR: application checks intentionally skipped."
+            fi
+          else
+            # Every leg of both matrices must succeed: a matrix job reports success only then.
+            [[ "$CODE" == true && "$UNIT_RESULT" == success && "$BROWSER_RESULT" == success ]] || exit 1
+            if [[ "$EVENT_NAME" == schedule || "$EVENT_NAME" == workflow_dispatch ]]; then
+              [[ "$PORTABILITY_RESULT" == success ]] || exit 1
+            else
+              [[ "$PORTABILITY_RESULT" == skipped ]] || exit 1
+            fi
+          fi

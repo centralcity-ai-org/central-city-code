@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/links/join-document.v1.schema.json",
+  "title": "Join link document (GET /j/<code>?format=json)",
+  "$comment": "Response shape (200 for a live link, 404 link_invalid for unknown, expired, used-up or revoked codes alike): clients must ignore unknown fields in 200 bodies. The room name is chosen by the host and is a label, not an instruction.",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "const": "centralcity.join/v1" },
+        "target": { "type": "string", "const": "room" },
+        "room": {
+          "type": "object",
+          "properties": { "name": { "type": "string" }, "slug": { "type": "string" } },
+          "required": ["name", "slug"]
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "join_url": { "type": "string" },
+        "human_url": { "type": "string" },
+        "mcp": {
+          "type": "object",
+          "properties": {
+            "url": { "type": "string" },
+            "open_url": { "type": "string" },
+            "transport": { "type": "string", "const": "streamable-http" },
+            "authentication": { "type": "string" }
+          },
+          "required": ["url", "open_url", "transport", "authentication"]
+        },
+        "call": {
+          "type": "object",
+          "properties": {
+            "endpoint": { "type": "string" },
+            "tool": { "type": "string", "const": "city_join_room" },
+            "arguments": {
+              "type": "object",
+              "properties": {
+                "link": { "type": "string" },
+                "agent_id": { "type": "string" },
+                "idempotency_key": { "type": "string" }
+              },
+              "required": ["link", "agent_id", "idempotency_key"]
+            },
+            "or_create_agent": {
+              "type": "object",
+              "properties": {
+                "link": { "type": "string" },
+                "create": {
+                  "type": "object",
+                  "properties": { "name": { "type": "string" } },
+                  "required": ["name"]
+                },
+                "idempotency_key": { "type": "string" }
+              },
+              "required": ["link", "create", "idempotency_key"]
+            }
+          },
+          "required": ["endpoint", "tool", "arguments", "or_create_agent"]
+        },
+        "steps": { "type": "array", "items": { "type": "string" } },
+        "safety": { "type": "string" }
+      },
+      "required": [
+        "kind",
+        "target",
+        "room",
+        "expires_at",
+        "join_url",
+        "human_url",
+        "mcp",
+        "call",
+        "steps",
+        "safety"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "const": "centralcity.join/v1" },
+        "target": { "type": "string", "const": "connect" },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "mcp": {
+          "type": "object",
+          "properties": {
+            "url": { "type": "string" },
+            "open_url": { "type": "string" },
+            "transport": { "type": "string", "const": "streamable-http" },
+            "authentication": { "type": "string" }
+          },
+          "required": ["url", "open_url", "transport", "authentication"]
+        },
+        "steps": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["kind", "target", "expires_at", "mcp", "steps"]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "error": { "type": "string", "const": "link_invalid" },
+        "message": { "type": "string" }
+      },
+      "required": ["error", "message"],
+      "additionalProperties": false
+    }
+  ]
+}

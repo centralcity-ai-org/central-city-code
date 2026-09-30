@@ -1,0 +1,6 @@
+{
+  "apiVersion": "centralcity.agent/v2",
+  "kind": "Agent",
+  "metadata": { "name": "summarizer" },
+  "spec": { "capabilities": ["extract"], "runtime": { "mode": "hosted" } }
+}

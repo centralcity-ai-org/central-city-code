@@ -1,0 +1,229 @@
+/* Room message Markdown. Tokens only; no new colours outside the
+   small code palette below, which is defined for light and dark. */
+.md-body {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.md-body.collapsed {
+  max-height: calc(24px * 24);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 80%, transparent);
+}
+.md-body > *,
+.md-body li > p,
+.md-body blockquote > * {
+  margin: 0;
+}
+.md-body a {
+  color: var(--link);
+}
+.md-h {
+  font: var(--type-heading);
+}
+.md-h2,
+.md-h3 {
+  font: var(--type-ui);
+  font-size: 16px;
+  font-weight: 600;
+}
+.md-body ul,
+.md-body ol {
+  padding-inline-start: var(--space-5);
+  display: grid;
+  gap: var(--space-1);
+}
+.md-body li.md-task {
+  list-style: none;
+  margin-inline-start: calc(-1 * var(--space-5));
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+.md-body blockquote {
+  margin: 0;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--border);
+  color: var(--text-muted);
+  display: grid;
+  gap: var(--space-2);
+}
+.md-body hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  width: 100%;
+}
+.md-body code {
+  font: var(--type-mono);
+  font-size: 0.9em;
+  padding: 1px 4px;
+  border-radius: var(--radius-s);
+  background: var(--surface-sunken);
+}
+.md-table {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.md-table table {
+  border-collapse: collapse;
+  font: var(--type-meta);
+}
+.md-table th,
+.md-table td {
+  border: 1px solid var(--border);
+  padding: var(--space-1) var(--space-2);
+  text-align: start;
+}
+.md-table th {
+  background: var(--surface-sunken);
+  font-weight: 600;
+}
+.md-footnote {
+  font: var(--type-meta);
+  color: var(--text-muted);
+}
+.md-quiet {
+  justify-self: start;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: var(--type-ui);
+  cursor: pointer;
+}
+.md-body-wrap {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* Code blocks: sunken surface, language label, Copy, 480 px max with "Show all", horizontal
+   scroll inside the block only. */
+.md-code {
+  display: grid;
+  min-width: 0;
+  border-radius: var(--radius-s);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+.md-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0 var(--space-1) 0 var(--space-3);
+  min-height: 36px;
+  border-bottom: 1px solid var(--border);
+  font: var(--type-meta);
+  color: var(--text-muted);
+}
+.md-code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  color: var(--text-muted);
+  font: var(--type-meta);
+  cursor: pointer;
+}
+.md-code-copy:hover {
+  color: var(--text);
+}
+.md-code-pre {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  overflow: auto;
+  max-width: 100%;
+  white-space: pre;
+  font: var(--type-mono);
+  tab-size: 2;
+}
+.md-code-pre.collapsed {
+  max-height: 480px;
+  overflow-y: hidden;
+}
+.md-code-pre code {
+  font: inherit;
+  padding: 0;
+  background: none;
+}
+.md-code > .md-quiet {
+  padding: 0 var(--space-3);
+}
+
+/* Highlighting palette (lowlight/highlight.js token classes). */
+.md-code {
+  --code-keyword: #8a3ffc;
+  --code-string: #137a56;
+  --code-number: #b4233c;
+  --code-comment: var(--text-muted);
+  --code-title: #1b45d6;
+  --code-type: #8a5200;
+  --code-add: #137a56;
+  --code-del: #b4233c;
+}
+:root[data-theme='dark'] .md-code {
+  --code-keyword: #c4a2ff;
+  --code-string: #5fd3a5;
+  --code-number: #ff8fa3;
+  --code-title: #98b0ff;
+  --code-type: #f0b35a;
+  --code-add: #5fd3a5;
+  --code-del: #ff8fa3;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-meta .hljs-keyword {
+  color: var(--code-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-symbol {
+  color: var(--code-string);
+}
+.hljs-number,
+.hljs-literal {
+  color: var(--code-number);
+}
+.hljs-comment,
+.hljs-quote {
+  color: var(--code-comment);
+  font-style: italic;
+}
+.hljs-title,
+.hljs-section,
+.hljs-name {
+  color: var(--code-title);
+}
+.hljs-type,
+.hljs-built_in,
+.hljs-attr,
+.hljs-property {
+  color: var(--code-type);
+}
+.hljs-addition {
+  color: var(--code-add);
+}
+.hljs-deletion {
+  color: var(--code-del);
+}
+
+/* Links name their real host when the text doesn't; link text is isolated. */
+.md-body a {
+  unicode-bidi: isolate;
+}
+.md-link-host {
+  color: var(--text-muted);
+  font: var(--type-meta);
+}
+.md-truncated {
+  margin: 0;
+  color: var(--text-muted);
+  font: var(--type-meta);
+}

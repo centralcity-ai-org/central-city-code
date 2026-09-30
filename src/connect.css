@@ -1,0 +1,399 @@
+.connect-flow {
+  display: grid;
+  gap: 32px;
+  padding-bottom: 40px;
+}
+.connect-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.connect-section-heading h2 {
+  margin: 0;
+  font-size: 24px;
+}
+.connect-section-heading > span,
+.connect-hint {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.connect-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.connect-provider-grid.secondary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 16px;
+}
+.connect-flow .connect-provider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+  text-align: left;
+  border: 1px solid var(--border-control);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  min-height: 132px;
+  font: inherit;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.connect-flow .connect-provider:hover {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+.connect-flow .connect-provider:focus-visible,
+.connect-dialog :focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 4px;
+}
+.connect-provider-symbol {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--surface-sunken);
+  font: 600 24px var(--font-display);
+}
+.connect-provider-copy {
+  display: grid;
+  gap: 8px;
+  flex: 1;
+}
+.connect-provider-copy strong {
+  font: 600 19px var(--font-display);
+}
+.connect-provider-copy > span {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.connect-provider-copy small {
+  color: var(--link);
+  font-size: 12px;
+}
+.connect-provider-grid.secondary .connect-provider {
+  padding: 18px;
+  gap: 12px;
+}
+.connect-provider-grid.secondary .connect-provider-copy strong {
+  font-size: 16px;
+}
+.connect-provider-grid.secondary .connect-provider-copy > span {
+  display: none;
+}
+.connect-provider-grid.secondary .connect-provider > svg {
+  width: 16px;
+}
+.connect-reassurance {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 18px 0 0;
+}
+.connect-reassurance svg {
+  flex-shrink: 0;
+}
+.connect-first-task {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px;
+}
+.connect-first-task h2 {
+  font: 500 22px/1.3 var(--font-display);
+  max-width: 28ch;
+  margin: 8px 0;
+}
+.connect-first-task p:not(.eyebrow) {
+  max-width: 55ch;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 0;
+}
+.connect-task-path {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.connect-flow summary,
+.connect-dialog summary {
+  cursor: pointer;
+  min-height: 44px;
+  padding: 12px 0;
+  font-weight: 600;
+}
+.connect-advanced {
+  border-block: 1px solid var(--border);
+  padding: 8px 0;
+}
+.connect-advanced-content {
+  padding: 8px 0 20px;
+  max-width: 800px;
+  line-height: 1.6;
+}
+.connect-advanced-content h3 {
+  margin: 24px 0 12px;
+}
+.connect-claim {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.connect-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  padding: 32px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 24px 100px #0006;
+  overflow: auto;
+}
+.connect-dialog::backdrop {
+  background: rgb(5 12 28 / 0.7);
+}
+.connect-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.connect-dialog-header h2 {
+  margin: 8px 0 0;
+  font: 500 28px/1.2 var(--font-display);
+}
+.connect-dialog .connect-close {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px;
+}
+.connect-dialog .connect-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  border: 0;
+  padding: 0;
+  margin: 0 0 16px;
+}
+.connect-mode legend {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.connect-mode label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--border-control);
+  padding: 14px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.connect-mode label:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--accent-tint);
+}
+.connect-mode input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--primary);
+}
+.connect-mode span {
+  font-size: 14px;
+  font-weight: 600;
+}
+.connect-mode small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+.connect-mode-note {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+.connect-provider-steps,
+.connect-test,
+.connect-notice {
+  line-height: 1.65;
+}
+.connect-dialog .connect-launch {
+  width: 100%;
+  margin: 8px 0;
+}
+.connect-instructions {
+  padding-left: 24px;
+}
+.connect-instructions li {
+  padding-left: 4px;
+  margin: 18px 0;
+}
+.connect-copy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-sunken);
+}
+.connect-copy pre {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.connect-copy button {
+  flex-shrink: 0;
+}
+.connect-help {
+  border-top: 1px solid var(--border);
+  margin-top: 24px;
+  font-size: 14px;
+}
+.connect-dialog-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.connect-dialog-bottom p {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.connect-expected,
+.connect-notice {
+  background: var(--surface-sunken);
+  padding: 20px;
+  border-radius: 8px;
+}
+.connect-expected h3,
+.connect-notice h3 {
+  margin-top: 0;
+}
+@media (max-width: 760px) {
+  .connect-section-heading,
+  .connect-first-task {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .connect-provider-grid.secondary {
+    grid-template-columns: 1fr;
+  }
+  .connect-provider-grid.secondary .connect-provider {
+    min-height: 88px;
+  }
+  .connect-first-task {
+    gap: 20px;
+  }
+}
+@media (max-width: 480px) {
+  .connect-provider-grid {
+    grid-template-columns: 1fr;
+  }
+  .connect-flow .connect-provider {
+    padding: 20px;
+  }
+  .connect-claim,
+  .connect-dialog-bottom {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .connect-dialog {
+    padding: 20px;
+  }
+  .connect-dialog .connect-mode {
+    grid-template-columns: 1fr;
+  }
+  .connect-copy {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .connect-task-path {
+    gap: 8px;
+    font-size: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .connect-flow .connect-provider {
+    transition: none;
+  }
+}
+
+/* Joining a room with an invite link: one instruction, the address, who it works with. */
+.connect-room-invite {
+  display: grid;
+  gap: 12px;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.connect-room-invite h2 {
+  font: 500 22px/1.3 var(--font-display);
+  margin: 0;
+}
+.connect-room-invite p {
+  margin: 0;
+  max-width: 62ch;
+  line-height: 1.6;
+}
+.connect-room-invite .connect-room-note {
+  color: var(--text-muted);
+}
+
+/* One-click install: direct app links for the signed-in, persistent address (/mcp). */
+.connect-one-click {
+  display: grid;
+  gap: var(--space-3);
+}
+.connect-one-click-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.connect-one-click-actions .button {
+  min-height: var(--target);
+}
+.connect-one-click .connect-hint {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 480px) {
+  .connect-one-click-actions .button {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}

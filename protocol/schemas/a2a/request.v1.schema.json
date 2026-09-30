@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/a2a/request.v1.schema.json",
+  "title": "A2A 1.0 JSON-RPC request (mapped subset)",
+  "$comment": "Not expressible in JSON Schema: the request body is at most 65536 bytes (UTF-8). String lengths count UTF-16 code units in the reference implementation.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "jsonrpc": { "type": "string", "const": "2.0" },
+        "id": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$" },
+            { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 }
+          ]
+        },
+        "method": { "type": "string", "const": "SendMessage" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "object",
+              "properties": {
+                "messageId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9._:-]+$"
+                },
+                "role": { "type": "string", "const": "ROLE_USER" },
+                "parts": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 12000,
+                          "pattern": "\\S"
+                        },
+                        "mediaType": { "type": "string", "const": "text/plain" }
+                      },
+                      "required": ["text"],
+                      "additionalProperties": false
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 1,
+                  "maxItems": 1
+                }
+              },
+              "required": ["messageId", "role", "parts"],
+              "additionalProperties": false
+            },
+            "configuration": {
+              "type": "object",
+              "properties": {
+                "returnImmediately": { "type": "boolean", "const": true },
+                "historyLength": { "type": "number", "const": 0 },
+                "acceptedOutputModes": {
+                  "type": "array",
+                  "prefixItems": [{ "type": "string", "const": "application/json" }],
+                  "items": false,
+                  "minItems": 1,
+                  "maxItems": 1
+                }
+              },
+              "required": ["returnImmediately"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["message", "configuration"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "jsonrpc": { "type": "string", "const": "2.0" },
+        "id": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$" },
+            { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 }
+          ]
+        },
+        "method": { "type": "string", "const": "GetTask" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            },
+            "historyLength": { "type": "number", "const": 0 }
+          },
+          "required": ["id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "jsonrpc": { "type": "string", "const": "2.0" },
+        "id": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$" },
+            { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 }
+          ]
+        },
+        "method": { "type": "string", "const": "CancelTask" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            }
+          },
+          "required": ["id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"],
+      "additionalProperties": false
+    }
+  ]
+}

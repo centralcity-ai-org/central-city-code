@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "central-city-open": {
+      "type": "http",
+      "url": "https://centralcity.ai/mcp/open"
+    },
+    "central-city": {
+      "type": "http",
+      "url": "https://centralcity.ai/mcp"
+    }
+  }
+}

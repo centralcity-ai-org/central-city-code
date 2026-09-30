@@ -1,0 +1,6 @@
+{
+  "name": "Summarizer",
+  "capability": "extract",
+  "mode": "hosted",
+  "idempotencyKey": "0c8080c0-80e0-480c-ac0c-80c80808c080"
+}

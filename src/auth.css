@@ -1,0 +1,261 @@
+/*
+ * Sign in / Sign up. Page-local only. Colours use the current token names with a fallback to the
+ * earlier token each replaces.
+ */
+
+.auth-v8 {
+  flex: 1;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.auth-v8-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 440px;
+  gap: 64px;
+  align-items: center;
+  min-height: calc(100vh - 180px);
+  padding: 48px 0;
+}
+
+.auth-v8-eyebrow {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-text, var(--link));
+}
+.auth-v8-eyebrow.is-quiet {
+  color: var(--text-muted);
+}
+
+/* Product statement */
+.auth-v8-display {
+  margin: 0 0 18px;
+  font-size: 44px;
+  line-height: 1.15;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--text-primary, var(--text));
+}
+.auth-v8-lead {
+  max-width: 480px;
+  margin: 0 0 24px;
+  font-size: 16.5px;
+  line-height: 1.6;
+  color: var(--text-secondary, var(--text-muted));
+}
+.auth-v8-points {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary, var(--text-muted));
+}
+.auth-v8-points li {
+  position: relative;
+  padding-left: 18px;
+}
+.auth-v8-points li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.62em;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent, var(--primary));
+}
+
+/* The card */
+.auth-v8-card {
+  padding: 36px 32px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface-elevated, var(--surface-raised));
+  box-shadow: var(--shadow-elevated, var(--shadow-panel));
+}
+.auth-v8-tabs {
+  display: flex;
+  margin: 0 0 24px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface, var(--surface-sunken));
+}
+.auth-v8-tabs button {
+  flex: 1;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, var(--text-muted));
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.auth-v8-tabs button.is-active {
+  background: var(--bg-surface-elevated, var(--surface-raised));
+  color: var(--text-primary, var(--text));
+  box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.06));
+}
+.auth-v8-tabs button:focus-visible {
+  outline: 2px solid var(--border-focus, var(--focus));
+  outline-offset: 1px;
+}
+.auth-v8-card h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary, var(--text));
+}
+.auth-v8-sub {
+  margin: 0 0 20px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-secondary, var(--text-muted));
+}
+/* Mode-specific texts: the inactive one keeps its space but is invisible, unfocusable and
+   hidden from assistive technology, so switching modes never changes the card's height. */
+.auth-v8-swap {
+  display: grid;
+}
+.auth-v8-swap > * {
+  grid-area: 1 / 1;
+}
+.auth-v8 .is-ghost {
+  visibility: hidden;
+}
+.auth-v8-card .notice {
+  margin: 0 0 20px;
+}
+
+/* Form */
+.auth-v8-form {
+  display: grid;
+  gap: 20px;
+}
+.auth-v8-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, var(--text));
+}
+.auth-v8-form input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-control, var(--border));
+  border-radius: 8px;
+  background: var(--bg-page, var(--canvas));
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-primary, var(--text));
+  transition: border-color 0.15s ease;
+}
+.auth-v8-form input::placeholder {
+  color: var(--text-muted);
+}
+.auth-v8-form input:focus {
+  outline: none;
+  border-color: var(--accent, var(--primary));
+  box-shadow: 0 0 0 3px var(--accent-subtle, var(--accent-tint));
+}
+.auth-v8-note {
+  margin: -8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary, var(--text-muted));
+}
+.auth-v8-note a,
+.auth-v8-foot a {
+  color: var(--accent-text, var(--link));
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.auth-v8-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  /* The filled-button pair (--primary/--on-primary) meets text contrast in light and dark;
+     the dark --accent is a brighter link/indicator blue that white text fails on. */
+  background: var(--primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-primary);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.auth-v8-submit:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+.auth-v8-submit:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+.auth-v8-submit:focus-visible {
+  outline: 2px solid var(--border-focus, var(--focus));
+  outline-offset: 2px;
+}
+.auth-v8-switch {
+  margin: 20px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary, var(--text-muted));
+}
+.auth-v8-foot {
+  margin: 24px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--text-secondary, var(--text-muted));
+}
+
+@media (max-width: 900px) {
+  .auth-v8-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 40px;
+    min-height: 0;
+    padding: 32px 0 48px;
+  }
+  /* The form comes first on a phone; the product statement follows. */
+  .auth-v8-card {
+    order: -1;
+  }
+  .auth-v8-display {
+    font-size: 32px;
+  }
+}
+@media (max-width: 480px) {
+  .auth-v8 {
+    padding: 0 16px;
+  }
+  .auth-v8-card {
+    padding: 28px 20px;
+  }
+}

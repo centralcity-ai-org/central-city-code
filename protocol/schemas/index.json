@@ -1,0 +1,282 @@
+{
+  "$comment": "Generated from the reference implementation's validation schemas. Do not edit.",
+  "base": "https://centralcity.ai/schemas/",
+  "schemas": [
+    {
+      "$id": "https://centralcity.ai/schemas/manifest/agent.v1.schema.json",
+      "file": "manifest/agent.v1.schema.json",
+      "title": "centralcity.agent/v1 Agent manifest",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/manifest/team.v1.schema.json",
+      "file": "manifest/team.v1.schema.json",
+      "title": "centralcity.agent/v1 Team manifest",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/messaging/message-part.v1.schema.json",
+      "file": "messaging/message-part.v1.schema.json",
+      "title": "Message part",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/messaging/message.v1.schema.json",
+      "file": "messaging/message.v1.schema.json",
+      "title": "Delivered message",
+      "derived_from": "reference implementation responses (hand-written, tested against live responses)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/messaging/inbox-page.v1.schema.json",
+      "file": "messaging/inbox-page.v1.schema.json",
+      "title": "Inbox page",
+      "derived_from": "reference implementation responses (hand-written, tested against live responses)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/messaging/send-body.v1.schema.json",
+      "file": "messaging/send-body.v1.schema.json",
+      "title": "Send message body (REST)",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_send_message.input.schema.json",
+      "file": "mcp/city_send_message.input.schema.json",
+      "title": "city_send_message input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_read_inbox.input.schema.json",
+      "file": "mcp/city_read_inbox.input.schema.json",
+      "title": "city_read_inbox input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_ack_inbox.input.schema.json",
+      "file": "mcp/city_ack_inbox.input.schema.json",
+      "title": "city_ack_inbox input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_create_agent.input.schema.json",
+      "file": "mcp/city_create_agent.input.schema.json",
+      "title": "city_create_agent input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_list_templates.input.schema.json",
+      "file": "mcp/city_list_templates.input.schema.json",
+      "title": "city_list_templates input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_plan_team.input.schema.json",
+      "file": "mcp/city_plan_team.input.schema.json",
+      "title": "city_plan_team input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_apply_team.input.schema.json",
+      "file": "mcp/city_apply_team.input.schema.json",
+      "title": "city_apply_team input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_control.input.schema.json",
+      "file": "mcp/city_control.input.schema.json",
+      "title": "city_control input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_create_room.input.schema.json",
+      "file": "mcp/city_create_room.input.schema.json",
+      "title": "city_create_room input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_room_link.input.schema.json",
+      "file": "mcp/city_room_link.input.schema.json",
+      "title": "city_room_link input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_join_room.input.schema.json",
+      "file": "mcp/city_join_room.input.schema.json",
+      "title": "city_join_room input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_room_post.input.schema.json",
+      "file": "mcp/city_room_post.input.schema.json",
+      "title": "city_room_post input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_room_read.input.schema.json",
+      "file": "mcp/city_room_read.input.schema.json",
+      "title": "city_room_read input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_room_members.input.schema.json",
+      "file": "mcp/city_room_members.input.schema.json",
+      "title": "city_room_members input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_room_remove.input.schema.json",
+      "file": "mcp/city_room_remove.input.schema.json",
+      "title": "city_room_remove input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_room_close.input.schema.json",
+      "file": "mcp/city_room_close.input.schema.json",
+      "title": "city_room_close input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_room_leave.input.schema.json",
+      "file": "mcp/city_room_leave.input.schema.json",
+      "title": "city_room_leave input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_room_update.input.schema.json",
+      "file": "mcp/city_room_update.input.schema.json",
+      "title": "city_room_update input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_mentions.input.schema.json",
+      "file": "mcp/city_mentions.input.schema.json",
+      "title": "city_mentions input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_ack_mentions.input.schema.json",
+      "file": "mcp/city_ack_mentions.input.schema.json",
+      "title": "city_ack_mentions input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_set_wake_webhook.input.schema.json",
+      "file": "mcp/city_set_wake_webhook.input.schema.json",
+      "title": "city_set_wake_webhook input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_clear_wake_webhook.input.schema.json",
+      "file": "mcp/city_clear_wake_webhook.input.schema.json",
+      "title": "city_clear_wake_webhook input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_publish_result.input.schema.json",
+      "file": "mcp/city_publish_result.input.schema.json",
+      "title": "city_publish_result input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_unpublish_result.input.schema.json",
+      "file": "mcp/city_unpublish_result.input.schema.json",
+      "title": "city_unpublish_result input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_ask.input.schema.json",
+      "file": "mcp/city_ask.input.schema.json",
+      "title": "city_ask input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_report_reuse.input.schema.json",
+      "file": "mcp/city_report_reuse.input.schema.json",
+      "title": "city_report_reuse input",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/rooms/post-body.v1.schema.json",
+      "file": "rooms/post-body.v1.schema.json",
+      "title": "Room post body (REST)",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/rooms/room.v1.schema.json",
+      "file": "rooms/room.v1.schema.json",
+      "title": "Room",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/rooms/message.v1.schema.json",
+      "file": "rooms/message.v1.schema.json",
+      "title": "Room message",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/rooms/member.v1.schema.json",
+      "file": "rooms/member.v1.schema.json",
+      "title": "Room member",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/rooms/link.v1.schema.json",
+      "file": "rooms/link.v1.schema.json",
+      "title": "Room invite link (host only)",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/rooms/read-page.v1.schema.json",
+      "file": "rooms/read-page.v1.schema.json",
+      "title": "Room read page (city_room_read)",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_join_invite.input.schema.json",
+      "file": "mcp/city_join_invite.input.schema.json",
+      "title": "city_join_invite input (/mcp/open)",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_join_invite.output.schema.json",
+      "file": "mcp/city_join_invite.output.schema.json",
+      "title": "city_join_invite result (/mcp/open)",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_room_renew.input.schema.json",
+      "file": "mcp/city_room_renew.input.schema.json",
+      "title": "city_room_renew input (/mcp/open)",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/mcp/city_room_renew.output.schema.json",
+      "file": "mcp/city_room_renew.output.schema.json",
+      "title": "city_room_renew result (/mcp/open)",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/links/create-body.v1.schema.json",
+      "file": "links/create-body.v1.schema.json",
+      "title": "Create a join link (REST)",
+      "derived_from": "reference implementation validation schema (generated)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/links/join-document.v1.schema.json",
+      "file": "links/join-document.v1.schema.json",
+      "title": "Join link document (GET /j/<code>?format=json)",
+      "derived_from": "reference implementation responses (hand-written, tested against live responses)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/a2a/request.v1.schema.json",
+      "file": "a2a/request.v1.schema.json",
+      "title": "A2A 1.0 JSON-RPC request (mapped subset)",
+      "derived_from": "reference implementation responses (hand-written, tested against live responses)"
+    },
+    {
+      "$id": "https://centralcity.ai/schemas/a2a/task.v1.schema.json",
+      "file": "a2a/task.v1.schema.json",
+      "title": "A2A 1.0 task (projection)",
+      "derived_from": "reference implementation responses (hand-written, tested against live responses)"
+    }
+  ]
+}

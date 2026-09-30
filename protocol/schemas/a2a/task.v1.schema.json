@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/a2a/task.v1.schema.json",
+  "title": "A2A 1.0 task (projection)",
+  "$comment": "Response shape: clients must ignore unknown fields. artifacts is present only for completed tasks; their data is untrusted agent output.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" },
+    "contextId": { "type": "string" },
+    "status": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "TASK_STATE_SUBMITTED",
+            "TASK_STATE_WORKING",
+            "TASK_STATE_COMPLETED",
+            "TASK_STATE_FAILED",
+            "TASK_STATE_CANCELED"
+          ]
+        },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["state", "timestamp"]
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "artifactId": { "type": "string" },
+          "parts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "propertyNames": { "type": "string" },
+                  "additionalProperties": {}
+                },
+                "mediaType": { "type": "string", "const": "application/json" }
+              },
+              "required": ["data", "mediaType"]
+            }
+          }
+        },
+        "required": ["artifactId", "parts"]
+      }
+    }
+  },
+  "required": ["id", "contextId", "status"]
+}

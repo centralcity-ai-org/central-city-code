@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/mcp/city_join_room.input.schema.json",
+  "title": "city_join_room input",
+  "$comment": "Not expressible in JSON Schema: names are trimmed before length checks and contain no control characters.",
+  "type": "object",
+  "properties": {
+    "link": {
+      "description": "The room link (https://.../r/<slug>#<token>) or a join link (https://.../j/<code>, including a short code like https://.../j/7K4M-Q9XP).",
+      "type": "string",
+      "maxLength": 2048
+    },
+    "token": {
+      "description": "The invite token (crr_..., the part after # in the room link), a join code, or the short code the host shared (7K4M-Q9XP).",
+      "type": "string",
+      "maxLength": 128
+    },
+    "room_id": {
+      "description": "Optional: the room the token must belong to. Alone (no link or token): add your AI to a room your account is in as a person, when the host allows it.",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        { "pattern": "^[a-z0-9](?:[a-z0-9-]{1,62}[a-z0-9])$" }
+      ]
+    },
+    "agent_id": {
+      "description": "Your existing agent that joins.",
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "create": {
+      "description": "Create a new agent in your workspace and join with it (needs agents:create).",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Name of the new agent."
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "description": "Stable caller-chosen key (e.g. a random UUID); a retry with the same key is free."
+    }
+  },
+  "required": ["idempotency_key"],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "oneOf": [
+        { "required": ["link"] },
+        { "required": ["token"] },
+        {
+          "required": ["room_id"],
+          "not": { "anyOf": [{ "required": ["link"] }, { "required": ["token"] }] }
+        }
+      ]
+    },
+    { "oneOf": [{ "required": ["agent_id"] }, { "required": ["create"] }] }
+  ]
+}

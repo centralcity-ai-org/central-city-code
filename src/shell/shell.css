@@ -1,0 +1,537 @@
+/*
+ * Shell: Public Header and Footer, App Header, 404 (v8 Design System)
+ * Strictly utilizes v8 design tokens. Apple/OpenAI restraint, zero arrows.
+ */
+
+/* --------------------------------------------------------------------------
+   PUBLIC HEADER (Matches v8 styles.css & PublicHeader.tsx)
+   -------------------------------------------------------------------------- */
+.cc-header,
+.site-nav {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background: transparent;
+  height: var(--header-h);
+  min-height: var(--header-h);
+  display: flex;
+  align-items: center;
+  transition:
+    background-color var(--dur-2) var(--ease-out),
+    border-color var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+
+.cc-header.is-scrolled {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.cc-header-inner,
+.nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 0 24px;
+  /* The lockup carries -8px margins for its clear space: the gap keeps "Downtown" off the
+     wordmark. */
+  gap: 40px;
+}
+
+.cc-header-inner > .lockup {
+  flex-shrink: 0;
+}
+
+.cc-header-nav,
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cc-header-nav a,
+.nav-link {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 0.15s ease;
+  min-height: var(--target);
+  display: inline-flex;
+  align-items: center;
+}
+
+.cc-header-nav a:hover,
+.cc-header-nav a[aria-current='page'],
+.nav-link:hover,
+.nav-link.active,
+.nav-link[aria-current='page'] {
+  color: var(--text-primary);
+}
+
+/* "Developer" disclosure (wide header): a quiet text button and a small panel of links. */
+.cc-header-dev {
+  position: relative;
+  display: inline-flex;
+}
+
+.cc-header-nav .cc-header-dev-button {
+  min-height: var(--target);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  transition: color var(--dur-2) var(--ease-out);
+}
+
+.cc-header-nav .cc-header-dev-button:hover,
+.cc-header-nav .cc-header-dev-button[aria-expanded='true'] {
+  color: var(--text-primary);
+}
+
+.cc-header-dev-panel {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: calc(-1 * var(--space-3));
+  z-index: 1;
+  display: grid;
+  gap: var(--space-1);
+  min-width: 208px;
+  padding: var(--space-2);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-elevated);
+}
+
+.cc-header-dev-panel[hidden] {
+  display: none;
+}
+
+.cc-header-nav .cc-header-dev-panel a {
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-s);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.cc-header-nav .cc-header-dev-panel a:hover {
+  background: var(--bg-surface-hover);
+}
+
+.cc-header-actions,
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.cc-header-wide {
+  display: inline-flex;
+  align-items: center;
+}
+
+.cc-header-signin,
+.nav-signin {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 500;
+  padding: 6px 10px;
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+  min-height: var(--target);
+  display: inline-flex;
+  align-items: center;
+}
+
+.cc-header-signin:hover,
+.nav-signin:hover {
+  opacity: 0.8;
+}
+
+/* Theme Toggle Button */
+.theme-toggle-btn {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.theme-toggle-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.theme-toggle-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.cc-header-invite {
+  min-width: var(--target);
+}
+
+/* One control height on the right (36px, like openai.com's bar): Sign in, Invite and the theme
+   toggle share a centre line instead of 44/40/32px boxes. Pointer widths only:
+   touch widths keep the 44px targets. */
+@media (min-width: 768px) {
+  .cc-header-actions .cc-header-signin,
+  .cc-header-actions .cc-header-invite {
+    min-height: 36px;
+    height: 36px;
+    padding-top: 0;
+    padding-bottom: 0;
+    display: inline-flex;
+    align-items: center;
+  }
+  .cc-header-actions .theme-toggle-btn {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+.cc-label-short {
+  display: none;
+}
+
+.cc-header .cc-header-menu-button {
+  display: none;
+  width: var(--target);
+  height: var(--target);
+  color: var(--text-primary);
+}
+
+.cc-header-menu {
+  position: absolute;
+  inset: 100% 0 auto;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  background: var(--bg-surface-elevated);
+  border-top: 1px solid var(--border);
+  box-shadow: var(--shadow-elevated);
+}
+
+.cc-header-menu nav {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.cc-header-menu nav a {
+  display: flex;
+  align-items: center;
+  min-height: var(--target);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-s);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.cc-header-menu nav a:hover {
+  background: var(--bg-surface-hover);
+}
+
+.cc-header-menu-group {
+  display: grid;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.cc-header-menu-group-title {
+  padding: 0 var(--space-3);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.cc-header-menu-theme {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3) 0;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+@media (max-width: 899px) {
+  .cc-header-inner,
+  .nav-inner {
+    padding: 0 16px;
+    gap: var(--space-3);
+  }
+  .cc-header-nav,
+  .nav-links,
+  .cc-header-wide {
+    display: none;
+  }
+  .cc-header .cc-header-menu-button {
+    display: inline-grid;
+  }
+}
+
+@media (min-width: 900px) {
+  .cc-header-menu {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .cc-label-long {
+    display: none;
+  }
+  .cc-label-short {
+    display: inline;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   PUBLIC FOOTER (v8 Clean Columns + Accordeon on Mobile)
+   -------------------------------------------------------------------------- */
+.cc-footer,
+.site-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  padding: 56px 0 36px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.cc-footer-inner,
+.footer-grid {
+  display: grid;
+  grid-template-columns: 2fr repeat(4, 1fr);
+  gap: 36px;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.cc-footer-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cc-footer-desc {
+  max-width: 280px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.cc-footer-columns {
+  display: contents;
+}
+
+.footer-col-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+}
+
+.footer-links {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.footer-links a,
+.cc-footer a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+}
+
+.footer-links a:hover,
+.cc-footer a:hover {
+  color: var(--text-primary);
+}
+
+.cc-footer-bottom,
+.footer-bottom {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 24px;
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.cc-footer-legal {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.cc-footer-bottom-links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.cc-footer-bottom-links a {
+  color: inherit;
+  text-decoration: none;
+  min-height: var(--target);
+  display: inline-flex;
+  align-items: center;
+}
+
+.cc-footer-bottom-links a:hover {
+  color: var(--text-primary);
+}
+
+@media (max-width: 900px) {
+  .cc-footer-inner,
+  .footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+  .cc-footer-brand {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 767px) {
+  .cc-footer-inner,
+  .footer-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 0 16px;
+  }
+  .cc-footer-brand {
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cc-footer-column {
+    border-bottom: 1px solid var(--border);
+  }
+  .cc-footer-column summary {
+    display: flex;
+    align-items: center;
+    min-height: var(--target);
+    margin: 0;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-primary);
+  }
+  .cc-footer-column ul {
+    padding-bottom: 12px;
+  }
+  .cc-footer-column a {
+    min-height: var(--target);
+  }
+  .cc-footer-bottom,
+  .footer-bottom {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   APP HEADER & 404 STATES
+   -------------------------------------------------------------------------- */
+.topbar.cc-app-header {
+  height: 64px;
+  min-height: 64px;
+  background: var(--bg-page);
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
+.cc-app-header-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cc-app-header-title p {
+  margin: 0;
+  font: var(--type-heading);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-state-page {
+  display: grid;
+  align-content: center;
+  min-height: calc(100vh - 120px);
+}
+
+.cc-state {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-4);
+  padding: var(--space-9) 0;
+  max-width: 40ch;
+  margin: 0 auto;
+}
+
+.cc-state h1 {
+  font: var(--type-title);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.cc-state p {
+  color: var(--text-secondary);
+}
+
+.cc-state-details {
+  color: var(--text-muted);
+  font: var(--type-meta);
+}
+
+.cc-state-details summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target);
+  cursor: pointer;
+}

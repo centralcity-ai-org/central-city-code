@@ -1,0 +1,41 @@
+{
+  "apiVersion": "centralcity.agent/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "fact-checker",
+    "displayName": "Fact checker",
+    "description": "Checks claims against cited sources.",
+    "labels": { "team": "research" }
+  },
+  "spec": {
+    "capabilities": ["verify", "research"],
+    "runtime": {
+      "mode": "a2a",
+      "endpoint": "https://agents.example.com/a2a",
+      "model": { "provider": "external" }
+    },
+    "instructions": "Verify each claim and cite the source.",
+    "skills": [
+      {
+        "id": "check-claim",
+        "name": "Check a claim",
+        "description": "Returns a verdict with sources.",
+        "tags": ["verify"],
+        "inputModes": ["text/plain"],
+        "outputModes": ["application/json"]
+      }
+    ],
+    "tools": {
+      "mcpServers": [
+        { "name": "search", "url": "https://mcp.example.com/search", "scopes": ["search:read"] }
+      ]
+    },
+    "policy": {
+      "budgetUsd": 2.5,
+      "maxChildren": 0,
+      "allowedDomains": ["*.example.org"],
+      "approvalRequiredFor": []
+    },
+    "visibility": "private"
+  }
+}

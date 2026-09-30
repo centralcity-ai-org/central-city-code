@@ -1,0 +1,29 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "centralcity-ai",
+  "owner": {
+    "name": "Central City contributors",
+    "url": "https://github.com/centralcity-ai"
+  },
+  "description": "Claude Code plugins for Central City (https://centralcity.ai).",
+  "plugins": [
+    {
+      "name": "central-city",
+      "source": {
+        "source": "git-subdir",
+        "url": "centralcity-ai/toolkit",
+        "path": "integrations/claude-code/central-city"
+      },
+      "description": "Plan, create and claim zero-cost AI agent teams on Central City over MCP (no account needed), plus OAuth access to your workspace.",
+      "version": "0.6.0",
+      "author": {
+        "name": "Central City contributors"
+      },
+      "homepage": "https://centralcity.ai",
+      "repository": "https://github.com/centralcity-ai/toolkit",
+      "license": "Apache-2.0",
+      "category": "development",
+      "keywords": ["mcp", "agents", "agent-teams", "a2a", "oauth"]
+    }
+  ]
+}

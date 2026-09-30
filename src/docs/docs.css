@@ -1,0 +1,353 @@
+/*
+ * Docs (/docs/*): design v8: a searchable sidebar of categories
+ * beside the reading column. Page-local only. Colors use the v8 token names; each falls back to
+ * the current token until the v8 foundation (tokens, theme, header) is on main.
+ */
+.docs-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-height: calc(100vh - var(--header-h, 56px));
+  background: var(--bg-page, var(--canvas));
+}
+
+/* Sidebar */
+.docs-sidebar {
+  position: sticky;
+  top: var(--header-h, 56px);
+  height: calc(100vh - var(--header-h, 56px));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px 16px;
+  background: var(--bg-surface, var(--surface-sunken));
+  border-right: 1px solid var(--border);
+}
+.docs-search {
+  display: block;
+}
+.docs-search-input {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface-elevated, var(--surface));
+  color: var(--text-primary, var(--text));
+  font: inherit;
+  font-size: 13px;
+}
+.docs-search-input::placeholder {
+  color: var(--text-muted);
+}
+.docs-search-input:focus-visible {
+  outline: 2px solid var(--border-focus, var(--focus));
+  outline-offset: 1px;
+  border-color: var(--accent, var(--primary));
+}
+.docs-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.docs-category {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.docs-category-title {
+  margin: 0;
+  padding: 4px 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.docs-nav-link {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--text-secondary, var(--text-muted));
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  text-decoration: none;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+.docs-nav-section {
+  padding-left: 22px;
+}
+.docs-nav-link:hover {
+  color: var(--text-primary, var(--text));
+  background: var(--bg-surface-hover, var(--surface-raised));
+}
+.docs-nav-link[aria-current='page'] {
+  color: var(--accent-text, var(--primary));
+  background: var(--accent-subtle, var(--accent-tint));
+  font-weight: 600;
+}
+.docs-nav-empty {
+  margin: 0;
+  padding: 4px 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.docs-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Reading column */
+.docs-content {
+  min-width: 0;
+  max-width: 860px;
+  padding: 48px 48px 96px;
+}
+.docs-article {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  align-content: start;
+  color: var(--text-secondary, var(--text));
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+.docs-article h1 {
+  margin: 0;
+  color: var(--text-primary, var(--text));
+  font-size: 34px;
+  font-weight: 750;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.docs-article h2 {
+  margin: 20px 0 0;
+  color: var(--text-primary, var(--text));
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.3;
+  scroll-margin-top: calc(var(--header-h, 56px) + 16px);
+}
+.docs-article h3 {
+  margin: 8px 0 0;
+  color: var(--text-primary, var(--text));
+  font-size: 16px;
+  font-weight: 600;
+}
+.docs-article p,
+.docs-article ul,
+.docs-article ol,
+.docs-article dl {
+  margin: 0;
+}
+.docs-article ul,
+.docs-article ol {
+  display: grid;
+  gap: 6px;
+  padding-inline-start: 20px;
+}
+.docs-article strong {
+  color: var(--text-primary, var(--text));
+}
+.docs-article a {
+  color: var(--accent-text, var(--link));
+}
+.docs-article code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-inset, var(--surface-sunken));
+  color: var(--text-primary, var(--text));
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.88em;
+  overflow-wrap: anywhere;
+}
+.docs-lede {
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary, var(--text-muted));
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+/* Callouts: the v8 info callout for notes, the tip callout for the overview. */
+.docs-note,
+.docs-callout {
+  padding: 16px 20px;
+  border-left: 4px solid var(--accent, var(--primary));
+  border-radius: 8px;
+  background: var(--accent-subtle, var(--accent-tint));
+  color: var(--text-primary, var(--text));
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.docs-callout {
+  border-left-color: var(--status-live, var(--success));
+  background: var(--status-live-bg, var(--success-tint));
+}
+.docs-soon {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--status-pending-bg, var(--warning-tint));
+  color: var(--text-primary, var(--text));
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Code: the v8 code box, a header with the label and Copy, then the code. */
+.docs-code {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset, var(--surface-sunken));
+}
+.docs-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  padding: 4px 6px 4px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface, var(--surface));
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+.docs-code-header > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.docs-code pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  color: var(--text-primary, var(--text));
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.docs-code pre code {
+  padding: 0;
+  background: none;
+  font: inherit;
+}
+
+/* Definition lists (addresses, tools) as the v8 parameter rows. */
+.docs-endpoints,
+.docs-tools {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.docs-endpoints dt,
+.docs-tools dt {
+  padding: 10px 14px 0;
+  color: var(--text-primary, var(--text));
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.docs-endpoints dd,
+.docs-tools dd {
+  margin: 0;
+  padding: 4px 14px 10px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  color: var(--text-secondary, var(--text-muted));
+  font-size: 13.5px;
+}
+.docs-endpoints dd:last-child,
+.docs-tools dd:last-child {
+  border-bottom: none;
+}
+
+/* The overview's page cards. */
+.docs-index {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px !important;
+  padding: 0 !important;
+  list-style: none;
+}
+.docs-index li {
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-surface-elevated, var(--surface));
+  box-shadow: var(--shadow-card, var(--elev-1));
+}
+.docs-index a {
+  color: var(--text-primary, var(--text));
+  font-size: 16px;
+  font-weight: 650;
+  text-decoration: none;
+}
+.docs-index a:hover {
+  color: var(--accent-text, var(--link));
+}
+.docs-index p {
+  margin-top: 4px !important;
+  color: var(--text-secondary, var(--text-muted));
+  font-size: 13.5px;
+}
+
+.docs-help {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.docs-help h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.docs-help a {
+  overflow-wrap: anywhere;
+}
+
+/* Narrow screens: the pages as a row of links above the text; sections and search stay out of
+   the way (every page keeps its own headings). */
+@media (max-width: 899px) {
+  .docs-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .docs-sidebar {
+    position: static;
+    height: auto;
+    gap: 12px;
+    padding: 16px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .docs-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .docs-category {
+    display: contents;
+  }
+  .docs-category-title,
+  .docs-nav-section {
+    display: none;
+  }
+  .docs-sidebar:has(.docs-search-input:not(:placeholder-shown)) .docs-nav-section {
+    display: block;
+  }
+  .docs-content {
+    padding: 24px 16px 64px;
+  }
+  .docs-article h1 {
+    font-size: 28px;
+  }
+}

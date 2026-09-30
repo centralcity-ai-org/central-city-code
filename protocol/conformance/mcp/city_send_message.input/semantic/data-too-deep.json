@@ -1,0 +1,6 @@
+{
+  "from_agent_id": "3f2c7a1e-8b4d-4c2a-9e1f-6a5b4c3d2e1f",
+  "to_agent_id": "7d9e1b2c-4a5f-4e6d-8c7b-1a2b3c4d5e6f",
+  "parts": [{ "type": "data", "data": [[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]] }],
+  "idempotency_key": "deep-2026-09-27"
+}

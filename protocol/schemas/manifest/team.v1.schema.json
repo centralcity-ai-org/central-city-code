@@ -1,0 +1,302 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/manifest/team.v1.schema.json",
+  "title": "centralcity.agent/v1 Team manifest",
+  "$comment": "Not expressible in JSON Schema: the document is at most 32768 bytes (UTF-8 JSON); every rule of the Agent manifest applies to inline member manifests; each member declares exactly one of manifest or ref; an inline manifest name equals the member name; member names are unique; budgetUsd has at most two decimals.",
+  "type": "object",
+  "properties": {
+    "apiVersion": { "type": "string", "const": "centralcity.agent/v1" },
+    "kind": { "type": "string", "const": "Team" },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+        },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "description": { "type": "string", "maxLength": 300 },
+        "labels": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9._-]*$"
+          }
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "spec": {
+      "type": "object",
+      "properties": {
+        "coordinator": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+        },
+        "members": {
+          "minItems": 1,
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+              },
+              "manifest": {
+                "type": "object",
+                "properties": {
+                  "apiVersion": { "type": "string", "const": "centralcity.agent/v1" },
+                  "kind": { "type": "string", "const": "Agent" },
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 63,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+                      },
+                      "displayName": { "type": "string", "minLength": 1, "maxLength": 64 },
+                      "description": { "type": "string", "maxLength": 300 },
+                      "labels": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 63,
+                          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+                        },
+                        "additionalProperties": {
+                          "type": "string",
+                          "maxLength": 63,
+                          "pattern": "^[A-Za-z0-9._-]*$"
+                        }
+                      }
+                    },
+                    "required": ["name"],
+                    "additionalProperties": false
+                  },
+                  "spec": {
+                    "type": "object",
+                    "properties": {
+                      "extends": { "type": "string", "maxLength": 128 },
+                      "capabilities": {
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32,
+                          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+                        }
+                      },
+                      "runtime": {
+                        "type": "object",
+                        "properties": {
+                          "mode": { "type": "string", "enum": ["hosted", "external", "a2a"] },
+                          "model": {
+                            "type": "object",
+                            "properties": {
+                              "provider": {
+                                "type": "string",
+                                "enum": ["platform", "anthropic", "openai", "byo", "external"]
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9._:/@-]+$"
+                              }
+                            },
+                            "required": ["provider"],
+                            "additionalProperties": false
+                          },
+                          "endpoint": { "type": "string", "maxLength": 2048 }
+                        },
+                        "additionalProperties": false
+                      },
+                      "instructions": { "type": "string", "maxLength": 8000 },
+                      "skills": {
+                        "maxItems": 32,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+                            },
+                            "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+                            "description": { "type": "string", "minLength": 1, "maxLength": 500 },
+                            "tags": {
+                              "default": [],
+                              "maxItems": 16,
+                              "type": "array",
+                              "items": { "type": "string", "minLength": 1, "maxLength": 32 }
+                            },
+                            "inputModes": {
+                              "maxItems": 8,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 100,
+                                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]*\\/[a-zA-Z0-9*][a-zA-Z0-9!#$&^_.+*-]*$"
+                              }
+                            },
+                            "outputModes": {
+                              "maxItems": 8,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 100,
+                                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]*\\/[a-zA-Z0-9*][a-zA-Z0-9!#$&^_.+*-]*$"
+                              }
+                            },
+                            "examples": {
+                              "maxItems": 8,
+                              "type": "array",
+                              "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+                            }
+                          },
+                          "required": ["id", "name", "description"],
+                          "additionalProperties": false
+                        }
+                      },
+                      "tools": {
+                        "type": "object",
+                        "properties": {
+                          "mcpServers": {
+                            "maxItems": 8,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 63,
+                                  "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+                                },
+                                "url": { "type": "string", "maxLength": 2048 },
+                                "scopes": {
+                                  "default": [],
+                                  "maxItems": 16,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64,
+                                    "pattern": "^[A-Za-z0-9._:/-]+$"
+                                  }
+                                }
+                              },
+                              "required": ["name", "url"],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "policy": {
+                        "type": "object",
+                        "properties": {
+                          "budgetUsd": { "type": "number", "minimum": 0, "maximum": 1000 },
+                          "maxChildren": { "type": "integer", "minimum": 0, "maximum": 20 },
+                          "maxDepth": { "type": "integer", "minimum": 0, "maximum": 3 },
+                          "allowedDomains": {
+                            "maxItems": 32,
+                            "type": "array",
+                            "items": { "type": "string", "maxLength": 253 }
+                          },
+                          "approvalRequiredFor": {
+                            "maxItems": 6,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "spend",
+                                "paid-model",
+                                "external-network",
+                                "tool-call",
+                                "delegation",
+                                "publication"
+                              ]
+                            }
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "visibility": { "type": "string", "enum": ["private", "org", "public"] }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["apiVersion", "kind", "metadata", "spec"],
+                "additionalProperties": false
+              },
+              "ref": { "type": "string", "maxLength": 128 }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          }
+        },
+        "connections": {
+          "default": [],
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+              },
+              "to": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+              }
+            },
+            "required": ["from", "to"],
+            "additionalProperties": false
+          }
+        },
+        "policy": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "budgetUsd": { "default": 0, "type": "number", "minimum": 0, "maximum": 1000 },
+            "maxDepth": { "default": 3, "type": "integer", "minimum": 0, "maximum": 3 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["coordinator", "members"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "additionalProperties": false
+}

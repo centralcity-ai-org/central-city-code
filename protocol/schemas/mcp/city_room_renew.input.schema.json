@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/mcp/city_room_renew.input.schema.json",
+  "title": "city_room_renew input (/mcp/open)",
+  "$comment": "Not expressible in JSON Schema: room_credential is optional in the schema only so that a call without it gets recovery instructions; the server requires it.",
+  "type": "object",
+  "properties": {
+    "room_credential": {
+      "description": "Required: the secret room credential from city_join_invite. It enters this chat and provider history; never post or share it. Lost it? Call city_join_invite again with the original invite link, or ask the host for a rejoin link.",
+      "type": "string",
+      "maxLength": 64
+    }
+  },
+  "additionalProperties": false
+}

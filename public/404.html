@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Page not found · Central City</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32.png" />
+    <!--
+      Served with HTTP 404 for every path that is not a client route (shared/routes.ts): by
+      Vercel for unmatched paths, and by server/index.ts locally. Static and script-free, so it
+      works without the SPA. Copy matches src/shell/NotFound.tsx; colours are the
+      src/shell/tokens.css values.
+    -->
+    <style>
+      @font-face {
+        font-family: 'Inter Variable';
+        font-style: normal;
+        font-display: swap;
+        font-weight: 100 900;
+        src: url('/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+      }
+      :root {
+        color-scheme: light dark;
+        --canvas: #f4f6fa;
+        --text: #0c1426;
+        --text-muted: #53627a;
+        --primary: #2457f5;
+        --on-primary: #fff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --canvas: #0c1426;
+          --text: #fff;
+          --text-muted: #a9b6cc;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: var(--canvas);
+        color: var(--text);
+        font:
+          400 16px/24px 'Inter Variable',
+          system-ui,
+          sans-serif;
+      }
+      main {
+        padding: 24px;
+        text-align: center;
+        max-width: 480px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        line-height: 36px;
+        font-weight: 650;
+      }
+      p {
+        margin: 0 0 24px;
+        color: var(--text-muted);
+      }
+      a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        padding: 0 20px;
+        border-radius: 8px;
+        background: var(--primary);
+        color: var(--on-primary);
+        font-weight: 600;
+        text-decoration: none;
+      }
+      a:focus-visible {
+        outline: 3px solid var(--text);
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>This page doesn’t exist.</h1>
+      <p>The link may be old or mistyped.</p>
+      <a href="/">Go home</a>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/links/create-body.v1.schema.json",
+  "title": "Create a join link (REST)",
+  "$comment": "Not expressible in JSON Schema: single_use and max_uses are mutually exclusive. A room join link never outlives the room invite it wraps. Limits: ttl_hours up to 168 (default 24), max_uses up to 10000 (default 10000).",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string", "const": "room" },
+        "room_id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "description": "Room id (uuid) or slug (the <slug> in /r/<slug>).",
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            { "pattern": "^[a-z0-9](?:[a-z0-9-]{1,62}[a-z0-9])$" }
+          ]
+        },
+        "ttl_hours": { "type": "integer", "minimum": 1, "maximum": 168 },
+        "single_use": { "description": "Shorthand for max_uses: 1.", "type": "boolean" },
+        "max_uses": { "type": "integer", "minimum": 1, "maximum": 10000 }
+      },
+      "required": ["target", "room_id"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string", "const": "connect" },
+        "ttl_hours": { "type": "integer", "minimum": 1, "maximum": 168 }
+      },
+      "required": ["target"],
+      "additionalProperties": false
+    }
+  ]
+}

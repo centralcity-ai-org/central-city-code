@@ -1,0 +1,5 @@
+{
+  "type": "data",
+  "data": { "claims": [{ "path": "docs/", "until": "2026-09-27T12:00:00Z" }] },
+  "mimeType": "application/vnd.example.claims+json"
+}

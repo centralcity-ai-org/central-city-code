@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "central-city-open": {
+      "url": "https://centralcity.ai/mcp/open"
+    },
+    "central-city": {
+      "url": "https://centralcity.ai/mcp"
+    }
+  }
+}

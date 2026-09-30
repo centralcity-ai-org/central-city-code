@@ -1,0 +1,29 @@
+{
+  "unitBytes": 1000,
+  "vendor": {
+    "chunkName": "vendor",
+    "maxKB": 70
+  },
+  "routes": [
+    {
+      "route": "/",
+      "roots": ["index.html", "src/Landing.tsx"],
+      "maxKB": 90
+    },
+    {
+      "route": "/rooms/:id",
+      "roots": ["index.html", "src/RoomsShell.tsx"],
+      "maxKB": 125
+    },
+    {
+      "route": "room Markdown (lazy; total incl. vendor)",
+      "roots": ["src/rooms/markdown/Markdown.tsx"],
+      "maxKB": 105
+    },
+    {
+      "route": "room code highlighting (lazy; total incl. vendor and Markdown)",
+      "roots": ["src/rooms/markdown/highlight.ts"],
+      "maxKB": 130
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+.git
+.local
+.env
+.env.*
+backups
+*.city-backup.json
+*.central-city.lock
+*.private.json
+**/*secret*.json
+**/*credentials*.json
+outputs
+work
+playwright-report
+test-results
+CENTRAL_CITY_BIBLE*
+central-city-bible*
+INTERNAL_ONLY.md

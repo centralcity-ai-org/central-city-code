@@ -1,0 +1,314 @@
+/**
+ * The rooms UI transport contract. The `RoomsClient` shape, the
+ * mock and `withRoomDeadline` come from the first rooms UI, extended with
+ * `parts`, `own`, `sender_owner_label`, `created_at`, `member_count` and `latest_seq`, and adapted
+ * to the live REST routes (docs/ROOMS.md, docs/JOIN_LINKS.md).
+ *
+ * Every call goes through api(), which keeps X-City-Workspace. Server text is never shown: errors
+ * surface as RoomsError (a code for the UI) or ApiError (status only) and are described with
+ * describeError. Invite secrets travel only in request bodies, never in a URL.
+ */
+import { api, ApiError } from '../api';
+import type { MessagePart } from '../../server/messaging/contract';
+
+export type Agent = { id: string; name: string };
+export type Role = 'host' | 'member' | 'guest';
+export type MessageFormat = 'plain' | 'markdown';
+/** A member that left on its own (host view). */
+export type LeftMember = { id: string; name: string; owner_label: string; left_at: string };
+/** Older servers send no format: that is plain text. */
+const withFormat = (message: RoomMessage): RoomMessage => ({
+  ...message,
+  format: message.format === 'markdown' ? 'markdown' : 'plain',
+});
+/** 'full': people and AIs who join read the whole conversation; 'from_join': only later messages. */
+export type History = 'from_join' | 'full';
+/** Server-derived member status (docs/MEMBER_STATUS.md); never reported by the member itself. */
+export type MemberStatus = 'active' | 'idle' | 'offline' | 'access_expired';
+export type Member = Agent & {
+  /** 'person': a signed-in person in the room as themselves. */
+  kind?: 'agent' | 'person';
+  role: Role;
+  owner_label: string;
+  own: boolean;
+  joined_at: string;
+  /** Absent from older servers and the mock. */
+  status?: MemberStatus;
+  /** Last room activity (minute precision); null unless you host the room or own the member. */
+  last_active_at?: string | null;
+};
+export type RoomMessage = {
+  id: string;
+  seq: number;
+  origin: 'external';
+  /** The sender's name at post time: a label; sender_agent_id is the identity. */
+  sender: string;
+  sender_agent_id: string;
+  sender_owner_label: string;
+  own: boolean;
+  text: string;
+  parts: MessagePart[];
+  created_at: string;
+  /** How to render text: 'markdown' for new posts once migration 22 lands, else 'plain'. */
+  format?: MessageFormat;
+  /** An @mention of one of your agents, recorded at post time (AI reads only). */
+  mentions_you?: boolean;
+  /** 'person': a person in the room wrote it themselves. */
+  sender_kind?: 'agent' | 'person';
+};
+export type Room = {
+  id: string;
+  slug: string;
+  name: string;
+  topic: string;
+  role: Role;
+  closed: boolean;
+  readOnly: boolean;
+  history: History;
+  member_count: number;
+  /** Maximum active members, host included (people and AIs share it). */
+  member_cap?: number;
+  latest_seq: number;
+  created_at: string;
+  /** Host only: people may join as themselves; members may bring their own AI. */
+  peopleMayJoin?: boolean;
+  membersMayBringAi?: boolean;
+};
+export type ReadPage = {
+  room: Room;
+  messages: RoomMessage[];
+  latest_seq: number;
+  visible_from_seq: number;
+  next_since: number;
+  has_more: boolean;
+};
+/** A join link, with its short code (7K4M-Q9XP) for the same invite when the server gives one. */
+export type JoinLink = { url: string; expires_at: string; id: string; code?: string };
+
+export class RoomsError extends Error {
+  constructor(public code: 'invite_invalid' | 'access_denied' | 'timeout') {
+    super(code);
+  }
+}
+
+export interface RoomsClient {
+  listRooms(): Promise<Room[]>;
+  listAgents(): Promise<Agent[]>;
+  /** A new agent in the viewer's workspace (hosted: no runtime credential is issued). */
+  createAgent(input: { name: string }): Promise<Agent>;
+  create(input: {
+    agent_id: string;
+    name: string;
+    idempotency_key: string;
+    /** Server default: 'full'. */
+    history?: History;
+  }): Promise<Room>;
+  join(input: {
+    room_id: string;
+    token: string;
+    idempotency_key: string;
+    /** Exactly one: an existing agent, or a new agent created and joined atomically. */
+    agent_id?: string;
+    create?: { name: string };
+  }): Promise<Room>;
+  /** The signed-in person joins as themselves with a pasted link or a short code. */
+  joinAsPerson(input: {
+    link?: string;
+    code?: string;
+    name: string;
+    idempotency_key: string;
+  }): Promise<Room>;
+  /** Host: whether people may join as themselves and bring their own AI. */
+  setPeople(input: {
+    room_id: string;
+    people_may_join?: boolean;
+    members_may_bring_ai?: boolean;
+  }): Promise<Room>;
+  /** Messages with seq > since (server-clamped to the caller's visible history), oldest first. */
+  read(input: { room_id: string; since?: number; limit?: number }): Promise<ReadPage>;
+  members(input: { room_id: string }): Promise<Member[]>;
+  post(input: {
+    room_id: string;
+    text: string;
+    agent_id?: string;
+    idempotency_key: string;
+  }): Promise<RoomMessage>;
+  /** A universal join link (/j/<code>) wrapping the room's invite. Host only. */
+  joinLink(input: { room_id: string }): Promise<JoinLink>;
+  /** Revoke one join link (`POST /api/links/:id/revoke`); other links keep working. */
+  revokeJoinLink(input: { id: string }): Promise<void>;
+  /** Rotate the room invite: every earlier link, and every join link wrapping one, stops. */
+  rotate(input: { room_id: string; idempotency_key: string }): Promise<void>;
+  remove(input: { room_id: string; agent_id: string }): Promise<void>;
+  close(input: { room_id: string }): Promise<void>;
+  /** Your member agent leaves (not the host); agent_id when you have several there. */
+  leave(input: { room_id: string; agent_id?: string }): Promise<void>;
+  /** Host only: members that left on their own recently (they can still be removed). */
+  recentlyLeft(input: { room_id: string }): Promise<LeftMember[]>;
+  /** Host only: who reads earlier messages (`POST /api/rooms/:room/settings`). */
+  setHistory(input: { room_id: string; history: History }): Promise<Room>;
+  /** Host only: the member cap, from max(current members, 2) to 100. */
+  setMemberCap(input: { room_id: string; member_cap: number }): Promise<Room>;
+}
+
+/** Bounds waiting, not server execution; retry mutations with their retained keys. */
+export function withRoomDeadline<T>(operation: Promise<T>, ms = 15_000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new RoomsError('timeout')), ms);
+    operation.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+type ServerRoom = {
+  id: string;
+  slug: string;
+  name: string;
+  topic: string;
+  role: Role;
+  closed: boolean;
+  read_only: boolean;
+  history: History;
+  member_count: number;
+  member_cap?: number;
+  latest_seq: number;
+  created_at: string;
+  people_may_join?: boolean;
+  members_may_bring_ai?: boolean;
+};
+const room = (value: ServerRoom): Room => ({
+  id: value.id,
+  slug: value.slug,
+  name: value.name,
+  topic: value.topic,
+  role: value.role,
+  closed: value.closed,
+  readOnly: value.read_only,
+  history: value.history,
+  member_count: value.member_count,
+  ...(value.member_cap === undefined ? {} : { member_cap: value.member_cap }),
+  latest_seq: value.latest_seq,
+  created_at: value.created_at,
+  ...(value.people_may_join === undefined
+    ? {}
+    : {
+        peopleMayJoin: value.people_may_join,
+        membersMayBringAi: value.members_may_bring_ai !== false,
+      }),
+});
+const path = (roomId: string) => `/api/rooms/${encodeURIComponent(roomId)}`;
+const get = <T>(url: string) => api<T>(url, undefined, 'GET');
+
+/** Maps statuses to UI codes; the server's text is dropped (it is never shown). */
+function mapped<T>(operation: Promise<T>, joining = false): Promise<T> {
+  return operation.catch((error: unknown) => {
+    if (error instanceof ApiError) {
+      // A join answers 404 for an unknown, expired, rotated or used-up invite.
+      if (joining && error.status === 404) throw new RoomsError('invite_invalid');
+      if (!joining && error.status === 404) throw new RoomsError('access_denied');
+    }
+    throw error;
+  });
+}
+
+/** The live transport over the console REST routes. */
+export function createHttpRoomsClient(): RoomsClient {
+  const client: RoomsClient = {
+    async listRooms() {
+      return (await get<{ rooms: ServerRoom[] }>('/api/rooms')).rooms.map(room);
+    },
+    async listAgents() {
+      const snapshot = await get<{
+        agents: Array<Agent & { status?: string; revokedAt?: string | null }>;
+      }>('/api/snapshot');
+      return snapshot.agents
+        .filter((agent) => !agent.revokedAt && agent.status !== 'revoked')
+        .map(({ id, name }) => ({ id, name }));
+    },
+    async createAgent({ name }) {
+      const { agent } = await api<{ agent: Agent }>('/api/agents', {
+        name,
+        capability: 'research',
+        mode: 'hosted',
+      });
+      return { id: agent.id, name: agent.name };
+    },
+    async create(input) {
+      return room((await api<{ room: ServerRoom }>('/api/rooms', input)).room);
+    },
+    async join({ room_id, ...body }) {
+      return room(
+        (await mapped(api<{ room: ServerRoom }>(`${path(room_id)}/join`, body), true)).room,
+      );
+    },
+    async read({ room_id, since, limit }) {
+      const query = new URLSearchParams();
+      if (since !== undefined) query.set('since', String(Math.max(0, since)));
+      if (limit !== undefined) query.set('limit', String(limit));
+      const page = await mapped(
+        get<Omit<ReadPage, 'room'> & { room: ServerRoom }>(`${path(room_id)}/messages?${query}`),
+      );
+      return { ...page, messages: page.messages.map(withFormat), room: room(page.room) };
+    },
+    async members({ room_id }) {
+      return (await mapped(get<{ members: Member[] }>(`${path(room_id)}/members`))).members;
+    },
+    async post({ room_id, ...body }) {
+      return withFormat(
+        (await mapped(api<{ message: RoomMessage }>(`${path(room_id)}/messages`, body))).message,
+      );
+    },
+    async joinLink({ room_id }) {
+      const value = await mapped(api<JoinLink>('/api/links', { target: 'room', room_id }));
+      return {
+        url: value.url,
+        expires_at: value.expires_at,
+        id: value.id,
+        ...(value.code ? { code: value.code } : {}),
+      };
+    },
+    async revokeJoinLink({ id }) {
+      await mapped(api(`/api/links/${encodeURIComponent(id)}/revoke`, {}));
+    },
+    async rotate({ room_id, idempotency_key }) {
+      await mapped(api(`${path(room_id)}/link/rotate`, { idempotency_key }));
+    },
+    async remove({ room_id, agent_id }) {
+      await mapped(api(`${path(room_id)}/members/${encodeURIComponent(agent_id)}/remove`, {}));
+    },
+    async close({ room_id }) {
+      await mapped(api(`${path(room_id)}/close`, {}));
+    },
+    async joinAsPerson(input) {
+      return room((await mapped(api<{ room: ServerRoom }>('/api/rooms/join', input), true)).room);
+    },
+    async setPeople({ room_id, ...body }) {
+      return room((await mapped(api<{ room: ServerRoom }>(`${path(room_id)}/people`, body))).room);
+    },
+    async recentlyLeft({ room_id }) {
+      return (await mapped(get<{ left: LeftMember[] }>(`${path(room_id)}/left`))).left;
+    },
+    async leave({ room_id, agent_id }) {
+      await mapped(api(`${path(room_id)}/leave`, agent_id ? { agent_id } : {}));
+    },
+    async setMemberCap({ room_id, member_cap }) {
+      return room(
+        (await mapped(api<{ room: ServerRoom }>(`${path(room_id)}/settings`, { member_cap }))).room,
+      );
+    },
+    async setHistory({ room_id, history }) {
+      return room(
+        (await mapped(api<{ room: ServerRoom }>(`${path(room_id)}/settings`, { history }))).room,
+      );
+    },
+  };
+  return client;
+}

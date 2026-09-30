@@ -1,0 +1,28 @@
+node_modules/
+dist/
+.local/
+backups/
+*.city-backup.json
+*.central-city.lock
+.env
+.env.*
+!.env.example
+playwright-report/
+test-results/
+*.log
+*.tsbuildinfo
+**/*secret*.json
+**/*credentials*.json
+*.private.json
+# Internal operating materials must never enter this application repository.
+outputs/
+work/
+CENTRAL_CITY_BIBLE*
+central-city-bible*
+INTERNAL_ONLY.md
+
+.vercel
+.env*
+
+# Local agent scratch logs
+.relay-logs/

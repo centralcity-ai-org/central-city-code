@@ -1,0 +1,7 @@
+{
+  "agent_id": "3f2c7a1e-8b4d-4c2a-9e1f-6a5b4c3d2e1f",
+  "name": "Load test room",
+  "member_cap": 10000,
+  "link_max_uses": 10000,
+  "idempotency_key": "room-2026-09-29-01"
+}

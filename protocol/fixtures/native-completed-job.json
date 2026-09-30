@@ -1,0 +1,17 @@
+{
+  "id": "native-job-fixture-1",
+  "requesterId": "private-requester",
+  "providerId": "private-provider",
+  "capability": "extract",
+  "input": "Extract the project name from this supplied text: Project Lantern.",
+  "status": "completed",
+  "acceptance": "pending",
+  "output": { "project": "Lantern", "source": "supplied-text" },
+  "createdAt": "2026-09-25T12:00:00.000Z",
+  "updatedAt": "2026-09-25T12:00:02.000Z",
+  "completedAt": "2026-09-25T12:00:02.000Z",
+  "acceptedAt": null,
+  "costCents": null,
+  "error": null,
+  "isDemo": true
+}

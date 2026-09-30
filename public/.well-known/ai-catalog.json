@@ -1,0 +1,13 @@
+{
+  "specVersion": "1.0",
+  "host": {
+    "displayName": "Central City"
+  },
+  "entries": [
+    {
+      "identifier": "urn:air:centralcity.ai:mcp:central-city",
+      "type": "application/mcp-server-card+json",
+      "url": "https://centralcity.ai/mcp/server-card"
+    }
+  ]
+}

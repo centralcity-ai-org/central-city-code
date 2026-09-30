@@ -1,0 +1,292 @@
+/*
+ * Central City Design Tokens (v8 Design System)
+ * The v8 design tokens.
+ * Dual-layer architecture:
+ * 1. v8 Foundation tokens (--bg-*, --border-*, --text-*, --accent-*, --status-*, --shadow-*, --nav-*)
+ * 2. Component semantic roles (--canvas, --surface, --primary, --text, etc.) aliased for compatibility.
+ * Light is the default on every device (the OS colour-scheme setting is ignored); dark applies
+ * only with data-theme="dark", set when the visitor picks it.
+ */
+
+/* One family: Inter Variable with SF Pro / Apple-first font stack */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* Metrics-adjusted fallback so the swap to Inter does not shift layout. */
+@font-face {
+  font-family: 'Inter Fallback';
+  src: local('Arial');
+  size-adjust: 107%;
+  ascent-override: 90%;
+}
+
+:root,
+[data-theme='light'] {
+  /* ========================================================================
+     v8 FOUNDATION TOKENS — LIGHT MODE
+     ======================================================================== */
+  --color-scheme: light;
+  --bg-page: #ffffff;
+  --bg-surface: #f8f9fa;
+  --bg-surface-elevated: #ffffff;
+  --bg-surface-hover: #f1f3f5;
+  --bg-surface-active: #e9ecef;
+  --bg-inset: #f4f4f6;
+
+  --border-subtle: #f1f3f5;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --border-focus: #0066ff;
+
+  --text-primary: #09090b;
+  --text-secondary: #52525b;
+  --text-muted: #52525b;
+  --text-inverse: #ffffff;
+
+  /* ONE Accent Color: Central Blue */
+  --accent: #0066ff;
+  --accent-hover: #0052cc;
+  --accent-active: #003e99;
+  --accent-subtle: rgba(0, 102, 255, 0.06);
+  --accent-border: rgba(0, 102, 255, 0.22);
+  --accent-text: #0055d6;
+  --accent-contrast: #ffffff;
+
+  /* Semantic status indicators */
+  --status-live: #137a56;
+  --status-live-bg: #e9f6ef;
+  --status-pending: #8a5200;
+  --status-pending-bg: #fff3d6;
+  --status-danger: #b4233c;
+  --status-danger-bg: #fdecf0;
+
+  /* Shadows: Apple/OpenAI restraint */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.03);
+  --shadow-elevated: 0 8px 24px -4px rgba(0, 0, 0, 0.06), 0 2px 8px -2px rgba(0, 0, 0, 0.03);
+  --shadow-floating: 0 20px 48px -12px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 24px 60px -12px rgba(0, 0, 0, 0.12);
+
+  --nav-bg: rgba(255, 255, 255, 0.92);
+  --nav-border: rgba(228, 228, 231, 0.8);
+  --room-bubble: #f4f6f8;
+
+  /* ========================================================================
+     LEGACY BRAND & COMPONENT ROLE ALIASES — LIGHT
+     ======================================================================== */
+  --cc-central-blue: #0066ff;
+  --cc-ink: #09090b;
+  --cc-mist: #ffffff;
+  --cc-white: #ffffff;
+  --cc-slate: #52525b;
+  --cc-line: #d4d4d8;
+  --cc-signal: #0066ff;
+  --cc-night: #18181b;
+
+  --canvas: var(--bg-page);
+  --surface: var(--bg-surface-elevated);
+  --surface-sunken: var(--bg-surface);
+  --surface-raised: var(--bg-surface-elevated);
+  --surface-inverse: var(--text-primary);
+  --text: var(--text-primary);
+  --border-control: var(--border-strong);
+  --primary: var(--accent);
+  --primary-hover: var(--accent-hover);
+  --on-primary: var(--accent-contrast);
+  --accent-tint: var(--accent-subtle);
+  --link: var(--accent);
+  --focus: var(--border-focus);
+  --mention: var(--accent);
+  --mention-tint: var(--accent-subtle);
+  --success: var(--status-live);
+  --success-tint: var(--status-live-bg);
+  --warning: var(--status-pending);
+  --warning-tint: var(--status-pending-bg);
+  --error: var(--status-danger);
+  --error-tint: var(--status-danger-bg);
+  --backdrop: rgba(0, 0, 0, 0.5);
+
+  --elev-0: none;
+  --elev-1: var(--shadow-sm);
+  --elev-2: var(--shadow-elevated);
+  --elev-3: var(--shadow-floating);
+
+  /* Typography: Inter only, system mono stack */
+  --font-sans:
+    'Inter Variable', 'Inter Fallback', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  /* openai.com scale: display 48/500, title 30/500, heading 18/500. */
+  --type-display: 500 48px/1.16 var(--font-sans);
+  --type-title: 500 30px/1.32 var(--font-sans);
+  --type-heading: 500 18px/1.32 var(--font-sans);
+  --type-body: 400 16px/24px var(--font-sans);
+  --type-ui: 500 14px/20px var(--font-sans);
+  --type-meta: 400 13px/18px var(--font-sans);
+  --type-mono: 400 13px/20px var(--font-mono);
+
+  /* Space (4px unit) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+
+  /* Radius */
+  --radius-s: 6px;
+  --radius-m: 8px;
+  --radius-l: 12px;
+  --radius-full: 9999px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Target & Focus */
+  --target: 44px;
+  --focus-ring: 2px;
+  --focus-offset: 2px;
+
+  /* Layout */
+  --sidebar-w: 272px;
+  --content-max: 860px;
+  --page-max: 1200px;
+  --header-h: 64px;
+
+  /* Motion */
+  --dur-1: 100ms;
+  --dur-2: 150ms;
+  --dur-3: 200ms;
+  --dur-4: 300ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+
+  color-scheme: light;
+  font: var(--type-body);
+  color: var(--text);
+  background: var(--canvas);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (max-width: 480px) {
+  :root {
+    --type-display: 500 34px/1.16 var(--font-sans);
+    --type-title: 500 26px/1.32 var(--font-sans);
+    --type-heading: 500 18px/1.32 var(--font-sans);
+    --header-h: 64px;
+  }
+}
+
+/* ========================================================================
+   v8 FOUNDATION TOKENS — DARK MODE
+   Applied only when html[data-theme="dark"] is set (the visitor picked dark).
+   ======================================================================== */
+:root[data-theme='dark'],
+[data-theme='dark'] {
+  --color-scheme: dark;
+  --bg-page: #09090b;
+  --bg-surface: #121214;
+  --bg-surface-elevated: #18181b;
+  --bg-surface-hover: #202024;
+  --bg-surface-active: #27272a;
+  --bg-inset: #0e0e10;
+
+  --border-subtle: #1c1c1f;
+  --border: #27272a;
+  --border-strong: #3f3f46;
+  --border-focus: #3b82f6;
+
+  --text-primary: #fafafa;
+  --text-secondary: #d4d4d8;
+  --text-muted: #a9b6cc;
+  --text-inverse: #09090b;
+
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-active: #2563eb;
+  --accent-subtle: rgba(59, 130, 246, 0.14);
+  --accent-border: rgba(59, 130, 246, 0.32);
+  --accent-text: #93c5fd;
+  --accent-contrast: #ffffff;
+
+  --status-live: #5fd3a5;
+  --status-live-bg: rgba(95, 211, 165, 0.16);
+  --status-pending: #f0b35a;
+  --status-pending-bg: rgba(240, 179, 90, 0.16);
+  --status-danger: #ff8fa3;
+  --status-danger-bg: rgba(255, 143, 163, 0.16);
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 2px 6px 0 rgba(0, 0, 0, 0.5);
+  --shadow-elevated: 0 8px 28px -4px rgba(0, 0, 0, 0.65);
+  --shadow-floating: 0 24px 64px -12px rgba(0, 0, 0, 0.85);
+  --shadow-xl: 0 28px 64px -12px rgba(0, 0, 0, 0.85);
+
+  --nav-bg: rgba(9, 9, 11, 0.92);
+  --nav-border: rgba(39, 39, 42, 0.8);
+  --room-bubble: #161619;
+
+  --cc-central-blue: #3b82f6;
+  --cc-ink: #fafafa;
+  --cc-mist: #18181b;
+  --cc-white: #ffffff;
+  --cc-slate: #a9b6cc;
+  --cc-line: #3f3f46;
+  --cc-signal: #98b0ff;
+  --cc-night: #121214;
+
+  --canvas: var(--bg-page);
+  --surface: var(--bg-surface-elevated);
+  --surface-sunken: var(--bg-surface);
+  --surface-raised: var(--bg-surface-active);
+  --surface-inverse: var(--text-primary);
+  --text: var(--text-primary);
+  --border-control: var(--border-strong);
+  --primary: #2457f5;
+  --primary-hover: #3a6af7;
+  --on-primary: var(--accent-contrast);
+  --accent-tint: var(--accent-subtle);
+  --link: #98b0ff;
+  --focus: #98b0ff;
+  --mention: #98b0ff;
+  --mention-tint: #243a66;
+  --success: var(--status-live);
+  --success-tint: var(--status-live-bg);
+  --warning: var(--status-pending);
+  --warning-tint: var(--status-pending-bg);
+  --error: var(--status-danger);
+  --error-tint: var(--status-danger-bg);
+  --backdrop: rgba(0, 0, 0, 0.75);
+
+  --elev-1: var(--shadow-sm);
+  --elev-2: var(--shadow-elevated);
+  --elev-3: var(--shadow-floating);
+
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 0ms;
+    --dur-2: 0ms;
+    --dur-3: 0ms;
+    --dur-4: 100ms;
+  }
+}

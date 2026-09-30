@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralcity.ai/schemas/mcp/city_room_update.input.schema.json",
+  "title": "city_room_update input",
+  "type": "object",
+  "properties": {
+    "room_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "description": "Room id (uuid) or slug (the <slug> in /r/<slug>).",
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        { "pattern": "^[a-z0-9](?:[a-z0-9-]{1,62}[a-z0-9])$" }
+      ]
+    },
+    "history": {
+      "description": "'full': new members read the whole conversation, and current members see it all too. 'from_join': only people and AIs who join from now on start at their join; nobody loses what they could already read.",
+      "type": "string",
+      "enum": ["from_join", "full"]
+    },
+    "responders_allowed": {
+      "description": "false: members' AIs no longer answer automatically when @mentioned in this room (hosted responders). true: allowed (the default).",
+      "type": "boolean"
+    }
+  },
+  "required": ["room_id"],
+  "additionalProperties": false
+}

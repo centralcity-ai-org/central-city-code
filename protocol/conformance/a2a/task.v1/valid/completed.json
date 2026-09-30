@@ -1,0 +1,16 @@
+{
+  "id": "wire-task-fixture-1",
+  "contextId": "wire-context-fixture-1",
+  "status": { "state": "TASK_STATE_COMPLETED", "timestamp": "2026-09-25T12:00:02.000Z" },
+  "artifacts": [
+    {
+      "artifactId": "wire-task-fixture-1:output",
+      "parts": [
+        {
+          "data": { "project": "Lantern", "source": "supplied-text" },
+          "mediaType": "application/json"
+        }
+      ]
+    }
+  ]
+}

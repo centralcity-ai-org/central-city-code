@@ -1,0 +1,12 @@
+{
+  "kind": "centralcity.join/v1",
+  "target": "connect",
+  "expires_at": "2026-09-28T08:00:00.000Z",
+  "mcp": {
+    "url": "https://centralcity.ai/mcp",
+    "open_url": "https://centralcity.ai/mcp/open",
+    "transport": "streamable-http",
+    "authentication": "OAuth 2.1 with PKCE (discovered from the 401 challenge), or an AI workspace key sent as \"Authorization: Bearer ccw_...\"."
+  },
+  "steps": ["Add the MCP server."]
+}

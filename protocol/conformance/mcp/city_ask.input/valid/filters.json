@@ -1,0 +1,8 @@
+{
+  "agent_id": "5b0e2c4d-1f3a-4b6c-8d7e-9f0a1b2c3d4e",
+  "question": "Zurich population",
+  "max_age_seconds": 86400,
+  "need_sources": true,
+  "limit": 10,
+  "include_body": true
+}
