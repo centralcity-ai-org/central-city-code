@@ -17,7 +17,8 @@ registerRoomCodeMigration();
  * Apply and check evidence (docs/ROOM_REPOS.md "Apply and evidence"). Proposals and reviews
  * (docs/ROOM_REPOS.md "Proposals and reviews"): strict diff parsing and exact application,
  * proposal validation against the base commit, the stamped room messages, task links, reviews
- * bound to a revision, and the approval rule (any member agent except the proposing one).
+ * bound to a revision, and the approval rule (only approvals from agents of an owner other than
+ * the proposing agent's owner count).
  * Fake GitHub, synthetic data only.
  */
 type App = Awaited<ReturnType<typeof createApp>>;
@@ -42,7 +43,8 @@ async function ok(app: App, apiKey: string, name: string, args: unknown = {}) {
   return res.json() as any;
 }
 let addressCounter = 131;
-async function owner(app: App, name: string) {
+/** An AI workspace claimed by a new person, or by the person signed in with `coOwner`'s cookie. */
+async function owner(app: App, name: string, coOwner?: { cookie: string }) {
   const res = await app.inject({
     method: 'POST',
     url: '/api/public/workspaces',
@@ -52,18 +54,7 @@ async function owner(app: App, name: string) {
   });
   assert.equal(res.statusCode, 201, res.body);
   const id = res.json().workspace_id as string;
-  const person = await app.inject({
-    method: 'POST',
-    url: '/api/auth/register',
-    headers: jsonHeaders,
-    payload: JSON.stringify({
-      name: `Proposal co-owner ${addressCounter}`,
-      password: 'Synthetic co-owner password',
-    }),
-    remoteAddress: `203.0.${addressCounter++ % 250}.41`,
-  });
-  assert.equal(person.statusCode, 201, person.body);
-  const cookie = `cc_session=${person.cookies.find((item) => item.name === 'cc_session')!.value}`;
+  const cookie = coOwner?.cookie ?? (await register(app));
   const claimed = await app.inject({
     method: 'POST',
     url: '/api/workspaces/claim',
@@ -78,7 +69,59 @@ async function owner(app: App, name: string) {
     payload: JSON.stringify({ label: 'proposal tester', scopes: [...ASSISTANT_SCOPES] }),
   });
   assert.equal(minted.statusCode, 201, minted.body);
-  return { id, key: minted.json().workspace_key as string };
+  return { id, key: minted.json().workspace_key as string, cookie };
+}
+async function register(app: App) {
+  const person = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    headers: jsonHeaders,
+    payload: JSON.stringify({
+      name: `Proposal co-owner ${addressCounter}`,
+      password: 'Synthetic co-owner password',
+    }),
+    remoteAddress: `203.0.${addressCounter++ % 250}.41`,
+  });
+  assert.equal(person.statusCode, 201, person.body);
+  return `cc_session=${person.cookies.find((item) => item.name === 'cc_session')!.value}`;
+}
+/**
+ * The person's own workspace (the human operator linked to the AI workspace `of`), with an agent
+ * that joins the room through the console session (workspace keys are for AI workspaces only).
+ */
+async function personalAgent(
+  app: App,
+  of: { id: string; cookie: string },
+  roomId: string,
+  link: string,
+) {
+  const headers = { ...jsonHeaders, cookie: of.cookie };
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/agents',
+    headers,
+    payload: JSON.stringify({
+      name: 'Proposal personal agent',
+      capability: 'research',
+      mode: 'external',
+    }),
+  });
+  assert.equal(created.statusCode, 201, created.body);
+  const agentId = created.json().agent.id as string;
+  const joined = await app.inject({
+    method: 'POST',
+    url: `/api/rooms/${roomId}/join`,
+    headers,
+    payload: JSON.stringify({ link, agent_id: agentId, idempotency_key: randomUUID() }),
+  });
+  assert.equal(joined.statusCode, 200, joined.body);
+  const id = (
+    await app.city.db.query<{ human_operator_id: string }>(
+      'SELECT human_operator_id FROM operator_links WHERE ai_operator_id=$1',
+      [of.id],
+    )
+  ).rows[0]!.human_operator_id;
+  return { owner: { id }, agentId };
 }
 async function agent(app: App, apiKey: string, name: string) {
   const body = await ok(app, apiKey, 'city_create_agent', {
@@ -150,7 +193,7 @@ async function fixture(t: { after: (fn: () => Promise<unknown>) => void }) {
   const host = await agent(app, a.key, 'Proposal host');
   const hostHelper = await agent(app, a.key, 'Proposal host helper');
   const member = await agent(app, b.key, 'Proposal member');
-  await agent(app, c.key, 'Proposal outsider');
+  const outsider = await agent(app, c.key, 'Proposal outsider');
   const created = await ok(app, a.key, 'city_create_room', {
     agent_id: host,
     name: 'Synthetic proposal room',
@@ -190,7 +233,23 @@ async function fixture(t: { after: (fn: () => Promise<unknown>) => void }) {
     acknowledge_member_read: true,
     confirm_repo: 'example-org/sandbox',
   });
-  return { app, gh, service, a, b, c, host, hostHelper, member, roomId, limits, clock };
+  const link = created.link.link as string;
+  return {
+    app,
+    gh,
+    service,
+    a,
+    b,
+    c,
+    host,
+    hostHelper,
+    member,
+    outsider,
+    link,
+    roomId,
+    limits,
+    clock,
+  };
 }
 async function rejects(promise: Promise<unknown>, status: number, code: string) {
   await assert.rejects(
@@ -460,6 +519,217 @@ test('apply needs the host, an approval from another agent, the current revision
   assert.equal(got.proposal.status, 'out_of_date');
   assert.equal(got.proposal.diff, CHANGE, 'the proposal is kept');
   await rejects(apply(f, proposal.id), 409, 'proposal_out_of_date');
+});
+
+test("only approvals from another owner's agents count toward min_approvals", async (t) => {
+  const f = await fixture(t);
+  // The host proposes; its owner's second agent approves: recorded, but it does not count.
+  const { proposal } = await propose(f, { agent_id: f.host }, f.a);
+  const review = (who: { id: string }, agentId: string) =>
+    f.service.review(principal(who.id), {
+      room_id: f.roomId,
+      agent_id: agentId,
+      proposal: proposal.id,
+      expected_revision: 1,
+      verdict: 'approve',
+    }) as Promise<any>;
+  const sameOwner = await review(f.a, f.hostHelper);
+  assert.equal(sameOwner.review.verdict, 'approve');
+  assert.equal(sameOwner.review.counts_toward_approvals, false);
+  assert.equal(sameOwner.proposal.approvals, 0);
+  assert.match(sameOwner.notice, /does not count toward the required approvals/);
+  await assert.rejects(apply(f, proposal.id), (error: any) => {
+    assert.equal(error.errorCode, 'approval_required');
+    assert.deepEqual(error.details, { approvals: 0, required: 1 });
+    assert.match(error.message, /owner other than the proposer's/);
+    return true;
+  });
+  // The proposing agent can never approve, and a stored self-approval would not count either.
+  await rejects(review(f.a, f.host), 403, 'self_approval');
+  await f.app.city.db.query(
+    `INSERT INTO room_reviews(id,proposal_id,proposal_revision,diff_sha256,author_agent_id,author_owner_id,verdict,body,created_at)
+     VALUES($1,$2,1,$3,$4,$5,'approve','',$6)`,
+    [randomUUID(), proposal.id, proposal.diff_sha256, f.host, f.a.id, Date.now()],
+  );
+  await rejects(apply(f, proposal.id), 409, 'approval_required');
+  // Another owner's agent approves: it counts, and apply opens the pull request.
+  const other = await review(f.b, f.member);
+  assert.equal(other.review.counts_toward_approvals, true);
+  assert.equal(other.proposal.approvals, 1);
+  assert.equal(other.notice, undefined);
+  // With min_approvals 2, one other owner's approval plus same-owner ones is still not enough.
+  await f.app.city.db.query(
+    'INSERT INTO room_code_settings(room_id,min_approvals) VALUES($1,2) ON CONFLICT (room_id) DO UPDATE SET min_approvals=2',
+    [f.roomId],
+  );
+  await assert.rejects(apply(f, proposal.id), (error: any) => {
+    assert.equal(error.errorCode, 'approval_required');
+    assert.deepEqual(error.details, { approvals: 1, required: 2 });
+    return true;
+  });
+  await f.app.city.db.query('UPDATE room_code_settings SET min_approvals=1 WHERE room_id=$1', [
+    f.roomId,
+  ]);
+  const out = await apply(f, proposal.id);
+  assert.equal(out.already_applied, false);
+  // Only the counted approval is named as a reviewer.
+  const commit = f.gh.writes.commits.get(out.applied.head_sha)!;
+  assert.match(commit.message, /\nReviewed-by: Proposal member\n/);
+  assert.doesNotMatch(commit.message, /Reviewed-by: Proposal host/);
+  assert.match(f.gh.writes.pulls[0]!.body, /Approved on this revision by: Proposal member\n/);
+});
+
+test('min_approvals counts distinct owners: two agents of one other owner count once', async (t) => {
+  const f = await fixture(t);
+  // A second agent of the member's owner, and the outsider's agent (a third owner), join.
+  const memberHelper = await agent(f.app, f.b.key, 'Proposal member helper');
+  for (const [apiKey, agentId] of [
+    [f.b.key, memberHelper],
+    [f.c.key, f.outsider],
+  ] as const) {
+    const joined = await call(f.app, apiKey, 'city_join_room', {
+      link: f.link,
+      agent_id: agentId,
+      idempotency_key: randomUUID(),
+    });
+    assert.equal(joined.statusCode, 200, joined.body);
+  }
+  await f.app.city.db.query('INSERT INTO room_code_settings(room_id,min_approvals) VALUES($1,2)', [
+    f.roomId,
+  ]);
+  const { proposal } = await propose(f, { agent_id: f.host }, f.a);
+  const review = (who: { id: string }, agentId: string) =>
+    f.service.review(principal(who.id), {
+      room_id: f.roomId,
+      agent_id: agentId,
+      proposal: proposal.id,
+      expected_revision: 1,
+      verdict: 'approve',
+    }) as Promise<any>;
+  const refusedWith = (approvals: number) =>
+    assert.rejects(apply(f, proposal.id), (error: any) => {
+      assert.equal(error.errorCode, 'approval_required');
+      assert.deepEqual(error.details, { approvals, required: 2 });
+      assert.match(error.message, /2 different owners other than the proposer's/);
+      return true;
+    });
+  const first = await review(f.b, f.member);
+  assert.equal(first.review.counts_toward_approvals, true);
+  assert.equal(first.notice, undefined);
+  // The same other owner's second agent: recorded, but that owner already counts.
+  const second = await review(f.b, memberHelper);
+  assert.equal(second.review.counts_toward_approvals, false);
+  assert.equal(second.proposal.approvals, 1);
+  assert.match(second.notice, /already has an approval that counts on this revision/);
+  await refusedWith(1);
+  // The proposer's own owner's second agent does not count either.
+  assert.equal((await review(f.a, f.hostHelper)).proposal.approvals, 1);
+  await refusedWith(1);
+  // A second distinct owner approves: two owners, apply opens the pull request.
+  const third = await review(f.c, f.outsider);
+  assert.equal(third.review.counts_toward_approvals, true);
+  assert.equal(third.proposal.approvals, 2);
+  const out = await apply(f, proposal.id);
+  assert.equal(out.already_applied, false);
+  // One Reviewed-by per counted owner (its earliest approving agent).
+  const commit = f.gh.writes.commits.get(out.applied.head_sha)!;
+  assert.deepEqual(commit.message.match(/^Reviewed-by: .*$/gm), [
+    'Reviewed-by: Proposal member',
+    'Reviewed-by: Proposal outsider',
+  ]);
+  assert.match(
+    f.gh.writes.pulls[0]!.body,
+    /Approved on this revision by: Proposal member, Proposal outsider\n/,
+  );
+});
+
+test('co-owned workspaces are one owner: their approvals never count for each other', async (t) => {
+  const f = await fixture(t);
+  // The person behind the host's workspace also co-owns a second AI workspace, and has their own
+  // workspace (the human operator, linked directly). Each brings an agent into the room.
+  const sibling = await owner(f.app, 'Proposal host sibling workspace', f.a);
+  const siblingAgent = await agent(f.app, sibling.key, 'Proposal sibling agent');
+  const { owner: personal, agentId: personalAgentId } = await personalAgent(
+    f.app,
+    f.a,
+    f.roomId,
+    f.link,
+  );
+  for (const [apiKey, agentId] of [
+    [sibling.key, siblingAgent],
+    [f.c.key, f.outsider],
+  ] as const) {
+    const joined = await call(f.app, apiKey, 'city_join_room', {
+      link: f.link,
+      agent_id: agentId,
+      idempotency_key: randomUUID(),
+    });
+    assert.equal(joined.statusCode, 200, joined.body);
+  }
+  await f.app.city.db.query('INSERT INTO room_code_settings(room_id,min_approvals) VALUES($1,2)', [
+    f.roomId,
+  ]);
+  const review = (who: { id: string }, agentId: string, proposal: string) =>
+    f.service.review(principal(who.id), {
+      room_id: f.roomId,
+      agent_id: agentId,
+      proposal,
+      expected_revision: 1,
+      verdict: 'approve',
+    }) as Promise<any>;
+  const refusedWith = (proposal: string, approvals: number) =>
+    assert.rejects(apply(f, proposal), (error: any) => {
+      assert.equal(error.errorCode, 'approval_required');
+      assert.deepEqual(error.details, { approvals, required: 2 });
+      return true;
+    });
+  const { proposal } = await propose(f, { agent_id: f.host }, f.a);
+  // Linked through the person (AI workspace -> person -> AI workspace), and directly (person).
+  for (const [who, agentId] of [
+    [sibling, siblingAgent],
+    [personal, personalAgentId],
+  ] as const) {
+    const linked = await review(who, agentId, proposal.id);
+    assert.equal(linked.review.counts_toward_approvals, false);
+    assert.equal(linked.proposal.approvals, 0);
+    assert.match(linked.notice, /same owner as the proposing agent \(or a workspace co-owned/);
+  }
+  await refusedWith(proposal.id, 0);
+  // Unlinked owners count, one each: the member's and the outsider's.
+  assert.equal((await review(f.b, f.member, proposal.id)).proposal.approvals, 1);
+  await refusedWith(proposal.id, 1);
+  const outsider = await review(f.c, f.outsider, proposal.id);
+  assert.equal(outsider.review.counts_toward_approvals, true);
+  assert.equal(outsider.proposal.approvals, 2);
+  const got = (await f.service.get(principal(f.b.id), {
+    room_id: f.roomId,
+    proposal: proposal.id,
+  })) as any;
+  assert.deepEqual(
+    got.proposal.reviews.map((item: any) => item.counts_toward_approvals),
+    [false, false, true, true],
+  );
+  const out = await apply(f, proposal.id);
+  assert.equal(out.already_applied, false);
+  assert.deepEqual(
+    f.gh.writes.commits.get(out.applied.head_sha)!.message.match(/^Reviewed-by: .*$/gm),
+    ['Reviewed-by: Proposal member', 'Reviewed-by: Proposal outsider'],
+  );
+
+  // The other direction: the person proposes from their own workspace; the co-owned AI
+  // workspaces' agents do not count for it either.
+  const second = (
+    await propose(f, { agent_id: personalAgentId, diff: ADD, summary: 'Add notes' }, personal)
+  ).proposal;
+  for (const [who, agentId] of [
+    [f.a, f.host],
+    [sibling, siblingAgent],
+  ] as const) {
+    const linked = await review(who, agentId, second.id);
+    assert.equal(linked.review.counts_toward_approvals, false);
+    assert.equal(linked.proposal.approvals, 0);
+  }
+  await rejects(apply(f, second.id), 409, 'approval_required');
 });
 
 test('unrelated movement on main does not block apply; the branch is built on the current head', async (t) => {

@@ -495,6 +495,98 @@ test('screenshots: settings panel and delete confirmation at 1440 and 390, light
   }
 });
 
+/**
+ * Adds guest_blocks to this room's view (room list and message pages), as the host's console
+ * reports it after removing guests without an account; real blocks need the invite-link guest
+ * flow. `count()` is read per response, so a test can drop it to 0 after Clear.
+ */
+async function withGuestBlocks(page: Page, roomId: string, count: () => number) {
+  const patch = (value: { id?: string; guest_blocks?: number }) => {
+    if (value?.id === roomId) value.guest_blocks = count();
+  };
+  await page.route(/\/api\/rooms(\?.*)?$/, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const room of (body.rooms ?? []) as { id?: string }[]) patch(room);
+    await route.fulfill({ response, json: body });
+  });
+  await page.route(`**/api/rooms/${roomId}/messages*`, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    const body = await response.json();
+    if (body.room) patch(body.room);
+    await route.fulfill({ response, json: body });
+  });
+}
+
+test('host sees blocked guest networks and clears them; members never see the row', async ({
+  browser,
+}) => {
+  const host = await account(browser, 'Host');
+  const room = await hostRoom(host, 'Guest blocks');
+  const member = await account(browser, 'Member');
+  await join(member, room, 'Member agent');
+  let blocks = 2;
+  await withGuestBlocks(host.page, room.id, () => blocks);
+  await host.page.goto(`/rooms/${room.id}`);
+  const panel = await openSettings(host.page);
+  await expect(panel.getByText('2 networks blocked', { exact: true })).toBeVisible();
+  await expect(
+    panel.getByText("Guest AIs you removed can't rejoin from these networks for 30 days."),
+  ).toBeVisible();
+
+  // Clear asks once more; Cancel keeps the row.
+  await panel.getByRole('button', { name: 'Clear', exact: true }).click();
+  const confirm = panel.getByRole('group', { name: 'Clear blocks?' });
+  await confirm.getByRole('button', { name: 'Cancel' }).click();
+  await expect(panel.getByText('2 networks blocked', { exact: true })).toBeVisible();
+
+  // Confirm calls the real endpoint (host only), then the row goes away.
+  await panel.getByRole('button', { name: 'Clear', exact: true }).click();
+  const cleared = host.page.waitForResponse(
+    (response) =>
+      response.request().method() === 'DELETE' &&
+      response.url().endsWith(`/api/rooms/${room.id}/guest-blocks`),
+  );
+  await panel
+    .getByRole('group', { name: 'Clear blocks?' })
+    .getByRole('button', { name: 'Confirm' })
+    .click();
+  const response = await cleared;
+  expect(response.status()).toBe(200);
+  expect(await response.json()).toMatchObject({ room_id: room.id, cleared: 0 });
+  blocks = 0;
+  await expect(panel.getByRole('status').filter({ hasText: 'Blocks cleared' })).toBeVisible();
+  await expect(panel.getByText(/networks? blocked/)).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Clear', exact: true })).toHaveCount(0);
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+
+  // One block reads in the singular.
+  blocks = 1;
+  await host.page.reload();
+  const again = await openSettings(host.page);
+  await expect(again.getByText('1 network blocked', { exact: true })).toBeVisible();
+
+  // A member who doesn't host never sees the row, even if the view carried a count.
+  await withGuestBlocks(member.page, room.id, () => 2);
+  await member.page.goto(`/rooms/${room.id}`);
+  const memberPanel = await openSettings(member.page);
+  await expect(memberPanel.getByRole('heading', { name: 'Members' })).toBeVisible();
+  await expect(memberPanel.getByText(/networks? blocked/)).toHaveCount(0);
+  await expect(memberPanel.getByRole('button', { name: 'Clear', exact: true })).toHaveCount(0);
+  // The server refuses a member's clear.
+  const refused = await member.request.delete(`/api/rooms/${room.id}/guest-blocks`, {
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    data: {},
+  });
+  expect(refused.ok()).toBe(false);
+  expect(host.errors).toEqual([]);
+  expect(member.errors).toEqual([]);
+  await host.context.close();
+  await member.context.close();
+});
+
 test('screenshots: members panel with a muted member, recently left and remove, 1440 and 390', async ({
   browser,
 }) => {

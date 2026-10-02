@@ -13,7 +13,6 @@ import {
 } from '../links/store.js';
 import {
   formatShortCode,
-  legacyShortCodeHash,
   normalizeShortCode,
   SHORT_ALPHABET,
   SHORT_CODE_LIMITS,
@@ -22,9 +21,14 @@ import {
 } from '../links/short-code.js';
 import { pastedLink, sameSite } from '../links/paste.js';
 import { chargeShortCodeAttempt } from '../links/invites.js';
-import { isStressTestHost } from '../stress-allowlist.js';
+import { isStressTestHost, stressTestMaxRooms } from '../stress-allowlist.js';
 import { lineName, memberLabel, postSystemLine } from './system-lines.js';
 import { roomPosted } from '../wake/hooks.js';
+import {
+  ELRIC_RESERVED_NAME_CODE,
+  ELRIC_RESERVED_NAME_MESSAGE,
+  reservedName,
+} from '../elric/names.js';
 import { revokeRoomResults, revokeSet } from '../results/store.js';
 import {
   JOIN_CODE,
@@ -57,6 +61,14 @@ import {
   type RoomView,
 } from './contract.js';
 import { memberStatuses, mentionedMessages, touchMembers } from './member-status.js';
+import { elricPublicModel, elricReplyLabel } from '../../shared/elric-copy.js';
+import {
+  PRIVATE_ROOM_CODE,
+  PRIVATE_ROOM_MESSAGE,
+  privateRoomsVisible,
+  scopedByPrincipal,
+  visibleRoom,
+} from './private.js';
 import {
   cleanDisplayName,
   cleanName,
@@ -102,6 +114,17 @@ function canonical(value: unknown): string {
       .map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`)
       .join(',')}}`;
   return JSON.stringify(value);
+}
+
+/**
+ * An Elric stamp as end users read it: the public model and the label from shared/elric-copy.ts,
+ * never the real model name (it stays in the database). Other providers are unchanged.
+ */
+function publicAutoReply<T extends { provider: string; model?: string; label?: string } | null>(
+  stamp: T,
+): T {
+  if (!stamp || stamp.provider !== 'elric') return stamp;
+  return { ...stamp, model: elricPublicModel(stamp.model), label: elricReplyLabel(stamp.model) };
 }
 
 export class RoomError extends Error {
@@ -202,11 +225,11 @@ export async function closedRoomOfCode(
   const row = (
     await q.query<{ deleted: boolean }>(
       `SELECT r.deleted_at IS NOT NULL AS deleted FROM join_links j JOIN rooms r ON r.id=j.room_id
-          WHERE ${short ? 'j.short_hash IN ($1, $3)' : 'j.code_hash=$1'} AND j.target='room'
+          WHERE ${short ? 'j.short_hash=$1' : 'j.code_hash=$1'} AND j.target='room'
             AND r.closed_at IS NOT NULL
             AND (j.revoked_at IS NULL OR j.revoked_at >= r.closed_at) AND j.expires_at > $2
             AND (j.max_uses IS NULL OR j.uses < j.max_uses) LIMIT 1`,
-      short ? [shortCodeHash(short), time, legacyShortCodeHash(short)] : [codeHash(code), time],
+      short ? [shortCodeHash(short), time] : [codeHash(code), time],
     )
   ).rows[0];
   return row ? (row.deleted ? 'deleted' : 'closed') : null;
@@ -246,6 +269,11 @@ export interface RoomPrincipal {
   console?: boolean;
   /** The caller's network address key (console routes), for per-address abuse limits. */
   address?: string;
+  /**
+   * Elric's own server-side calls (its reply post and an approved task): set only in createApp,
+   * never from a request. With `console`, the only principals that reach a private Elric chat.
+   */
+  elric?: true;
 }
 /** Current-credential recheck run first inside every room transaction (grant or workspace key). */
 export type RoomGuard = (tx: Tx, time: number) => Promise<void>;
@@ -284,6 +312,8 @@ type RoomRow = {
   topic: string;
   host_owner_id: string;
   host_agent_id: string;
+  /** Migration 43: a private Elric chat room (locked; see rooms/private.ts). */
+  elric_private?: boolean;
   member_cap: number;
   history: 'from_join' | 'full';
   link_ttl_ms: string | number;
@@ -349,7 +379,11 @@ type MessageRow = {
   format?: RoomMessageFormat | null;
   sender_kind?: 'agent' | 'person' | 'system' | null;
   /** Server-stamped auto-reply label (migration 26). */
-  auto_reply?: { provider: 'openai' | 'anthropic'; model: string } | null;
+  auto_reply?: {
+    provider: 'openai' | 'anthropic' | 'elric';
+    model: string;
+    label?: string;
+  } | null;
 };
 
 export interface Rooms {
@@ -380,7 +414,7 @@ export interface Rooms {
     options?: {
       forbidden?: readonly string[];
       /** Internal only: the server-stamped auto-reply label. */
-      autoReply?: { provider: 'openai' | 'anthropic'; model: string };
+      autoReply?: { provider: 'openai' | 'anthropic' | 'elric'; model: string; label?: string };
       /** Internal only: a refusal code under the room lock cancels the post. */
       precondition?: (tx: Pick<Tx, 'query'>) => Promise<string | null>;
     },
@@ -596,9 +630,8 @@ export function createRooms(d: RoomDependencies): Rooms {
     const code = derivedJoinCode(id);
     let short: string | null = derivedShortCode(id);
     // A clash with a live code (about 2^-40) simply means this link has no short code.
-    const taken = await tx.query('SELECT 1 FROM join_links WHERE short_hash IN ($1, $2)', [
+    const taken = await tx.query('SELECT 1 FROM join_links WHERE short_hash=$1', [
       shortCodeHash(short),
-      legacyShortCodeHash(short),
     ]);
     if (taken.rows.length) short = null;
     const expiresAt = Math.min(time + DAY, Number(link.expires_at));
@@ -647,12 +680,14 @@ export function createRooms(d: RoomDependencies): Rooms {
     return row!.data;
   }
   async function findRoom(q: Pick<Tx, 'query'>, ref: string, lock = false) {
-    return (
+    const row = (
       await q.query<RoomRow>(
         `SELECT * FROM rooms WHERE (id=$1 OR slug=$1)${lock ? ' FOR UPDATE' : ''}`,
         [ref],
       )
     ).rows[0];
+    // A private Elric chat exists only for the owner console and Elric (uniform 404 otherwise).
+    return visibleRoom(row);
   }
   /** The sender a person member posts as (never stored in any workspace). */
   function personAgent(row: MemberRow): StoredAgent {
@@ -741,6 +776,15 @@ export function createRooms(d: RoomDependencies): Rooms {
     // A person member has no workspace agent: the room code sees it as a sender with its name.
     for (const row of members) if (row.kind === 'person') live.set(row.agent_id, personAgent(row));
     return { room, workspace, members, agents: live };
+  }
+  /** A private Elric chat room (migration 43) is locked: nothing may open or change it. */
+  function lockPrivate(room: RoomRow): RoomRow {
+    if (room.elric_private) refuse(409, PRIVATE_ROOM_CODE, PRIVATE_ROOM_MESSAGE);
+    return room;
+  }
+  /** A host write (link, settings, cap, close, rename, delete, remove, invite): never on a private room. */
+  async function hostWrite(q: Pick<Tx, 'query'>, room: RoomRow | undefined, operatorId: string) {
+    return lockPrivate(await hostOnly(q, room, operatorId));
   }
   /** Host controls: the host owner only; other members learn only that they are not the host. */
   async function hostOnly(q: Pick<Tx, 'query'>, room: RoomRow | undefined, operatorId: string) {
@@ -885,7 +929,7 @@ export function createRooms(d: RoomDependencies): Rooms {
       // else an AI agent.
       sender_kind:
         row.sender_kind === 'person' || row.sender_kind === 'system' ? row.sender_kind : 'agent',
-      auto_reply: row.auto_reply ?? null,
+      auto_reply: publicAutoReply(row.auto_reply ?? null),
     };
   }
   async function audit(
@@ -990,14 +1034,14 @@ export function createRooms(d: RoomDependencies): Rooms {
       return d.db.transaction(async (tx) => {
         const time = d.clock();
         if (guard) await guard(tx, time);
-        const room = await hostOnly(tx, await findRoom(tx, values.room_id, true), p.operatorId);
+        const room = await hostWrite(tx, await findRoom(tx, values.room_id, true), p.operatorId);
         if (room.closed_at !== null) refuse(409, 'room_closed', 'The room is closed.');
         return linkView(tx, p, room, await currentLink(tx, room, p, time), false, time);
       });
     const rotateKey = sha(`room-rotate:${values.idempotency_key}`);
     return d.mutate(p.operatorId, async (workspace, tx, time) => {
       if (guard) await guard(tx, time);
-      const room = await hostOnly(tx, await findRoom(tx, values.room_id, true), p.operatorId);
+      const room = await hostWrite(tx, await findRoom(tx, values.room_id, true), p.operatorId);
       const replay = (
         await tx.query<LinkRow>('SELECT * FROM room_links WHERE room_id=$1 AND rotate_key=$2', [
           room.id,
@@ -1038,8 +1082,13 @@ export function createRooms(d: RoomDependencies): Rooms {
       'SELECT 1 FROM rooms WHERE host_owner_id=$1 AND idempotency_key=$2',
       [p.operatorId, keyHash],
     );
+    // Stress-test hosts: creates per day bounded by their room ceiling instead of the public cap.
     if (!known.rows.length)
-      await d.limit(`room-create:${p.operatorId}`, limits.createsPerOwnerPerDay, DAY);
+      await d.limit(
+        `room-create:${p.operatorId}`,
+        isStressTestHost(p.operatorId) ? stressTestMaxRooms() : limits.createsPerOwnerPerDay,
+        DAY,
+      );
     return d.mutate(p.operatorId, async (workspace, tx, time) => {
       if (guard) await guard(tx, time);
       const prior = (
@@ -1077,16 +1126,20 @@ export function createRooms(d: RoomDependencies): Rooms {
       const open = Number(
         (
           await tx.query<{ n: string | number }>(
-            'SELECT count(*) AS n FROM rooms WHERE host_owner_id=$1 AND closed_at IS NULL',
+            'SELECT count(*) AS n FROM rooms WHERE host_owner_id=$1 AND closed_at IS NULL AND NOT elric_private',
             [p.operatorId],
           )
         ).rows[0]?.n ?? 0,
       );
-      if (open >= limits.activeRoomsPerOwner)
+      // Stress-test hosts skip the public cap, bounded by their own safety ceiling instead.
+      const roomCap = isStressTestHost(p.operatorId)
+        ? stressTestMaxRooms()
+        : limits.activeRoomsPerOwner;
+      if (open >= roomCap)
         refuse(
           429,
           'too_many_rooms',
-          `At most ${limits.activeRoomsPerOwner} open rooms per owner; close one first.`,
+          `At most ${roomCap} open rooms per owner; close one first.`,
           DAY,
         );
       const base =
@@ -1157,10 +1210,11 @@ export function createRooms(d: RoomDependencies): Rooms {
       const rows = (
         await tx.query<RoomRow>(
           // A deleted room (migration 35) leaves every list, the host's included.
-          `SELECT r.* FROM rooms r WHERE r.deleted_at IS NULL AND (r.host_owner_id=$1 OR EXISTS (
+          `SELECT r.* FROM rooms r WHERE r.deleted_at IS NULL
+            AND (NOT r.elric_private OR $2::boolean) AND (r.host_owner_id=$1 OR EXISTS (
             SELECT 1 FROM room_members m WHERE m.room_id=r.id AND m.owner_id=$1 AND m.removed_at IS NULL))
             ORDER BY r.created_at DESC, r.id LIMIT 100`,
-          [p.operatorId],
+          [p.operatorId, privateRoomsVisible()],
         )
       ).rows;
       const rooms: RoomView[] = [];
@@ -1276,6 +1330,7 @@ export function createRooms(d: RoomDependencies): Rooms {
     if (!p.console) roomNotFound();
     const values = personJoinInput.parse(body);
     const name = cleanDisplayName(values.name ?? '') || 'Person';
+    if (reservedName(name)) refuse(409, ELRIC_RESERVED_NAME_CODE, ELRIC_RESERVED_NAME_MESSAGE);
     return joinWith(
       p,
       { link: values.link, token: values.code, idempotency_key: values.idempotency_key },
@@ -1388,6 +1443,8 @@ export function createRooms(d: RoomDependencies): Rooms {
       return early || bringAi ? roomNotFound() : inviteInvalid();
     }
     const found = target;
+    // A private Elric chat is never joined after its creation (rooms/private.ts).
+    lockPrivate(found.room);
     return d.mutateMany([p.operatorId, found.room.host_owner_id], async (workspaces, tx, time) => {
       if (guard) await guard(tx, time);
       const own = workspaces.get(p.operatorId)!;
@@ -1412,15 +1469,18 @@ export function createRooms(d: RoomDependencies): Rooms {
       if (bringAi) {
         // A deleted room (migration 35): 410 for its host and former members, else 404.
         if (room.deleted_at != null) return refuseDeleted(tx, room, p.operatorId);
-        // Only an AI of an account that is in the room as a person, when the host allows it.
+        // Only an AI of an account that is in the room as a person, when the host allows it; the
+        // host may always add its own AI (it may never have joined as a person). The agent is
+        // the caller's own: joinWith resolves it in the caller's workspace.
+        const host = room.host_owner_id === p.operatorId;
         const self = (
           await tx.query<MemberRow>(
             "SELECT * FROM room_members WHERE room_id=$1 AND owner_id=$2 AND kind='person' AND removed_at IS NULL",
             [room.id, p.operatorId],
           )
         ).rows[0];
-        if (!self || room.closed_at !== null) roomNotFound();
-        if (room.members_may_bring_ai === false)
+        if ((!self && !host) || room.closed_at !== null) roomNotFound();
+        if (!host && room.members_may_bring_ai === false)
           refuse(
             403,
             'bring_ai_off',
@@ -1501,6 +1561,8 @@ export function createRooms(d: RoomDependencies): Rooms {
         agent = existing!;
       } else {
         if (own.paused) refuse(409, 'workspace_paused', 'Workspace is paused.');
+        if (reservedName(values.create!.name))
+          refuse(409, ELRIC_RESERVED_NAME_CODE, ELRIC_RESERVED_NAME_MESSAGE);
         if (own.agents.length >= d.agentsPerWorkspace)
           refuse(409, 'agent_limit', `Workspace limit of ${d.agentsPerWorkspace} agents reached.`);
         agent = {
@@ -1692,7 +1754,7 @@ export function createRooms(d: RoomDependencies): Rooms {
        * Internal only (hosted responder): stamps room_messages.auto_reply. Not reachable from
        * REST, MCP or the tool input, so no client can forge or remove the label.
        */
-      autoReply?: { provider: 'openai' | 'anthropic'; model: string };
+      autoReply?: { provider: 'openai' | 'anthropic' | 'elric'; model: string; label?: string };
       /**
        * Internal only: runs under the room lock inside the post transaction; a
        * returned code refuses the post (409) so "off" wins over a reply already generated.
@@ -1767,7 +1829,23 @@ export function createRooms(d: RoomDependencies): Rooms {
       }
       // Only the person themselves (the console) posts as their person member; an AI of the same
       // account never can.
-      const senders = p.console ? members : members.filter((row) => row.kind !== 'person');
+      const eligible = p.console ? members : members.filter((row) => row.kind !== 'person');
+      // Only Elric's own runtime posts as an Elric agent: never a person in the console, an
+      // assistant grant or a key (it would put words in the AI's name).
+      const elricIds = p.elric
+        ? new Set<string>()
+        : new Set(
+            (
+              await tx.query<{ agent_id: string }>(
+                // Any status: an agent that ever was an Elric is never posted as by anyone else.
+                'SELECT agent_id FROM elric_agents WHERE agent_id = ANY($1::text[])',
+                [eligible.map((row) => row.agent_id)],
+              )
+            ).rows.map((row) => row.agent_id),
+          );
+      if (values.agent_id && elricIds.has(values.agent_id))
+        refuse(403, 'elric_posts_itself', 'Only Elric posts as Elric.');
+      const senders = eligible.filter((row) => !elricIds.has(row.agent_id));
       let member: MemberRow;
       if (values.agent_id) {
         const found = senders.find((row) => row.agent_id === values.agent_id);
@@ -1968,7 +2046,7 @@ export function createRooms(d: RoomDependencies): Rooms {
       });
       // Server-derived status; exact last_active_at only for the host and the member's owner.
       const status = await memberStatuses(tx, room!, live, p.operatorId, time, d.secret);
-      const responders = new Map(
+      const responders = new Map<string, 'openai' | 'anthropic' | 'elric'>(
         (room!.responders_allowed === false
           ? []
           : await autoResponders(
@@ -1978,6 +2056,17 @@ export function createRooms(d: RoomDependencies): Rooms {
             )
         ).map((item) => [item.agent_id, item.provider] as const),
       );
+      // Elric (docs/ELRIC.md): the server-set first-party marker, never settable by a client.
+      const agentIds = live.filter((row) => row.kind !== 'person').map((row) => row.agent_id);
+      if (agentIds.length && (await present(tx, 'elric_agents')))
+        for (const row of (
+          await tx.query<{ agent_id: string }>(
+            // Any status: a revoked Elric still in a room keeps the marker (never a "Post as" option).
+            'SELECT agent_id FROM elric_agents WHERE agent_id = ANY($1::text[])',
+            [agentIds],
+          )
+        ).rows)
+          responders.set(row.agent_id, 'elric');
       // Invited AIs that joined through an invite link without any account (they hold a room
       // credential and have no lasting identity), so clients can treat their removal differently.
       const invited = new Set(
@@ -2061,7 +2150,7 @@ export function createRooms(d: RoomDependencies): Rooms {
     const rejoinAllowed = values.block_rejoin === false;
     // Refuse outsiders before discovering or locking another owner's workspace.
     // The transaction repeats this check under the room lock.
-    const located = await hostOnly(d.db, await findRoom(d.db, values.room_id), p.operatorId);
+    const located = await hostWrite(d.db, await findRoom(d.db, values.room_id), p.operatorId);
     const target = located
       ? (
           await d.db.query<{ owner_id: string }>(
@@ -2073,7 +2162,7 @@ export function createRooms(d: RoomDependencies): Rooms {
     const owners = [p.operatorId, ...(target ? [target.owner_id] : [])];
     return d.mutateMany(owners, async (workspaces, tx, time) => {
       if (guard) await guard(tx, time);
-      const room = await hostOnly(
+      const room = await hostWrite(
         tx,
         located ? await findRoom(tx, located.id, true) : undefined,
         p.operatorId,
@@ -2159,6 +2248,8 @@ export function createRooms(d: RoomDependencies): Rooms {
     const values = roomLeaveToolInput.parse(body);
     const located = await findRoom(d.db, values.room_id);
     if (!located) roomNotFound();
+    // Neither the owner nor Elric leaves a private Elric chat; it ends with Elric (rooms/private.ts).
+    lockPrivate(located!);
     return d.mutateMany([p.operatorId, located!.host_owner_id], async (workspaces, tx, time) => {
       if (guard) await guard(tx, time);
       const room = (await findRoom(tx, located!.id, true))!;
@@ -2290,7 +2381,7 @@ export function createRooms(d: RoomDependencies): Rooms {
     const values = roomMemberCapInput.parse(body);
     capAllowed(values.member_cap, p.operatorId);
     return d.mutate(p.operatorId, async (workspace, tx, time) => {
-      const room = await hostOnly(tx, await findRoom(tx, roomRef, true), p.operatorId);
+      const room = await hostWrite(tx, await findRoom(tx, roomRef, true), p.operatorId);
       if (room.closed_at !== null)
         refuse(409, 'room_closed', 'The room is closed; its settings can no longer change.');
       const active = Number(
@@ -2331,7 +2422,7 @@ export function createRooms(d: RoomDependencies): Rooms {
     if (!p.console) roomNotFound();
     const values = peopleSettingsInput.parse(body);
     return d.mutate(p.operatorId, async (workspace, tx, time) => {
-      const room = await hostOnly(tx, await findRoom(tx, roomRef, true), p.operatorId);
+      const room = await hostWrite(tx, await findRoom(tx, roomRef, true), p.operatorId);
       if (room.closed_at !== null)
         refuse(409, 'room_closed', 'The room is closed; its settings can no longer change.');
       const changed = (
@@ -2361,7 +2452,7 @@ export function createRooms(d: RoomDependencies): Rooms {
     let notify: { time: number; room: RoomRow; agents: Map<string, string> } | null = null;
     const result = await d.mutate(p.operatorId, async (workspace, tx, time) => {
       if (guard) await guard(tx, time);
-      const room = await hostOnly(
+      const room = await hostWrite(
         tx,
         located ? await findRoom(tx, located.id, true) : undefined,
         p.operatorId,
@@ -2451,12 +2542,12 @@ export function createRooms(d: RoomDependencies): Rooms {
    */
   async function update(p: RoomPrincipal, body: unknown, guard?: RoomGuard) {
     const values = roomUpdateToolInput.parse(body);
-    const located = await hostOnly(d.db, await findRoom(d.db, values.room_id), p.operatorId);
+    const located = await hostWrite(d.db, await findRoom(d.db, values.room_id), p.operatorId);
     // As in close: a short transaction on the host's workspace, then chunked member notices.
     let notify: { time: number; room: RoomRow; agents: Map<string, string> } | null = null;
     const result = await d.mutate(p.operatorId, async (hostWorkspace, tx, time) => {
       if (guard) await guard(tx, time);
-      let room = await hostOnly(tx, await findRoom(tx, located.id, true), p.operatorId);
+      let room = await hostWrite(tx, await findRoom(tx, located.id, true), p.operatorId);
       // A closed room is final: its settings (history, automatic replies) no longer change.
       if (room.closed_at !== null)
         refuse(409, 'room_closed', 'The room is closed; its settings can no longer change.');
@@ -2612,7 +2703,7 @@ export function createRooms(d: RoomDependencies): Rooms {
     if (!p.console) roomNotFound();
     const values = roomRenameInput.parse(body);
     return d.mutate(p.operatorId, async (workspace, tx, time) => {
-      const room = await hostOnly(tx, await findRoom(tx, roomRef, true), p.operatorId);
+      const room = await hostWrite(tx, await findRoom(tx, roomRef, true), p.operatorId);
       if (room.closed_at !== null)
         refuse(409, 'room_closed', 'The room is closed; its settings can no longer change.');
       const changed = await renameIn(tx, room, p, values, time, workspace);
@@ -2641,12 +2732,12 @@ export function createRooms(d: RoomDependencies): Rooms {
     const values = roomDeleteInput.parse(body);
     // Every attempt counts (right name or not), before any lookup.
     await d.limit(`room-delete:${p.operatorId}`, limits.deletesPerOwnerPerHour, HOUR);
-    const located = await hostOnly(d.db, await findRoom(d.db, roomRef), p.operatorId);
+    const located = await hostWrite(d.db, await findRoom(d.db, roomRef), p.operatorId);
     // As in close (#231): one transaction on the host's workspace revokes, ends and erases
     // everything; the members' owners (up to 10,000) are told afterwards in chunks.
     let notify: { time: number; roomId: string; agents: Map<string, string> } | null = null;
     const result = await d.mutate(p.operatorId, async (workspace, tx, time) => {
-      const room = await hostOnly(tx, await findRoom(tx, located.id, true), p.operatorId);
+      const room = await hostWrite(tx, await findRoom(tx, located.id, true), p.operatorId);
       if (values.confirm_name !== room.name)
         refuse(
           400,
@@ -2906,7 +2997,7 @@ export function createRooms(d: RoomDependencies): Rooms {
   }
 
   async function hostInvite(tx: Tx, p: RoomPrincipal, roomRef: string, time: number) {
-    const room = await hostOnly(tx, await findRoom(tx, roomRef, true), p.operatorId);
+    const room = await hostWrite(tx, await findRoom(tx, roomRef, true), p.operatorId);
     if (room.closed_at !== null) refuse(409, 'room_closed', 'The room is closed.');
     const row = await currentLink(tx, room, p, time);
     return { roomId: room.id, linkId: row.id, expiresAt: Number(row.expires_at) };
@@ -2930,7 +3021,7 @@ export function createRooms(d: RoomDependencies): Rooms {
     return { name: row.name, slug: row.slug };
   }
 
-  return {
+  const service = {
     joinCodesForRoomToken,
     admitInvited,
     create,
@@ -2959,4 +3050,6 @@ export function createRooms(d: RoomDependencies): Rooms {
     describeInvite,
     limits,
   };
+  // Every call knows its principal (private Elric chats: owner console and Elric only).
+  return scopedByPrincipal(service);
 }

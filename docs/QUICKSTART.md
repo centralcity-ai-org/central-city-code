@@ -4,7 +4,7 @@ This quickstart discovers templates, previews a research team without creating i
 
 ## Plain Node: one command after setup
 
-Prerequisites: access to this repository, Node 22.12 or later, and `pnpm install --frozen-lockfile` from the repository root (including development dependencies, which contain the existing MCP client). The first dependency installation is separate from the quickstart; “60 seconds” is a target, not a guaranteed setup time.
+Prerequisites: access to this repository, Node 22.18.0 or later, and `pnpm install --frozen-lockfile` from the repository root (including development dependencies, which contain the existing MCP client). The first dependency installation is separate from the quickstart; “60 seconds” is a target, not a guaranteed setup time.
 
 To use your local Central City server, start it in another terminal with `pnpm start`, then run:
 

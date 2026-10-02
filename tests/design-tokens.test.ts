@@ -5,6 +5,8 @@ import test from 'node:test';
 import {
   FOOTER_COLUMNS,
   LINKS,
+  ELRIC_CODE_PUBLISHED,
+  ELRIC_CODE_URL,
   NAV_GROUPS,
   PUBLIC_REPOS,
   liveFooterColumns,
@@ -145,13 +147,21 @@ test('links.ts has docs, and the footer mirrors the header groups, then Help & l
   );
   const productCol = FOOTER_COLUMNS.find((col) => col.title === 'Product');
   assert.ok(productCol, 'Product column exists');
-  assert.deepEqual(productCol.links, NAV_GROUPS[0]!.items);
-  assert.equal(productCol.links[0]!.label, 'Workspace');
+  assert.deepEqual(
+    productCol.links,
+    NAV_GROUPS[0]!.items.map(({ label, href, external }) => ({
+      label,
+      href,
+      ...(external ? { external } : {}),
+    })),
+  );
+  // Elric leads Product, the way the site presents its AI assistant.
+  assert.equal(productCol.links[0]!.label, 'Elric');
 
   const live = liveFooterColumns();
   const liveProduct = live.find((col) => col.title === 'Product');
   assert.ok(liveProduct, 'Live product column exists');
-  assert.equal(liveProduct.links[0]!.label, 'Workspace');
+  assert.equal(liveProduct.links[0]!.label, 'Elric');
   const legal = live.find((col) => col.title === 'Help & legal');
   assert.ok(
     legal?.links.some((link) => link.href === '/imprint'),
@@ -175,7 +185,7 @@ test('every external header and footer link is one of the public GitHub reposito
   }
   // Only these repositories, and all of them public GitHub URLs of the organization.
   for (const repo of PUBLIC_REPOS)
-    assert.match(repo, /^https:\/\/github\.com\/centralcity-ai\/[a-z-]+$/);
+    assert.match(repo, /^https:\/\/github\.com\/centralcity-ai-org\/[a-z-]+$/);
   // Same-site links never claim to be external.
   for (const link of links.filter((item) => item.href?.startsWith('/')))
     assert.notEqual(link.external, true, link.label);
@@ -189,4 +199,15 @@ test('no token is defined as a reference to itself', () => {
   assert.ok(aliases.length > 0, 'expected token aliases in tokens.css');
   const selfRefs = aliases.filter((m) => m[1] === m[2]).map((m) => m[1]);
   assert.deepEqual(selfRefs, []);
+});
+
+test('"Elric on GitHub" has one switch and a public repository URL', () => {
+  assert.match(
+    ELRIC_CODE_URL,
+    /^https:\/\/github\.com\/centralcity-ai-org\/central-city-code\/tree\/main\/server\/elric$/,
+  );
+  assert.ok(PUBLIC_REPOS.some((repo) => ELRIC_CODE_URL.startsWith(`${repo}/`)));
+  const developers = NAV_GROUPS.find((group) => group.id === 'developers')!;
+  const listed = developers.items.some((item) => item.href === ELRIC_CODE_URL);
+  assert.equal(listed, ELRIC_CODE_PUBLISHED, 'listed exactly when published');
 });

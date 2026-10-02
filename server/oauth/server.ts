@@ -1,3 +1,4 @@
+import { assertOnboarded } from '../onboarding.js';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -1362,6 +1363,8 @@ export async function registerOAuthRoutes(
         row.resource !== `${base}${MCP_PATH}`
       )
         return null;
+      // The shared onboarding gate (server/onboarding.ts) for existing access tokens.
+      await assertOnboarded(d.db, row.operator_id);
       return {
         token,
         clientId: row.client_id,

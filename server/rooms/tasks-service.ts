@@ -29,6 +29,7 @@ import {
   type TaskStatus,
   type TaskView,
 } from './tasks-contract.js';
+import { scopedByPrincipal, visibleRoom, withoutElricAgents } from './private.js';
 
 export type { RoomPrincipal };
 
@@ -250,7 +251,15 @@ export interface TaskDependencies {
 }
 
 export interface RoomTasks {
-  create(p: RoomPrincipal, body: unknown): Promise<{ task: TaskView; replayed: boolean }>;
+  /**
+   * `precondition` is internal only (Elric, docs/ELRIC.md): it runs under the room lock inside the
+   * create transaction, and a returned code refuses the create (409).
+   */
+  create(
+    p: RoomPrincipal,
+    body: unknown,
+    options?: { precondition?: (tx: Pick<Tx, 'query'>) => Promise<string | null> },
+  ): Promise<{ task: TaskView; replayed: boolean }>;
   get(p: RoomPrincipal, body: unknown): Promise<{ task: TaskView }>;
   list(p: RoomPrincipal, body: unknown): Promise<{ room_id: string; tasks: TaskView[] }>;
   claim(
@@ -375,7 +384,15 @@ export function createRoomTasks(d: TaskDependencies): RoomTasks {
     tx.query('SELECT 1 FROM rooms WHERE id=$1 FOR UPDATE', [roomId]);
 
   async function findRoom(q: Pick<Tx, 'query'>, ref: string) {
-    return (await q.query<RoomRow>('SELECT * FROM rooms WHERE id=$1 OR slug=$1', [ref])).rows[0];
+    // A private Elric chat: only the owner console and Elric (rooms/private.ts).
+    return visibleRoom(
+      (
+        await q.query<RoomRow & { elric_private?: boolean }>(
+          'SELECT * FROM rooms WHERE id=$1 OR slug=$1',
+          [ref],
+        )
+      ).rows[0],
+    );
   }
 
   async function liveAgents(
@@ -417,11 +434,24 @@ export function createRoomTasks(d: TaskDependencies): RoomTasks {
       )
     ).rows.filter((row) => agents.has(row.agent_id));
     if (!members.length) roomNotFound();
-    return { room: room!, members };
+    // Reads keep every membership (a host whose only member is their Elric still reads tasks);
+    // writes act only through `actors`: never an agent that is or was an Elric, except Elric's
+    // own runtime.
+    const actors = await withoutElricAgents(q, members);
+    return { room: room!, members, actors };
   }
 
   /** The acting member agent: explicit, or the caller's only agent in the room. */
-  function actingAgent(members: MemberRow[], agentId: string | undefined) {
+  function actingAgent(
+    members: MemberRow[],
+    agentId: string | undefined,
+    actors: MemberRow[] = members,
+  ) {
+    if (agentId !== undefined && !actors.some((row) => row.agent_id === agentId)) {
+      if (members.some((row) => row.agent_id === agentId))
+        refuse(403, 'elric_posts_itself', 'Only Elric acts as Elric.');
+    }
+    members = actors;
     if (agentId !== undefined) {
       const member = members.find((row) => row.agent_id === agentId);
       if (!member) refuse(403, 'not_a_member', 'That agent is not a member of this room.');
@@ -786,7 +816,11 @@ export function createRoomTasks(d: TaskDependencies): RoomTasks {
     }
   }
 
-  async function create(p: RoomPrincipal, body: unknown) {
+  async function create(
+    p: RoomPrincipal,
+    body: unknown,
+    options: { precondition?: (tx: Pick<Tx, 'query'>) => Promise<string | null> } = {},
+  ) {
     const values = taskCreateInput.parse(body);
     const keyHash = sha(`room-task-create:${values.idempotency_key}`);
     const requestHash = sha(
@@ -803,8 +837,8 @@ export function createRoomTasks(d: TaskDependencies): RoomTasks {
       HOUR,
     );
     return d.db.transaction(async (tx) => {
-      const { room, members } = await membership(tx, values.room_id, p.operatorId);
-      const agent = actingAgent(members, values.agent_id);
+      const { room, members, actors } = await membership(tx, values.room_id, p.operatorId);
+      const agent = actingAgent(members, values.agent_id, actors);
       writeGuards(room, agent);
       // The host muted this owner (migration 35): no task writes either.
       await refuseIfMuted(tx, room.id, p.operatorId);
@@ -823,6 +857,10 @@ export function createRoomTasks(d: TaskDependencies): RoomTasks {
       }
       // The room row lock serializes number allocation without touching the rooms schema.
       await tx.query('SELECT 1 FROM rooms WHERE id=$1 FOR UPDATE', [room.id]);
+      if (options.precondition) {
+        const refused = await options.precondition(tx);
+        if (refused) refuse(409, refused, 'This task can no longer be created here.');
+      }
       const maxNumber = (
         await tx.query<{ n: string | number | null }>(
           'SELECT max(number) AS n FROM room_tasks WHERE room_id=$1',
@@ -926,8 +964,8 @@ export function createRoomTasks(d: TaskDependencies): RoomTasks {
     const probe = await plainAgent(d.db, values.room_id, p.operatorId, values.agent_id);
     await d.limit(`room-task-claim:${probe ?? p.operatorId}`, limits.claimsPerAgentPerHour, HOUR);
     return d.db.transaction(async (tx) => {
-      const { room, members } = await membership(tx, values.room_id, p.operatorId);
-      const agent = actingAgent(members, values.agent_id);
+      const { room, members, actors } = await membership(tx, values.room_id, p.operatorId);
+      const agent = actingAgent(members, values.agent_id, actors);
       writeGuards(room, agent);
       // The host muted this owner (migration 35): no task writes either.
       await refuseIfMuted(tx, room.id, p.operatorId);
@@ -1379,5 +1417,16 @@ export function createRoomTasks(d: TaskDependencies): RoomTasks {
     });
   }
 
-  return { create, get, list, claim, renew, release, result, update, events, limits };
+  return scopedByPrincipal({
+    create,
+    get,
+    list,
+    claim,
+    renew,
+    release,
+    result,
+    update,
+    events,
+    limits,
+  });
 }

@@ -75,6 +75,10 @@ Browser checks use installed Microsoft Edge on Windows. Elsewhere, first run `pn
 
 Dependency versions are exact and captured in `pnpm-lock.yaml`. Dependency install scripts are denied unless explicitly allowed in `pnpm-workspace.yaml`; the current allowlist contains esbuild. GitHub runs the checked-in workflow on pushes and pull requests. Consult the repository's GitHub Actions tab for the outcome of each exact commit and [CI controls](docs/CI.md) for scanner scope.
 
+## Elric
+
+Elric is Central City's AI assistant: each person can add their own, and it answers only its owner, in rooms it was added to. Its server core is in `server/elric/` (shared label and copy in `shared/elric-copy.ts`), off unless `CITY_ELRIC=1`. It never holds credentials: the model provider key, the operator secret and the alert webhook come from the hosting provider's secret store, and none is in this repository. Consequential actions wait for the owner's approval, and every limit is a platform constant. See [Elric (server core)](docs/ELRIC.md), [model endpoints](docs/ELRIC_MODEL.md) and [the public page](docs/ELRIC_ABOUT.md).
+
 ## Architecture and limits
 
 - [Architecture decisions](docs/ARCHITECTURE.md)

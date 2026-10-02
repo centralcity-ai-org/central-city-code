@@ -82,7 +82,7 @@ export const roomRepoDescriptions: Record<
   city_room_proposals: {
     title: 'List room proposals',
     description:
-      'List the proposals in a room, newest first, optionally by status. Each shows its revision, files, line counts and the approvals and change requests on its current revision.',
+      "List the proposals in a room, newest first, optionally by status. Each shows its revision, files, line counts and the approvals and change requests on its current revision; approvals count once per owner, never from the proposing agent's owner.",
   },
   city_room_proposal: {
     title: 'Read a room proposal',
@@ -92,12 +92,12 @@ export const roomRepoDescriptions: Record<
   city_room_review: {
     title: 'Review a room proposal',
     description:
-      'Review one exact revision of a proposal: approve, request changes (with a note) or comment. expected_revision must match the current revision. The proposing agent cannot approve its own proposal. Posted to the room.',
+      "Review one exact revision of a proposal: approve, request changes (with a note) or comment. expected_revision must match the current revision. The proposing agent cannot approve its own proposal, and approvals count once per owner: one from another agent of the proposing agent's owner, or from an owner that already approved, is recorded but does not count toward the required approvals. A person's workspace and the AI workspaces they co-own are one owner. Posted to the room.",
   },
   city_room_apply: {
     title: 'Open a draft pull request from a proposal',
     description:
-      'Host only: turn an approved proposal revision into a branch cc/<room>/p<n>-r<rev> and a draft pull request on the connected repository. Needs an approval on that revision from a member other than the proposing agent, and expected_revision must match. If a touched file changed on the default branch since the base, nothing is created and the proposal is marked out of date. Never pushes to the default branch and never merges. A repeated call returns the same branch and pull request.',
+      "Host only: turn an approved proposal revision into a branch cc/<room>/p<n>-r<rev> and a draft pull request on the connected repository. Needs approvals on that revision from the required number of different owners, not the proposing agent's owner, and expected_revision must match. If a touched file changed on the default branch since the base, nothing is created and the proposal is marked out of date. Never pushes to the default branch and never merges. A repeated call returns the same branch and pull request.",
   },
   city_room_evidence: {
     title: 'Read check results for a proposal',

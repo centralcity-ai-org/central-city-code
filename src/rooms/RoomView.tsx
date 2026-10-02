@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -10,6 +11,9 @@ import {
   Suspense,
 } from 'react';
 import {
+  Bell,
+  BellOff,
+  Bot,
   Code2,
   Ellipsis,
   LayoutList,
@@ -21,7 +25,11 @@ import {
   X,
 } from 'lucide-react';
 import {
+  addElricToRoom,
+  getElricStatus,
   withRoomDeadline,
+  type ElricNotice,
+  type ElricStatus,
   type LeftMember,
   type Member,
   type MemberStatus,
@@ -29,14 +37,26 @@ import {
   type RoomsClient,
 } from './api';
 import { Composer } from './Composer';
+import {
+  AddElricCard,
+  ElricNoticeBanner,
+  ElricAiNoticeBanner,
+  ElricWakingPill,
+  ElricAgeDialog,
+  ElricDobDialog,
+  type ElricAgeReason,
+} from './elric';
 import { InviteSheet } from './InviteSheet';
 import { initialOf, MessageList, type PendingMessage } from './MessageList';
 import { ownerNames, possessive } from './people';
 import { activeCount } from './tasks';
 import { TasksPanel, useRoomTasks } from './TasksPanel';
 import { RepoPanel, useRoomRepo } from './RepoPanel';
+import { api } from '../api';
+import { ELRIC_MEMBER_BADGE } from '../../shared/elric-copy';
 import { describe, useRoomThread } from './useRoomThread';
 import { ConfirmRow, RoomSettings } from './RoomSettings';
+import { Switch, SwitchToast, useOptimisticSwitch } from '../ui/Switch';
 import { navigate } from '../shell/navigation';
 
 /** Loaded on first open, so room pages don't download the Connect page's code up front. */
@@ -182,6 +202,7 @@ function MembersPanel({
   client,
   room,
   members,
+  elric,
   onChanged,
   onClose,
   onLeft,
@@ -189,6 +210,8 @@ function MembersPanel({
   client: RoomsClient;
   room: Room;
   members: Member[];
+  /** "Elric in this room": one switch (on = member, off = removed); absent when Elric is off. */
+  elric?: ElricRoomSwitch;
   onChanged: () => void;
   onClose: () => void;
   /** After your agents left: the room is no longer yours to open. */
@@ -337,10 +360,17 @@ function MembersPanel({
           {error}
         </p>
       ) : null}
+      {elric ? <ElricSwitchRow elric={elric} /> : null}
       <ul className="rm-members" aria-label="Current members">
         {members.map((member) => (
           <li key={member.id}>
-            <span className="rm-avatar" data-kind={member.kind ?? 'agent'} aria-hidden="true">
+            <span
+              className="rm-avatar"
+              data-kind={
+                member.auto_reply?.provider === 'elric' ? 'elric' : (member.kind ?? 'agent')
+              }
+              aria-hidden="true"
+            >
               {initialOf(member.name)}
             </span>
             <div>
@@ -349,7 +379,9 @@ function MembersPanel({
                 {member.kind === 'person' ? <span className="rm-person">person</span> : null}
               </strong>
               <span className="rm-meta">
-                {member.own ? (
+                {member.auto_reply?.provider === 'elric' ? (
+                  ELRIC_MEMBER_BADGE
+                ) : member.own ? (
                   member.kind === 'person' ? (
                     'you'
                   ) : (
@@ -367,7 +399,10 @@ function MembersPanel({
               <StatusBadge member={member} />
               {host && muted.has(member.id) ? <span className="rm-muted-label">Muted</span> : null}
             </div>
-            {host && member.role !== 'host' && !room.closed ? (
+            {host &&
+            member.role !== 'host' &&
+            !room.closed &&
+            !(elric && member.auto_reply?.provider === 'elric') ? (
               confirm === member.id ? (
                 <RemoveConfirm
                   question={`Remove ${member.name}? They can't rejoin.`}
@@ -474,6 +509,39 @@ function MembersPanel({
   );
 }
 
+/** The Members panel's "Elric in this room" switch: state, why it's disabled, and the change. */
+type ElricRoomSwitch = {
+  on: boolean;
+  disabledReason: string | null;
+  /** Resolves when the change is done; rejects to roll the switch back. */
+  change: (next: boolean) => Promise<void>;
+};
+
+/**
+ * "Elric in this room" as one switch: in the Members panel, and (compact, label "Elric") in the
+ * room header next to Members for the host. Both follow the same membership.
+ */
+function ElricSwitchRow({ elric, compact = false }: { elric: ElricRoomSwitch; compact?: boolean }) {
+  const failure = useCallback(
+    (next: boolean) =>
+      next ? 'Elric couldn’t join this room. Try again.' : 'Elric couldn’t be removed. Try again.',
+    [],
+  );
+  const toggle = useOptimisticSwitch(elric.on, elric.change, failure);
+  return (
+    <div className={compact ? 'rm-head-elric' : 'rm-members-add-elric'}>
+      <Switch
+        label={compact ? 'Elric' : 'Elric in this room'}
+        checked={toggle.shown}
+        busy={toggle.busy}
+        disabledReason={elric.disabledReason}
+        onChange={(next) => void toggle.set(next)}
+      />
+      <SwitchToast text={toggle.toast} onDismiss={toggle.dismiss} />
+    </div>
+  );
+}
+
 type MenuItem = { key: string; label: string; icon: ReactNode; onSelect: () => void };
 
 /** The top bar's "…" menu: a small popup menu (Escape and outside clicks close it). */
@@ -563,6 +631,7 @@ export function RoomView({
   onOpenMenu,
   onRoomChanged,
   onRead,
+  userId,
 }: {
   client: RoomsClient;
   room: Room;
@@ -572,9 +641,32 @@ export function RoomView({
   onRoomChanged: () => void;
   /** The newest seq shown, for unread counts. */
   onRead: (roomId: string, seq: number) => void;
+  userId?: string;
 }) {
   const thread = useRoomThread(client, initial.id, initial.latest_seq);
   const room = thread.room ?? initial;
+  const [notificationsMuted, setNotificationsMuted] = useState(
+    () => initial.notificationsMuted === true,
+  );
+  useEffect(() => {
+    if (room.notificationsMuted !== undefined) {
+      setNotificationsMuted(room.notificationsMuted === true);
+    }
+  }, [room.notificationsMuted]);
+  const [notificationError, setNotificationError] = useState('');
+
+  async function toggleNotificationsMute() {
+    const next = !notificationsMuted;
+    setNotificationsMuted(next);
+    setNotificationError('');
+    try {
+      await withRoomDeadline(client.muteNotifications({ room_id: initial.id, muted: next }));
+      onRoomChanged();
+    } catch {
+      setNotificationsMuted(!next);
+      setNotificationError("Couldn't change notifications. Try again.");
+    }
+  }
   const [members, setMembers] = useState<Member[]>([]);
   // One side panel at a time: members, room settings, the room's tasks or its code.
   const [panel, setPanel] = useState<'members' | 'settings' | 'tasks' | 'code' | null>(null);
@@ -590,7 +682,174 @@ export function RoomView({
   const [pending, setPending] = useState<PendingMessage[]>([]);
   const [follow, setFollow] = useState(0);
   const online = useOnline();
-  const own = members.filter((member) => member.own);
+
+  // Elric state
+  const [elricStatus, setElricStatus] = useState<ElricStatus | null>(null);
+  const [addElricDismissed, setAddElricDismissed] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem(`cc_dismiss_add_elric_${initial.id}`) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [addingElric, setAddingElric] = useState<boolean>(false);
+  const [addElricError, setAddElricError] = useState<string | null>(null);
+  const [elricWaking, setElricWaking] = useState<boolean>(false);
+  const [elricWakingSeq, setElricWakingSeq] = useState<number | null>(null);
+  // The answer forming for the viewer's own @Elric post (streamed drafts), and when it started.
+  const [elricDraft, setElricDraft] = useState<{ text: string; since: number } | null>(null);
+  const [elricNotice, setElricNotice] = useState<ElricNotice | null>(null);
+  const noticeKey = `cc_elric_ai_notice_${userId ? `${userId}_` : ''}${initial.id}`;
+  const [aiNoticeDismissed, setAiNoticeDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(noticeKey) === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      setAiNoticeDismissed(localStorage.getItem(noticeKey) === '1');
+    } catch {
+      setAiNoticeDismissed(false);
+    }
+  }, [noticeKey]);
+
+  function handleDismissAiNotice() {
+    setAiNoticeDismissed(true);
+    try {
+      localStorage.setItem(noticeKey, '1');
+    } catch {}
+  }
+  const [showDobDialog, setShowDobDialog] = useState<boolean>(false);
+  const [ageRefusal, setAgeRefusal] = useState<ElricAgeReason | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getElricStatus().then((status) => {
+      if (active) setElricStatus(status);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const isElricMember = useMemo(
+    () =>
+      members.some(
+        (m) =>
+          m.auto_reply?.provider === 'elric' ||
+          (elricStatus?.agent_id && m.id === elricStatus.agent_id),
+      ),
+    [members, elricStatus?.agent_id],
+  );
+
+  const host = room.role === 'host';
+  // Add Elric shows for a verified adult and also when only the date of birth is missing
+  // ('age_unknown': the click asks for it once). Never under 18 or without Google sign-in.
+  const elricAddable = Boolean(
+    elricStatus?.eligible || elricStatus?.eligibility_reason === 'age_unknown',
+  );
+  const canAddElric = Boolean(host && !isElricMember && elricAddable && !room.closed);
+
+  const showAddElric = Boolean(
+    canAddElric && room.respondersAllowed !== false && !addElricDismissed,
+  );
+
+  function handleClickAddElric() {
+    setAddElricError(null);
+    setAddElricDismissed(false);
+    try {
+      sessionStorage.removeItem(`cc_dismiss_add_elric_${initial.id}`);
+    } catch {}
+    if (elricStatus?.over_18) {
+      void handleAddElric();
+    } else {
+      setShowDobDialog(true);
+    }
+  }
+
+  async function handleDobSubmit(dob: string) {
+    await handleAddElric(dob);
+  }
+
+  async function handleAddElric(dob?: string) {
+    setAddingElric(true);
+    setAddElricError(null);
+    try {
+      await addElricToRoom(client, initial.id, dob);
+      setShowDobDialog(false);
+      if (dob) {
+        setElricStatus((prev) => (prev ? { ...prev, over_18: true } : prev));
+      }
+      await loadMembers();
+      onRoomChanged();
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'elric_age_under_18') {
+        setShowDobDialog(false);
+        setAgeRefusal('under_18');
+      } else if (code === 'elric_age_unknown') {
+        setShowDobDialog(false);
+        setAgeRefusal('unknown');
+      } else if (code === 'invalid_date_of_birth') {
+        setAddElricError('Please enter a valid date of birth.');
+      } else {
+        setAddElricError(describe(err) || 'Could not add Elric to room.');
+      }
+    } finally {
+      setAddingElric(false);
+    }
+  }
+
+  // The Members panel switch. On: add (the first time asks the date of birth once, then the
+  // members refresh flips it). Off: remove Elric without blocking it from being added again.
+  const elricMember = members.find(
+    (m) =>
+      m.auto_reply?.provider === 'elric' ||
+      (elricStatus?.agent_id && m.id === elricStatus.agent_id),
+  );
+  const elricSwitch: ElricRoomSwitch | null = elricStatus
+    ? {
+        on: Boolean(elricMember),
+        disabledReason: room.closed
+          ? 'This room is closed.'
+          : !host
+            ? 'Only the room’s host can add or remove Elric.'
+            : !elricMember && !elricAddable
+              ? elricStatus.eligibility_reason === 'age_under_18'
+                ? 'Elric is available from age 18.'
+                : elricStatus.eligibility_reason === 'unverified'
+                  ? 'Elric needs Google sign-in (Account settings).'
+                  : 'Elric isn’t available for your account.'
+              : null,
+        change: async (next) => {
+          if (next) {
+            if (!elricStatus.over_18) {
+              // The date-of-birth sheet takes over; the switch follows the membership.
+              handleClickAddElric();
+              throw Object.assign(new Error('dob'), { silent: true });
+            }
+            await addElricToRoom(client, initial.id);
+          } else if (elricMember) {
+            await withRoomDeadline(
+              client.remove({ room_id: initial.id, agent_id: elricMember.id, block_rejoin: false }),
+            );
+          }
+          await loadMembers();
+          onRoomChanged();
+        },
+      }
+    : null;
+
+  function handleDismissAddElric() {
+    setAddElricDismissed(true);
+    try {
+      sessionStorage.setItem(`cc_dismiss_add_elric_${initial.id}`, '1');
+    } catch {}
+  }
+  const own = members.filter((member) => member.own && member.auto_reply?.provider !== 'elric');
   // A person in the room (Join a room): who invited them, and how to bring their own AI.
   const personSelf = own.find((member) => member.kind === 'person');
   const hostMember = members.find((member) => member.role === 'host');
@@ -647,6 +906,11 @@ export function RoomView({
   }, [initial.id, newest, onRead]);
 
   async function deliver(item: PendingMessage) {
+    const mentionsElric = /@elric\b/i.test(item.text);
+    const canInvokeElric = isElricMember && room.respondersAllowed !== false;
+    if (mentionsElric && canInvokeElric) {
+      setElricWaking(true);
+    }
     try {
       const message = await withRoomDeadline(
         client.post({
@@ -658,7 +922,19 @@ export function RoomView({
       );
       thread.merge([message]);
       setPending((list) => list.filter((entry) => entry.key !== item.key));
+      if (mentionsElric && canInvokeElric) {
+        setElricWakingSeq(message.seq);
+      }
+      if (message.elric_notice) {
+        setElricNotice(message.elric_notice);
+        setElricWaking(false);
+        setElricWakingSeq(null);
+      }
     } catch (err) {
+      if (mentionsElric && canInvokeElric) {
+        setElricWaking(false);
+        setElricWakingSeq(null);
+      }
       setPending((list) =>
         list.map((entry) => (entry.key === item.key ? { ...entry, failed: describe(err) } : entry)),
       );
@@ -686,6 +962,79 @@ export function RoomView({
     void deliver(next);
   }
 
+  // Elric answered the viewer's post: only a reply AFTER that post counts (an earlier Elric
+  // message in the thread must not end the wait before the post is even delivered). This also
+  // ends the streamed draft (elricWakingSeq back to null).
+  useEffect(() => {
+    if (elricWakingSeq === null) return;
+    const repliesAfter = thread.messages.filter((m) => m.seq > elricWakingSeq);
+    const hasElricReply = repliesAfter.some(
+      (m) =>
+        m.auto_reply?.provider === 'elric' ||
+        (elricStatus?.agent_id && m.sender_agent_id === elricStatus.agent_id) ||
+        members.some(
+          (member) => member.id === m.sender_agent_id && member.auto_reply?.provider === 'elric',
+        ),
+    );
+    if (hasElricReply) {
+      setElricWaking(false);
+      setElricWakingSeq(null);
+    }
+  }, [thread.messages, elricWakingSeq, elricStatus?.agent_id, members]);
+
+  // Streamed answers: after the viewer's own @Elric post, read the forming answer every 500 ms
+  // (up to 60 s). It shows in Elric's place in the thread; when the draft goes away the room is
+  // read at once, so the posted message replaces it.
+  useEffect(() => {
+    if (elricWakingSeq === null) {
+      setElricDraft(null);
+      return;
+    }
+    const since = Date.now();
+    setElricDraft({ text: '', since });
+    let live = true;
+    let seen = false;
+    let timer = 0;
+    const tick = async () => {
+      if (!live) return;
+      try {
+        const { drafts } = await api<{ drafts: { source_seq: number; text: string }[] }>(
+          `/api/rooms/${encodeURIComponent(initial.id)}/elric-drafts`,
+          undefined,
+          'GET',
+        );
+        if (!live) return;
+        const mine = drafts.find((item) => item.source_seq === elricWakingSeq);
+        if (mine) {
+          seen = true;
+          setElricDraft({ text: mine.text, since });
+        } else if (seen) {
+          setElricDraft(null);
+          void thread.refresh();
+          return;
+        }
+      } catch {
+        // Drafts are a preview; the posted message still arrives through the room's updates.
+      }
+      if (live && Date.now() - since < 60_000) timer = window.setTimeout(tick, 500);
+      else if (live) setElricDraft(null);
+    };
+    timer = window.setTimeout(tick, 500);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [elricWakingSeq, initial.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!elricWaking) return;
+    const timer = setTimeout(() => {
+      setElricWaking(false);
+      setElricWakingSeq(null);
+    }, 60_000); // The 55 s run budget plus delivery (the streamed draft keeps it company).
+    return () => clearTimeout(timer);
+  }, [elricWaking]);
+
   useEffect(() => {
     if (!wantInvite.current || !room.name) return;
     wantInvite.current = false;
@@ -693,7 +1042,6 @@ export function RoomView({
     if (room.role === 'host' && !room.closed) setInvite(true);
   }, [room.name, room.role, room.closed]);
 
-  const host = room.role === 'host';
   const canPost = thread.ready && !room.closed && !room.readOnly && !thread.denied;
   return (
     <section className="rm-room" aria-label={room.name}>
@@ -726,6 +1074,8 @@ export function RoomView({
             <span className="rm-head-label">Members</span>
             <span className="rm-count">{room.member_count}</span>
           </button>
+          {/* Elric on/off for the host, one click (same rules as the Members panel switch). */}
+          {host && elricSwitch ? <ElricSwitchRow elric={elricSwitch} compact /> : null}
           {/* Only when the server offers room tasks (the list answers 404 otherwise). */}
           {tasks.available ? (
             <button
@@ -767,6 +1117,17 @@ export function RoomView({
           ) : null}
           <MoreMenu
             items={[
+              // Elric on/off is the Members panel switch; the menu only links to the console.
+              ...(elricStatus
+                ? [
+                    {
+                      key: 'manage-elric',
+                      label: 'Manage Elric',
+                      icon: <Bot size={16} aria-hidden="true" />,
+                      onSelect: () => navigate('/elric'),
+                    },
+                  ]
+                : []),
               // Only when the server offers room repositories (the route answers 404 otherwise).
               ...(repo.available
                 ? [
@@ -786,10 +1147,25 @@ export function RoomView({
                 icon: <Settings2 size={16} aria-hidden="true" />,
                 onSelect: () => setPanel('settings'),
               },
+              {
+                key: 'notifications',
+                label: notificationsMuted ? 'Unmute this room' : 'Mute this room',
+                icon: notificationsMuted ? (
+                  <Bell size={16} aria-hidden="true" />
+                ) : (
+                  <BellOff size={16} aria-hidden="true" />
+                ),
+                onSelect: () => void toggleNotificationsMute(),
+              },
             ]}
           />
         </div>
       </header>
+      {notificationError ? (
+        <p className="rm-inline-error" role="alert">
+          {notificationError}
+        </p>
+      ) : null}
       {personSelf && !host ? (
         <p className="rm-banner rm-joined" role="status">
           <span>
@@ -841,6 +1217,7 @@ export function RoomView({
                 onDiscard={(key) => setPending((list) => list.filter((entry) => entry.key !== key))}
                 onTrim={thread.trim}
                 follow={follow}
+                elricDraft={elricDraft}
               >
                 <p className="rm-notice">{NOTICE}</p>
               </MessageList>
@@ -855,6 +1232,25 @@ export function RoomView({
                 ) : null}
               </div>
             )
+          ) : null}
+          {elricWaking || elricNotice || (isElricMember && !aiNoticeDismissed) ? (
+            <div className="rm-elric-banner-wrap">
+              {isElricMember && !aiNoticeDismissed ? (
+                <ElricAiNoticeBanner onDismiss={handleDismissAiNotice} />
+              ) : null}
+              {elricWaking ? <ElricWakingPill /> : null}
+              {elricNotice ? (
+                <ElricNoticeBanner notice={elricNotice} onDismiss={() => setElricNotice(null)} />
+              ) : null}
+            </div>
+          ) : null}
+          {showAddElric ? (
+            <AddElricCard
+              onAdd={handleClickAddElric}
+              onDismiss={handleDismissAddElric}
+              busy={addingElric}
+              error={!showDobDialog ? addElricError : null}
+            />
           ) : null}
           {thread.denied ? null : room.closed ? (
             <p className="rm-readonly">This room is closed. Its history stays readable.</p>
@@ -885,6 +1281,7 @@ export function RoomView({
             client={client}
             room={room}
             members={members}
+            {...(elricSwitch ? { elric: elricSwitch } : {})}
             onChanged={() => {
               void loadMembers();
               void thread.refresh();
@@ -961,6 +1358,20 @@ export function RoomView({
             void thread.refresh();
           }}
         />
+      ) : null}
+      {showDobDialog ? (
+        <ElricDobDialog
+          busy={addingElric}
+          error={addElricError}
+          onSubmit={handleDobSubmit}
+          onClose={() => {
+            setShowDobDialog(false);
+            setAddElricError(null);
+          }}
+        />
+      ) : null}
+      {ageRefusal ? (
+        <ElricAgeDialog reason={ageRefusal} onClose={() => setAgeRefusal(null)} />
       ) : null}
     </section>
   );

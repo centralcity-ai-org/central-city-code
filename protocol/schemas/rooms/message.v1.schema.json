@@ -47,8 +47,10 @@
         {
           "type": "object",
           "properties": {
-            "provider": { "type": "string", "enum": ["openai", "anthropic"] },
-            "model": { "type": "string" }
+            "provider": { "type": "string", "enum": ["openai", "anthropic", "elric"] },
+            "model": { "type": "string" },
+            "label": { "type": "string" },
+            "pending_id": { "type": "string" }
           },
           "required": ["provider", "model"]
         },

@@ -820,7 +820,8 @@ test('room top bar: Room list link, Connect AI and Invite, no pinned bar, no com
   const box = composer.getByLabel('Message', { exact: true });
   await composer.getByRole('button', { name: 'Mention a member' }).click();
   await expect(box).toHaveValue('@');
-  await expect(page.getByRole('listbox', { name: 'Mention a member' })).toBeVisible();
+  // The only other member is your own host agent, which you never @mention: no picker.
+  await expect(page.getByRole('listbox', { name: 'Mention a member' })).toHaveCount(0);
   await box.fill('');
   await composer.getByRole('button', { name: 'Insert code block' }).click();
   await expect(box).toHaveValue('```\n\n```');

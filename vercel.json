@@ -5,7 +5,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/index.ts": {
-      "maxDuration": 30
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -127,6 +127,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/elric",
+      "destination": "/index.html"
+    },
+    {
       "source": "/results/([A-Za-z0-9_-]{1,64})",
       "destination": "/index.html"
     },
@@ -187,6 +191,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/downtown/log",
+      "destination": "/index.html"
+    },
+    {
       "source": "/docs",
       "destination": "/index.html"
     },
@@ -204,6 +212,15 @@
     }
   ],
   "headers": [
+    {
+      "source": "/((?!assets/|api/|mcp(?:/|$)|oauth/|\\.well-known/|a2a/|j/).*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    },
     {
       "source": "/(.*)",
       "headers": [

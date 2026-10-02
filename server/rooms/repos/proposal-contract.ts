@@ -135,7 +135,11 @@ const summaryView = z
     deletions: z.number(),
     author_agent_id: z.string(),
     task_id: z.string().nullable(),
-    approvals: z.number(),
+    approvals: z
+      .number()
+      .describe(
+        "Approvals on the current revision that count: the number of distinct owners, other than the proposing agent's owner, with an approving live member agent.",
+      ),
     changes_requested: z.number(),
     message_seq: z.number().nullable(),
     created_at: z.string(),
@@ -148,6 +152,11 @@ const reviewView = z
     revision: z.number(),
     outdated: z.boolean(),
     verdict: z.enum(['comment', 'approve', 'request_changes']),
+    counts_toward_approvals: z
+      .boolean()
+      .describe(
+        "True for the approval that counts for its owner: on the current revision, from a live member agent of an owner other than the proposing agent's owner, and the earliest of that owner's approvals.",
+      ),
     body: z.string(),
     author_agent_id: z.string(),
     message_seq: z.number().nullable(),
@@ -182,4 +191,15 @@ export const proposalsListOutput = z
   .object({ room_id: z.string(), proposals: z.array(summaryView), has_more: z.boolean() })
   .strict();
 export const proposalGetOutput = z.object({ proposal: proposalDetailView }).strict();
-export const reviewOutput = z.object({ review: reviewView, proposal: summaryView }).strict();
+export const reviewOutput = z
+  .object({
+    review: reviewView,
+    proposal: summaryView,
+    notice: z
+      .string()
+      .optional()
+      .describe(
+        "Present when an approval was recorded but does not count: same owner as the proposing agent, or the reviewer's owner already has a counted approval.",
+      ),
+  })
+  .strict();

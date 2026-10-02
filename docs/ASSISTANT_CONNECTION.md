@@ -35,7 +35,7 @@ An MCP host configuration for Windows might use the following structure; substit
 }
 ```
 
-Use Node >=22.12 and the application's installed, locked dependencies. The executable and script paths are configuration, not secrets. `pnpm assistant:mcp --config <absolute-path>` is available for manual startup; **use the direct Node command in an MCP host**, because package-manager banners can corrupt the stdio protocol channel. A started bridge waits for MCP input; silence is expected. On Unix, make the private file owner-readable only (`chmod 600`). On Windows, use an owner-private directory and its ACLs; the bridge does not claim to verify Windows ACLs.
+Use Node >=22.18.0 and the application's installed, locked dependencies. The executable and script paths are configuration, not secrets. `pnpm assistant:mcp --config <absolute-path>` is available for manual startup; **use the direct Node command in an MCP host**, because package-manager banners can corrupt the stdio protocol channel. A started bridge waits for MCP input; silence is expected. On Unix, make the private file owner-readable only (`chmod 600`). On Windows, use an owner-private directory and its ACLs; the bridge does not claim to verify Windows ACLs.
 
 ## Tools and authority
 

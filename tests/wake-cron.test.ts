@@ -308,3 +308,41 @@ test('a handler (responder) pass gets the absolute deadline and none starts late
     assert.ok(call.deadline - call.at >= 250 - 5, 'a pass starts only while minPassMs is left');
   }
 });
+
+test('the cron also runs the Elric drain under the same deadline; its failure never breaks the wake drain', async (t) => {
+  const budgets: number[] = [];
+  const lines: string[] = [];
+  const wake = { drainNow: async () => ({ webhooks: 0, responder: 0 }) };
+  const ok = Fastify();
+  registerWakeCron(ok, {
+    wake,
+    cronSecret: SECRET,
+    budgetMs: 12_000,
+    drainElric: async (budget) => {
+      budgets.push(budget);
+      return 2;
+    },
+    log: (line) => lines.push(line),
+  });
+  const failing = Fastify();
+  registerWakeCron(failing, {
+    wake,
+    cronSecret: SECRET,
+    drainElric: async () => {
+      throw new Error('elric down');
+    },
+    log: (line) => lines.push(line),
+  });
+  t.after(() => Promise.all([ok.close(), failing.close()]));
+  const headers = { authorization: `Bearer ${SECRET}` };
+  const first = await ok.inject({ url: WAKE_DRAIN_PATH, headers });
+  assert.equal(first.statusCode, 200);
+  assert.deepEqual(first.json(), { webhooks: 0, responder: 0 }, 'the response shape is unchanged');
+  assert.deepEqual(budgets, [12_000]);
+  const second = await failing.inject({ url: WAKE_DRAIN_PATH, headers });
+  assert.equal(second.statusCode, 200);
+  assert.deepEqual(lines, [
+    'elric.cron_drain handled=2 error=false',
+    'elric.cron_drain handled=0 error=true',
+  ]);
+});

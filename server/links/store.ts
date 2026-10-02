@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Transaction as Tx } from '../database.js';
-import { legacyShortCodeHash, normalizeShortCode, shortCodeHash } from './short-code.js';
+import { normalizeShortCode, shortCodeHash } from './short-code.js';
 
 /**
  * Join-link storage primitives shared by the links module and the rooms service (a join code can
@@ -56,8 +56,8 @@ export async function liveJoinLinkByShort(
 ): Promise<JoinLinkRow | null> {
   const row = (
     await q.query<JoinLinkRow>(
-      `SELECT * FROM join_links WHERE short_hash IN ($1, $2) ORDER BY created_at DESC LIMIT 1${lock ? ' FOR UPDATE' : ''}`,
-      [shortCodeHash(code), legacyShortCodeHash(code)],
+      `SELECT * FROM join_links WHERE short_hash=$1 ORDER BY created_at DESC LIMIT 1${lock ? ' FOR UPDATE' : ''}`,
+      [shortCodeHash(code)],
     )
   ).rows[0];
   return live(row, time);

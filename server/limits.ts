@@ -7,6 +7,11 @@ export interface CityLimits {
   operators: number;
   /** Account registrations per client address (IPv6 /64) per 15-minute window. */
   registrationsPerWindow: number;
+  /**
+   * API requests per client address (IPv6 /64) per minute, across all /api routes. The e2e test
+   * server raises it (every spec shares one address); deployments keep the default.
+   */
+  apiRequestsPerMinute: number;
   agentsPerWorkspace: number;
   /**
    * Largest member cap a room may have, people and AIs together (at most 10,000). Ordinary hosts
@@ -104,6 +109,7 @@ export interface CityLimits {
 export const DEFAULT_LIMITS: Readonly<CityLimits> = Object.freeze({
   operators: 50,
   registrationsPerWindow: 10,
+  apiRequestsPerMinute: 600,
   agentsPerWorkspace: 100,
   roomMembersMax: 10_000,
   roomMembersDefault: 100,
@@ -158,6 +164,7 @@ export const DEFAULT_LIMITS: Readonly<CityLimits> = Object.freeze({
 export const LIMIT_ENV: Readonly<Record<keyof CityLimits, string>> = Object.freeze({
   operators: 'CITY_LIMIT_OPERATORS',
   registrationsPerWindow: 'CITY_LIMIT_REGISTRATIONS_PER_WINDOW',
+  apiRequestsPerMinute: 'CITY_LIMIT_API_REQUESTS_PER_MINUTE',
   agentsPerWorkspace: 'CITY_LIMIT_AGENTS_PER_WORKSPACE',
   roomMembersMax: 'CITY_LIMIT_ROOM_MEMBERS_MAX',
   roomMembersDefault: 'CITY_LIMIT_ROOM_MEMBERS_DEFAULT',

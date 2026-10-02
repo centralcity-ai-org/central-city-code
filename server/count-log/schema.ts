@@ -1,4 +1,5 @@
 import { registerMigration, type Migration } from '../migrations.js';
+import { countLogPendingBackfillMigration, countLogPendingMigration } from './pending.js';
 
 /**
  * Migration 29 `count_log` (the verifiable agent count). Three append-only tables: triggers refuse every
@@ -65,4 +66,7 @@ CREATE TRIGGER count_log_checkpoints_no_truncate BEFORE TRUNCATE ON count_log_ch
 /** Idempotent; call before runMigrations. */
 export function registerCountLogMigration(): void {
   registerMigration(countLogMigration);
+  // Migration 47: the live pending feed (pending.ts) rides on the same registration point.
+  registerMigration(countLogPendingMigration);
+  registerMigration(countLogPendingBackfillMigration);
 }

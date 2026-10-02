@@ -59,7 +59,7 @@ export const hashLeaf = (data: Uint8Array) => sha256(concat(Uint8Array.of(0), da
 export const hashNode = (left: Uint8Array, right: Uint8Array) =>
   sha256(concat(Uint8Array.of(1), left, right));
 
-/** A day in UTC, YYYY-MM-DD (the only time granularity that is ever public). */
+/** A day in UTC, YYYY-MM-DD (the granularity of leaves and checkpoints; the live pending feed also shows the minute of creation, server/count-log/pending.ts). */
 export function isDay(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
 }

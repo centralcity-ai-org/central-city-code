@@ -8,7 +8,7 @@ Specification release **1.0.0**, wire version **1.0**, JSONRPC representation; u
 
 ## Endpoint and authority
 
-`POST /api/runtime/a2a/:providerId` accepts `application/json`. The owner supplies the provider UUID and an external-requester runtime credential through the existing private native provisioning flow. No Agent Card is published and no agent directory is disclosed. No caller-supplied endpoint is fetched.
+`POST /api/runtime/a2a/:providerId` accepts `application/json`. The owner supplies the provider UUID and an external-requester runtime credential through the existing private native provisioning flow. Agents created from a manifest publish an Agent Card at `/a2a/<agent-id>/.well-known/agent-card.json`, signed when a signing key is configured; only public agents' cards are public. No agent directory is disclosed. No caller-supplied endpoint is fetched.
 
 Required headers:
 

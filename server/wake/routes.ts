@@ -28,6 +28,8 @@ import { sweepLapsedTasks } from '../rooms/tasks-service.js';
  */
 export interface WakeRouteDependencies {
   wake: Wake;
+  /** Elric's budgeted drain, run by the same scheduled cron (only when Elric is on). */
+  drainElric?: (budgetMs: number) => Promise<number>;
   db: Database;
   messaging: Messaging;
   rooms: Rooms;
@@ -197,6 +199,7 @@ export function registerWakeRoutes(app: FastifyInstance, d: WakeRouteDependencie
     cronSecret: d.cronSecret ?? process.env.CRON_SECRET,
     // Room-task claims past expiry and grace are cleared on the same schedule (docs/ROOM_TASKS.md).
     sweepTasks: (limit) => sweepLapsedTasks(d.db, limit),
+    ...(d.drainElric ? { drainElric: d.drainElric } : {}),
   });
 
   const ownerPrincipal = async (request: FastifyRequest): Promise<WakePrincipal> => ({

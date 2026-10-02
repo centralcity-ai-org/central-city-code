@@ -48,6 +48,8 @@ export type Member = Agent & {
    * identity on every join. Absent from servers that don't mark guests yet: treated as false.
    */
   guest?: boolean;
+  /** Server-stamped auto-reply metadata (e.g. { provider: 'elric' }). */
+  auto_reply?: { provider: 'openai' | 'anthropic' | 'elric'; label?: string } | null;
 };
 export type RoomMessage = {
   id: string;
@@ -67,6 +69,15 @@ export type RoomMessage = {
   mentions_you?: boolean;
   /** 'person': a person in the room wrote it themselves. */
   sender_kind?: 'agent' | 'person';
+  /** Server-stamped auto-reply metadata. */
+  auto_reply?: {
+    provider: 'openai' | 'anthropic' | 'elric';
+    model?: string;
+    label?: string;
+    pending_id?: string;
+  } | null;
+  /** Ephemeral notice from the server (returned on post, never saved in room history). */
+  elric_notice?: ElricNotice;
 };
 export type Room = {
   id: string;
@@ -85,6 +96,12 @@ export type Room = {
   /** Host only: people may join as themselves; members may bring their own AI. */
   peopleMayJoin?: boolean;
   membersMayBringAi?: boolean;
+  /** Host only: networks blocked for 30 days after the host removed a guest AI from them. */
+  guestBlocks?: number;
+  /** Whether the viewer muted notifications for this room (migration 38). */
+  notificationsMuted?: boolean;
+  /** Host switch: whether AI auto-replies / responders are allowed in this room. */
+  respondersAllowed?: boolean;
 };
 export type ReadPage = {
   room: Room;
@@ -134,7 +151,7 @@ export interface RoomsClient {
   }): Promise<Room>;
   join(input: {
     room_id: string;
-    token: string;
+    token?: string;
     idempotency_key: string;
     /** Exactly one: an existing agent, or a new agent created and joined atomically. */
     agent_id?: string;
@@ -207,6 +224,13 @@ export interface RoomsClient {
   setHistory(input: { room_id: string; history: History }): Promise<Room>;
   /** Host only: the member cap, from max(current members, 2) to 100. */
   setMemberCap(input: { room_id: string; member_cap: number }): Promise<Room>;
+  /** Host only: lift the room's guest network blocks (`DELETE /api/rooms/:room/guest-blocks`). */
+  clearGuestBlocks(input: { room_id: string }): Promise<{ cleared: number }>;
+  /** Any member: mute or unmute this room's notifications for yourself. */
+  muteNotifications(input: {
+    room_id: string;
+    muted: boolean;
+  }): Promise<{ room_id: string; notifications_muted: boolean }>;
 }
 
 /** Bounds waiting, not server execution; retry mutations with their retained keys. */
@@ -241,6 +265,9 @@ type ServerRoom = {
   created_at: string;
   people_may_join?: boolean;
   members_may_bring_ai?: boolean;
+  guest_blocks?: number;
+  notifications_muted?: boolean;
+  responders_allowed?: boolean;
 };
 const room = (value: ServerRoom): Room => ({
   id: value.id,
@@ -260,6 +287,19 @@ const room = (value: ServerRoom): Room => ({
     : {
         peopleMayJoin: value.people_may_join,
         membersMayBringAi: value.members_may_bring_ai !== false,
+      }),
+  ...(typeof value.guest_blocks === 'number' ? { guestBlocks: value.guest_blocks } : {}),
+  ...(value.notifications_muted === undefined
+    ? {}
+    : {
+        notificationsMuted: value.notifications_muted,
+      }),
+  ...(value.responders_allowed !== undefined
+    ? {
+        respondersAllowed: value.responders_allowed !== false,
+      }
+    : {
+        respondersAllowed: true,
       }),
 });
 const path = (roomId: string) => `/api/rooms/${encodeURIComponent(roomId)}`;
@@ -302,8 +342,10 @@ export function createHttpRoomsClient(): RoomsClient {
       const snapshot = await get<{
         agents: Array<Agent & { status?: string; revokedAt?: string | null }>;
       }>('/api/snapshot');
+      // Never offer the owner's Elric as an identity to act as (host, join as, post as).
+      const elric = (await getElricStatus())?.agent_id ?? null;
       return snapshot.agents
-        .filter((agent) => !agent.revokedAt && agent.status !== 'revoked')
+        .filter((agent) => !agent.revokedAt && agent.status !== 'revoked' && agent.id !== elric)
         .map(({ id, name }) => ({ id, name }));
     },
     async createAgent({ name }) {
@@ -318,8 +360,11 @@ export function createHttpRoomsClient(): RoomsClient {
       return room((await api<{ room: ServerRoom }>('/api/rooms', input)).room);
     },
     async join({ room_id, ...body }) {
+      // Only a join with an invite (token) can fail as an invalid invite; adding your own AI by
+      // room id (no invite) answers 404 as "not available", never the invite copy.
+      const withInvite = Boolean((body as { token?: unknown }).token);
       return room(
-        (await mapped(api<{ room: ServerRoom }>(`${path(room_id)}/join`, body), true)).room,
+        (await mapped(api<{ room: ServerRoom }>(`${path(room_id)}/join`, body), withInvite)).room,
       );
     },
     async read({ room_id, since, limit }) {
@@ -335,9 +380,17 @@ export function createHttpRoomsClient(): RoomsClient {
       return (await mapped(get<{ members: Member[] }>(`${path(room_id)}/members`))).members;
     },
     async post({ room_id, ...body }) {
-      return withFormat(
-        (await mapped(api<{ message: RoomMessage }>(`${path(room_id)}/messages`, body))).message,
+      const response = await mapped(
+        api<{ message: RoomMessage; elric_notice?: ElricNotice }>(
+          `${path(room_id)}/messages`,
+          body,
+        ),
       );
+      const msg = withFormat(response.message);
+      if (response.elric_notice) {
+        msg.elric_notice = response.elric_notice;
+      }
+      return msg;
     },
     async joinLink({ room_id }) {
       const value = await mapped(api<JoinLink>('/api/links', { target: 'room', room_id }));
@@ -404,6 +457,109 @@ export function createHttpRoomsClient(): RoomsClient {
         (await mapped(api<{ room: ServerRoom }>(`${path(room_id)}/settings`, { history }))).room,
       );
     },
+    async clearGuestBlocks({ room_id }) {
+      const value = await mapped(
+        api<{ room_id: string; cleared: number }>(`${path(room_id)}/guest-blocks`, {}, 'DELETE'),
+      );
+      return { cleared: value.cleared };
+    },
+    async muteNotifications({ room_id, muted }) {
+      return muteRoomNotifications({ room_id, muted });
+    },
   };
   return client;
+}
+
+/**
+ * Any member, for their own owner: mute or unmute this room's notifications
+ * (`POST /api/rooms/:room/notifications`). Posts still wake other members.
+ */
+export async function muteRoomNotifications(input: {
+  room_id: string;
+  muted: boolean;
+}): Promise<{ room_id: string; notifications_muted: boolean }> {
+  return api<{ room_id: string; notifications_muted: boolean }>(
+    `/api/rooms/${encodeURIComponent(input.room_id)}/notifications`,
+    { muted: input.muted },
+  );
+}
+
+export type ElricNotice =
+  | { code: 'elric_limit'; kind: 'short' | 'summary' | 'tool'; text: string; resets_at: string }
+  | { code: 'elric_owner_only'; text: string }
+  | { code: string; text: string; kind?: string; resets_at?: string };
+
+export type ElricStatus = {
+  agent_id: string | null;
+  status: 'active' | 'paused' | 'revoked' | null;
+  host_may_invoke: boolean;
+  eligible: boolean;
+  /** Why not eligible (null when eligible); absent from older servers. */
+  eligibility_reason?:
+    'unknown' | 'not_person' | 'unverified' | 'age_under_18' | 'age_unknown' | null;
+  over_18?: boolean;
+  usage: {
+    allowance: { short: number; summary: number; tool: number };
+    used: { short: number; summary: number; tool: number };
+    resets_at: string;
+  };
+  limit_notices: string[];
+};
+
+/**
+ * Gets Elric status for the signed-in owner (GET /api/elric).
+ * Returns null if the feature flag CITY_ELRIC is off (404), or if unauthorized.
+ */
+export async function getElricStatus(): Promise<ElricStatus | null> {
+  try {
+    const status = await api<ElricStatus>('/api/elric', undefined, 'GET');
+    // The server answers `eligible` only for a verified adult (the age check passed), so a saved
+    // date of birth is never asked again ("Add Elric" a second time).
+    return { ...status, over_18: status.over_18 ?? (status.eligible ? true : undefined) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Submits date of birth for age verification (POST /api/elric/age).
+ * Contract: { date_of_birth } -> { age_check: 'over_18' } | 403 elric_age_under_18 | 400 invalid_date_of_birth.
+ */
+export async function submitElricAge(dateOfBirth: string): Promise<{ age_check: 'over_18' }> {
+  return api<{ age_check: 'over_18' }>('/api/elric/age', {
+    date_of_birth: dateOfBirth,
+  });
+}
+
+/**
+ * Ensures the owner has an Elric agent created (POST /api/elric).
+ * Accepts only { name } and rejects extra fields.
+ */
+export async function ensureElricAgent(
+  name = 'Elric',
+): Promise<{ agent_id: string; created: boolean }> {
+  return api<{ agent_id: string; created: boolean }>('/api/elric', {
+    name,
+  });
+}
+
+/**
+ * Adds Elric to a room: if date of birth is supplied, verifies age first via POST /api/elric/age,
+ * then ensures the agent exists via POST /api/elric, then joins it to the room.
+ */
+export async function addElricToRoom(
+  client: RoomsClient,
+  roomId: string,
+  dateOfBirth?: string,
+): Promise<{ agent_id: string }> {
+  if (dateOfBirth) {
+    await submitElricAge(dateOfBirth);
+  }
+  const { agent_id } = await ensureElricAgent('Elric');
+  await client.join({
+    room_id: roomId,
+    agent_id,
+    idempotency_key: crypto.randomUUID(),
+  });
+  return { agent_id };
 }

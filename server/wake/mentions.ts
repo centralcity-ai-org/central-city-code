@@ -38,9 +38,17 @@ export function slugOf(name: string): string {
 export function findMentions(
   text: string,
   candidates: readonly MentionCandidate[],
-  options: { exclude?: string; max?: number } = {},
+  /** `exclude`: ids that resolve as names but are never mentioned (the sender, its own host). */
+  options: { exclude?: string | readonly string[]; max?: number } = {},
 ): MentionMatch {
   const max = options.max ?? WAKE_LIMITS.mentionsPerMessage;
+  const excluded = new Set(
+    options.exclude === undefined
+      ? []
+      : typeof options.exclude === 'string'
+        ? [options.exclude]
+        : options.exclude,
+  );
   // The sender stays a candidate so "@its-own-name" resolves to it (and is then dropped)
   // instead of falling back to a shorter name that happens to be a prefix.
   const pool = candidates
@@ -98,7 +106,7 @@ export function findMentions(
       continue;
     }
     const id = distinct[0];
-    if (!id || id === options.exclude || result.offsets.has(id)) continue;
+    if (!id || excluded.has(id) || result.offsets.has(id)) continue;
     result.ids.push(id);
     result.offsets.set(id, at);
   }

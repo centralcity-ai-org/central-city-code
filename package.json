@@ -1,6 +1,6 @@
 {
   "name": "central-city",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -19,6 +19,7 @@
     "test:files": "tsx --test --test-concurrency=1 --no-wasm-code-gc",
     "test:shard": "node scripts/test-shard.mjs",
     "test:browser": "playwright test",
+    "test:rehearsal": "playwright test -c playwright.rehearsal.config.ts",
     "connector": "tsx connector/cli.ts",
     "connector:local-model": "tsx connector/local-model-cli.ts",
     "assistant:mcp": "tsx mcp/cli.ts",

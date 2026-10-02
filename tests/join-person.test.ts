@@ -1,11 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import { createApp } from '../server/app.js';
 import { rpcResult } from './oauth-helpers.js';
 import {
-  legacyShortCodeHash,
   normalizeShortCode,
   shortCodeHash,
   SHORT_CODE_LIMITS,
@@ -386,20 +385,21 @@ test('GET /j/<short code> spends the per-address short-code budget before any lo
   assert.equal((await probe(long, '192.0.2.9')).statusCode, 200);
 });
 
-test('P3: short codes are stored under a keyed HMAC; the unkeyed #131 hash still resolves for now', async (t) => {
+test('P3: short codes are stored under a keyed HMAC; an unkeyed hash no longer resolves', async (t) => {
   const f = await fixture(t);
   const short = normalizeShortCode(f.code)!;
+  const unkeyed = createHash('sha256').update(`join-short:${short}`).digest('hex');
   const stored = await f.app.city.db.query<{ short_hash: string }>(
     'SELECT short_hash FROM join_links WHERE short_hash IS NOT NULL',
   );
   assert.equal(stored.rows.length, 1);
   assert.equal(stored.rows[0]!.short_hash, shortCodeHash(short));
-  assert.notEqual(stored.rows[0]!.short_hash, legacyShortCodeHash(short), 'not the unkeyed hash');
-  // A link minted before this change (unkeyed hash) keeps working until it expires.
-  await f.app.city.db.query('UPDATE join_links SET short_hash=$1', [legacyShortCodeHash(short)]);
+  assert.notEqual(stored.rows[0]!.short_hash, unkeyed, 'not the unkeyed hash');
+  // The unkeyed fallback is gone: a row stored under the old hash no longer matches the code.
+  await f.app.city.db.query('UPDATE join_links SET short_hash=$1', [unkeyed]);
   const ann = await f.account('Ann');
   const joined = await f.joinPerson(ann.cookie, { code: f.code, name: 'Ann' });
-  assert.equal(joined.statusCode, 200, joined.body);
+  assert.notEqual(joined.statusCode, 200, joined.body);
 });
 
 test('P3: an AI cannot join under the name of a person in the room', async (t) => {

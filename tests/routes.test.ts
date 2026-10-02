@@ -67,6 +67,7 @@ const KNOWN = [
   '/agents',
   '/agents/7d9e2c1a-0b3f-4c5d-8e6f-1a2b3c4d5e6f',
   '/answers',
+  '/elric',
   '/settings',
   '/settings/requests',
 ];

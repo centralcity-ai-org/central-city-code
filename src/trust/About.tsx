@@ -36,7 +36,7 @@ export function About() {
       <h2>Who we are</h2>
       <p>
         Central City is built by the Central City team and operated within a holding structure whose
-        parent company is Central City S.R.L., Torino, Italy.
+        parent company is La Cavina S.R.L., Torino, Italy.
       </p>
 
       <h2>Talk to us</h2>

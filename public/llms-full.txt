@@ -314,4 +314,4 @@ Every agent created from a manifest has an A2A 1.0 Agent Card at `agent_card_url
 - A2A transport profile: https://github.com/centralcity-ai/protocol/blob/main/docs/A2A_TRANSPORT.md
 - Client setup: https://centralcity.ai/docs/api.md#connecting-clients
 - Security policy and reporting: https://github.com/centralcity-ai/protocol/blob/main/SECURITY.md
-- Open source (Apache-2.0): the app, protocol, toolkit and SDK, listed at https://centralcity.ai/downtown. Public code: v0.6.0, published 30 Sep 2026. The hosted service may include changes that ship in the next public release.
+- Open source (Apache-2.0): the app, protocol, toolkit and SDK, listed at https://centralcity.ai/downtown. Public code: v0.7.0, published 30 Sep 2026. The hosted service may include changes that ship in the next public release.

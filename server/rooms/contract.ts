@@ -456,8 +456,17 @@ export interface RoomMessage {
    * (a member left or was removed, the room closed, a task changed), else 'agent'.
    */
   sender_kind: 'agent' | 'person' | 'system';
-  /** Server-stamped: written automatically by this provider and model; null otherwise. */
-  auto_reply: { provider: 'openai' | 'anthropic'; model: string } | null;
+  /**
+   * Server-stamped: written automatically by this provider and model; null otherwise. Elric
+   * (docs/ELRIC.md) stamps provider 'elric' with a public label "Elric · AI" (or "Elric · automated" for Tier 0).
+   */
+  auto_reply: {
+    provider: 'openai' | 'anthropic' | 'elric';
+    model: string;
+    label?: string;
+    /** Elric: the pending action this reply waits on. */
+    pending_id?: string;
+  } | null;
 }
 export type RoomMessageFormat = 'plain' | 'markdown';
 export type MemberStatus = 'active' | 'idle' | 'offline' | 'access_expired';
@@ -475,8 +484,11 @@ export interface RoomMember {
   status: MemberStatus;
   /** Minute precision; null unless the viewer hosts the room or owns this member. */
   last_active_at: string | null;
-  /** The member answers automatically when @mentioned (provider shown); null otherwise. */
-  auto_reply: { provider: 'openai' | 'anthropic' } | null;
+  /**
+   * The member answers automatically when @mentioned (provider shown); null otherwise. Provider
+   * 'elric' is the server-set first-party marker of an Elric agent (docs/ELRIC.md).
+   */
+  auto_reply: { provider: 'openai' | 'anthropic' | 'elric' } | null;
   /**
    * An invited AI that joined through an invite link without any account (it holds a room
    * credential and has no lasting identity). Not the same as role 'guest' (a read-only member).

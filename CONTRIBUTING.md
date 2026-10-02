@@ -11,7 +11,7 @@ issue or pull request.
 
 Requirements:
 
-- **Node.js 22.12 or later** (CI uses Node 24).
+- **Node.js 22.18.0 or later** (CI uses Node 22.23.3).
 - **pnpm 11** through Corepack. The exact version is pinned in `package.json`
   (`packageManager`), so you do not need a global pnpm install.
 - Git, and for browser tests either Microsoft Edge (Windows default) or Playwright Chromium.

@@ -1,9 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import {
   Activity,
   ArrowDownLeft,
   ArrowRight,
   ArrowUpRight,
+  Bot,
   Check,
   CheckCheck,
   CircleHelp,
@@ -37,6 +47,7 @@ import { api, selectWorkspace } from './api';
 import { useSnapshot } from './useSnapshot';
 import { Workflows } from './Workflows';
 import { AssistantAccess, permissionLabel } from './AssistantAccess';
+
 import { CrossWorkspaceConnections } from './Connections';
 import { WorkspaceKeys } from './WorkspaceKeys';
 import { AutoReplySection } from './responder';
@@ -77,6 +88,11 @@ import { ReadableData } from './ui/ReadableData';
 import { PublicFooter } from './shell/PublicFooter';
 import { PublicHeader } from './shell/PublicHeader';
 
+/** Its own chunk: only owners on a server with Elric open it. */
+const ElricActivity = lazy(() =>
+  import('./elric/ElricActivity').then((module) => ({ default: module.ElricActivity })),
+);
+
 type View =
   | 'network'
   | 'connect'
@@ -86,7 +102,8 @@ type View =
   | 'activity'
   | 'collaborations'
   | 'messages'
-  | 'assistants';
+  | 'assistants'
+  | 'elric';
 type Dialog =
   | { kind: 'create' }
   | { kind: 'connection' }
@@ -105,6 +122,8 @@ const navigation = [
   { id: 'messages', label: 'Messages', icon: MessagesSquare },
   { id: 'connections', label: 'Connections', icon: Link2 },
   { id: 'assistants', label: 'AI connections', icon: Sparkles },
+  // Shown only when the server has Elric (GET /api/elric answers; CITY_ELRIC=1).
+  { id: 'elric', label: 'Elric', icon: Bot },
   { id: 'activity', label: 'Activity', icon: Activity },
 ] as const;
 
@@ -191,6 +210,10 @@ const headings: Record<View, { title: ReactNode; lede: string }> = {
     title: 'Connections.',
     lede: 'Choose which agents may send work to each other, and in which direction.',
   },
+  elric: {
+    title: 'Elric.',
+    lede: 'What your Elric did, and what it may do.',
+  },
   activity: {
     title: 'Activity.',
     lede: 'Everything that happened in your account, newest first.',
@@ -270,6 +293,19 @@ function Console({
   const [dialog, setDialog] = useState<Dialog>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
+  // Elric lives in the person's own workspace, and only when the server has it.
+  const [elricOn, setElricOn] = useState(false);
+  useEffect(() => {
+    if (kind === 'ai') return;
+    let active = true;
+    api('/api/elric')
+      .then(() => active && setElricOn(true))
+      .catch(() => active && setElricOn(false));
+    return () => {
+      active = false;
+    };
+  }, [kind]);
+  const shownNavigation = navigation.filter((item) => item.id !== 'elric' || elricOn);
   const [query, setQuery] = useState('');
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
@@ -372,7 +408,7 @@ function Console({
             <DoorOpen size={18} strokeWidth={1.6} aria-hidden="true" />
             <span>Rooms</span>
           </a>
-          {navigation.map((item) => (
+          {shownNavigation.map((item) => (
             <button
               key={item.id}
               className={`nav-item ${view === item.id ? 'active' : ''} ${item.id === 'connect' ? 'nav-connect' : ''}`}
@@ -488,6 +524,7 @@ function Console({
               ) : view === 'collaborations' ||
                 view === 'messages' ||
                 view === 'assistants' ||
+                view === 'elric' ||
                 view === 'connect' ? null : (
                 <>
                   <button className="button secondary" onClick={() => changeView('jobs')}>
@@ -813,6 +850,11 @@ function Console({
                   onOpenAgent={openAgent}
                   onSummaryChanged={() => void inboxes.refresh()}
                 />
+              ) : null}
+              {view === 'elric' && elricOn ? (
+                <Suspense fallback={null}>
+                  <ElricActivity />
+                </Suspense>
               ) : null}
               {view === 'assistants' ? (
                 <>

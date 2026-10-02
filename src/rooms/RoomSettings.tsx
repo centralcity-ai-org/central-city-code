@@ -208,6 +208,96 @@ function GeneralSection({
   );
 }
 
+/**
+ * Host only: networks blocked after the host removed a guest AI (30 days). A quiet row with Clear
+ * and a compact confirm; hidden when nothing is blocked.
+ */
+function GuestBlocks({
+  client,
+  room,
+  onChanged,
+}: {
+  client: RoomsClient;
+  room: Room;
+  onChanged: () => void;
+}) {
+  const count = room.guestBlocks ?? 0;
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [cleared, setCleared] = useState(false);
+  const [toast, setToast] = useState('');
+  const clearRef = useRef<HTMLButtonElement>(null);
+  // A newer count from the server (after the refresh, or new blocks later) replaces the local hide.
+  useEffect(() => setCleared(false), [count]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(''), 2500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+  async function clear() {
+    setBusy(true);
+    setError('');
+    try {
+      await withRoomDeadline(client.clearGuestBlocks({ room_id: room.id }));
+      setConfirming(false);
+      setCleared(true);
+      setToast('Blocks cleared');
+      onChanged();
+    } catch (err) {
+      setError(settingsError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  const visible = count > 0 && !cleared;
+  if (!visible && !toast) return null;
+  return (
+    <>
+      {visible ? (
+        confirming ? (
+          <ConfirmRow
+            question="Clear blocks?"
+            action="Confirm"
+            busy={busy}
+            onConfirm={() => void clear()}
+            onCancel={() => {
+              setConfirming(false);
+              setError('');
+              requestAnimationFrame(() => clearRef.current?.focus());
+            }}
+          />
+        ) : (
+          <div className="rm-confirm">
+            <div className="rm-confirm-text">
+              <div>{count === 1 ? '1 network blocked' : `${count} networks blocked`}</div>
+              <p className="rm-meta">
+                Guest AIs you removed can&apos;t rejoin from these networks for 30 days.
+              </p>
+            </div>
+            <button
+              ref={clearRef}
+              type="button"
+              className="rm-secondary"
+              onClick={() => setConfirming(true)}
+            >
+              Clear
+            </button>
+          </div>
+        )
+      ) : null}
+      {error ? (
+        <p className="rm-inline-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <span className="rm-toast" role="status">
+        {toast}
+      </span>
+    </>
+  );
+}
+
 /** Close room and Delete room (host only), behind a collapsed "Danger zone". */
 function DangerZone({
   client,
@@ -424,6 +514,7 @@ export function RoomSettings({
               Manage members
               <span className="rm-count">{count}</span>
             </button>
+            {host ? <GuestBlocks client={client} room={room} onChanged={onChanged} /> : null}
           </section>
           {host ? (
             <DangerZone client={client} room={room} onChanged={onChanged} onDeleted={onDeleted} />

@@ -296,7 +296,7 @@ export function ConnectAI({
     cursor: (
       <>
         <ol className="connect-steps">
-          <Step note="Cursor must be installed on this device.">
+          <Step note="Needs Cursor on this device. No Cursor yet? Choose Get Cursor, install it, then come back.">
             Choose <strong>Add to Cursor</strong> below. Cursor opens with Central City ready to
             add.
           </Step>
@@ -310,6 +310,14 @@ export function ConnectAI({
             rel="noopener noreferrer"
           >
             Add to Cursor
+          </a>
+          <a
+            className="button secondary"
+            href="https://cursor.com/download"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Get Cursor
           </a>
         </div>
         <details className="connect-manual">
@@ -327,7 +335,7 @@ export function ConnectAI({
     vscode: (
       <>
         <ol className="connect-steps">
-          <Step note="VS Code must be installed on this device.">
+          <Step note="Needs VS Code on this device. No VS Code yet? Choose Get VS Code, install it, then come back.">
             Choose <strong>Install in VS Code</strong> below. VS Code opens and asks you to install
             Central City.
           </Step>
@@ -344,6 +352,14 @@ export function ConnectAI({
             rel="noopener noreferrer"
           >
             Install in VS Code
+          </a>
+          <a
+            className="button secondary"
+            href="https://code.visualstudio.com/download"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Get VS Code
           </a>
         </div>
         <details className="connect-manual">

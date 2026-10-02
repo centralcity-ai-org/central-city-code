@@ -11,8 +11,13 @@ import { WAKE_TABLES } from './wake/schema.js';
 import { RESPONDER_TABLES } from './responder/schema.js';
 import { RESPONDER_EXECUTION_TABLES } from './responder/execution-schema.js';
 import { COUNT_LOG_TABLES } from './count-log/schema.js';
+import { COUNT_LOG_PENDING_TABLES } from './count-log/pending.js';
 import { ROOM_CODE_TABLES } from './rooms/repos/schema.js';
 import { RESULT_TABLES } from './results/schema.js';
+import { ELRIC_TABLES } from './elric/schema.js';
+import { GOOGLE_TABLES } from './google/schema.js';
+import { ELRIC_ERASE_TABLES } from './elric/erase.js';
+import { ELRIC_DRAFT_TABLES } from './elric/draft.js';
 
 /** Tables added by migrations 5-7 (server/migrations.ts). */
 /** Migrations 11-12 (server/workspaces, server/connections): never part of a backup. */
@@ -489,6 +494,10 @@ export async function backupDatabase(dataPath: string, backupPath: string) {
       const countLog = COUNT_LOG_TABLES.filter((name) => tables.includes(name));
       if (countLog.length && countLog.length !== COUNT_LOG_TABLES.length)
         throw new Error('Unsupported database schema; no backup was written.');
+      // Migration 47 (the live pending feed) comes only on top of the count log: recognized and
+      // never exported, like the log itself.
+      if (COUNT_LOG_PENDING_TABLES.some((name) => tables.includes(name)) && !countLog.length)
+        throw new Error('Unsupported database schema; no backup was written.');
       // Migrations 24/30 (room tasks, docs/ROOM_TASKS.md) may sit on top of any schema that has
       // rooms: both tables or none, recognized and never exported, like the rooms they belong to
       // (no claim comes back).
@@ -513,13 +522,42 @@ export async function backupDatabase(dataPath: string, backupPath: string) {
       // block back (they expire within 30 days anyway).
       if (tables.includes('room_guest_blocks') && !tables.includes('room_members'))
         throw new Error('Unsupported database schema; no backup was written.');
+      // Migration 39 (Elric, docs/ELRIC.md) may sit on top of any schema that has rooms: all of its
+      // tables or none, recognized and never exported (no allowance, turn or pending action comes
+      // back; a restored Elric workspace agent is a plain agent until its owner adds Elric again).
+      const elric = ELRIC_TABLES.filter((name) => tables.includes(name));
+      if (
+        elric.length &&
+        (elric.length !== ELRIC_TABLES.length || !tables.includes('room_members'))
+      )
+        throw new Error('Unsupported database schema; no backup was written.');
+      // Migration 41 (Sign in with Google, docs/GOOGLE_SIGNIN.md) comes only on top of Elric's
+      // tables: recognized and never exported. Its rows are short-lived sign-in flows; the linked
+      // identities live in elric_verified_identities, which is never exported either (a restored
+      // account links Google again).
+      const google = GOOGLE_TABLES.filter((name) => tables.includes(name));
+      if (google.length && (google.length !== GOOGLE_TABLES.length || !elric.length))
+        throw new Error('Unsupported database schema; no backup was written.');
+      // Migration 44 (Elric owner erasure) comes only on top of Elric's tables: anonymous cost
+      // totals of erased accounts, recognized and never exported.
+      if (ELRIC_ERASE_TABLES.some((name) => tables.includes(name)) && !elric.length)
+        throw new Error('Unsupported database schema; no backup was written.');
+      // Migration 46 (streamed Elric reply drafts) comes only on top of Elric's tables: transient,
+      // recognized and never exported.
+      if (ELRIC_DRAFT_TABLES.some((name) => tables.includes(name)) && !elric.length)
+        throw new Error('Unsupported database schema; no backup was written.');
       const optional: readonly string[] = [
         ...RESPONDER_TABLES,
         ...RESPONDER_EXECUTION_TABLES,
         ...COUNT_LOG_TABLES,
+        ...COUNT_LOG_PENDING_TABLES,
         ...roomTaskTables,
         ...ROOM_CODE_TABLES,
         'room_guest_blocks',
+        ...ELRIC_TABLES,
+        ...GOOGLE_TABLES,
+        ...ELRIC_ERASE_TABLES,
+        ...ELRIC_DRAFT_TABLES,
       ];
       const core = tables.filter((name) => !optional.includes(name));
       if (

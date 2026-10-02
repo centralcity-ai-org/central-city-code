@@ -272,21 +272,34 @@ test('public header: every menu link is a plain link; GitHub opens in a new tab'
     await expect(nav.locator('[aria-expanded="true"]')).toHaveCount(1);
     const links = content.getByRole('link');
     await expect(links).toHaveCount(group.items.length);
-    // Plain text links: no descriptions, chips, badges or icons (GitHub shows only ↗).
+    // Plain text links: no chips, badges or icons (GitHub shows only ↗); one short line under
+    // the name only where the item has a description (Product › Elric).
     await expect(content.locator('svg, img')).toHaveCount(0);
+    await expect(content.locator('.cc-nav-description')).toHaveCount(
+      group.items.filter((item) => item.description).length,
+    );
+    for (const section of new Set(group.items.map((item) => item.section).filter(Boolean)))
+      await expect(content.getByRole('list', { name: section })).toBeVisible();
     for (const [index, item] of group.items.entries()) {
       const link = links.nth(index);
       await expect(link).toHaveAttribute('href', item.href);
       if (item.external) {
-        expect(item.href).toMatch(/^https:\/\/github\.com\/centralcity-ai\//);
+        expect(item.href).toMatch(/^https:\/\/github\.com\/centralcity-ai-org\//);
         await expect(link).toHaveAttribute('target', '_blank');
         await expect(link).toHaveAttribute('rel', /noopener/);
         await expect(link).toHaveAccessibleName(`${item.label} (opens in a new tab)`);
         await expect(link.locator('.cc-nav-external')).toHaveText('↗');
       } else {
-        await expect(link).toHaveAccessibleName(item.label);
         await expect(link).not.toHaveAttribute('target', /.*/);
-        await expect(link).toHaveText(item.label);
+        if (item.description) {
+          // The name stays the name; the line under it describes the link.
+          await expect(link).toHaveAccessibleName(`${item.label} ${item.description}`);
+          await expect(link).toHaveAccessibleDescription(item.description);
+          await expect(link).toHaveText(`${item.label}${item.description}`);
+        } else {
+          await expect(link).toHaveAccessibleName(item.label);
+          await expect(link).toHaveText(item.label);
+        }
         seen.add(item.href.split('#')[0]!);
       }
       expect(Math.round((await link.boundingBox())!.height), item.label).toBeGreaterThanOrEqual(44);
@@ -305,11 +318,14 @@ const TARGET_HEADINGS: Record<string, string | RegExp> = {
   // The sign-in page (on a fresh install without accounts it offers the first account).
   '/#signin': /^(Welcome back\.|Create your account\.)$/,
   '/connect': 'Connect your AI',
+  // Elric signed out: Elric's own chat screen with its sign-in sheet (W2).
+  '/elric': 'Elric',
   '/docs/api': 'API and SDK',
   '/docs': 'Docs',
   '/status': 'Status',
   '/downtown': 'Open source',
   '/downtown/verify': 'Verify the agent count',
+  '/downtown/log': 'Agent Explorer',
   '/about': 'About Central City',
   '/contact': 'Contact',
   '/security': 'Security',
@@ -319,6 +335,10 @@ test('public header: every same-site target shows its expected page, and its anc
   page,
 }) => {
   const targets = NAV_GROUPS.flatMap((group) => group.items).filter((item) => !item.external);
+  // The e2e server runs without CITY_ELRIC; Elric on answers a visitor 401 (off would be 404).
+  await page.route('**/api/elric', (route) =>
+    route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Sign in."}' }),
+  );
   // Every same-site target has an expected heading (a new link needs one here).
   expect(targets.map((item) => item.href).sort()).toEqual(Object.keys(TARGET_HEADINGS).sort());
   for (const { href } of targets) {
@@ -569,7 +589,11 @@ test('public header at 390 px: the menu still lists every link if its chunk fail
   for (const item of items)
     await expect(
       menu.getByRole('link', {
-        name: item.external ? `${item.label} (opens in a new tab)` : item.label,
+        name: item.external
+          ? `${item.label} (opens in a new tab)`
+          : item.description
+            ? `${item.label} ${item.description}`
+            : item.label,
         exact: true,
       }),
     ).toHaveAttribute('href', item.href);
@@ -953,4 +977,42 @@ test('on the landing page the header button steps back while the hero button is 
   await expect(page.getByRole('banner').getByRole('link', { name: 'Invite your AI' })).toHaveClass(
     /\bprimary\b/,
   );
+});
+
+test('a section inside a menu keeps the menu rhythm (no gap before "Open source")', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/status');
+  const nav = page.getByRole('banner').getByRole('navigation', { name: 'Public' });
+  const trigger = nav.getByRole('button', { name: 'Developers', exact: true });
+  await trigger.click();
+  const content = page.locator('.cc-mega-content[data-active="true"]');
+  const top = (await content.locator('.cc-mega-label').first().boundingBox())!;
+  const firstLink = (await content.getByRole('link').first().boundingBox())!;
+  const heading = (await content.locator('.cc-mega-section .cc-mega-label').first().boundingBox())!;
+  const status = (await content.getByRole('link', { name: 'Status', exact: true }).boundingBox())!;
+  const sectionLink = (await content
+    .getByRole('link', { name: /Central City on GitHub/ })
+    .boundingBox())!;
+  // Status → "Open source": no more space than the group heading → its first link.
+  const headingToLink = firstLink.y - (top.y + top.height);
+  expect(heading.y - (status.y + status.height)).toBeLessThanOrEqual(headingToLink + 2);
+  // "Open source" → its link: the same as the group heading → its first link.
+  expect(
+    Math.abs(sectionLink.y - (heading.y + heading.height) - headingToLink),
+  ).toBeLessThanOrEqual(2);
+
+  // Phone: the section heading lines up with the links, no extra gap.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/status');
+  await page.getByRole('button', { name: 'Open menu' }).click();
+  await page.getByRole('button', { name: 'Developers' }).click();
+  const menu = page.locator('.cc-header-menu');
+  const label = (await menu.locator('.cc-mega-section .cc-mega-label').first().boundingBox())!;
+  const phoneStatus = (await menu
+    .getByRole('link', { name: 'Status', exact: true })
+    .boundingBox())!;
+  expect(Math.round(label.x)).toBe(Math.round(phoneStatus.x));
+  expect(label.y - (phoneStatus.y + phoneStatus.height)).toBeLessThanOrEqual(16);
 });

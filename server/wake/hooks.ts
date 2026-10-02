@@ -3,6 +3,7 @@ import type { MessagePart } from '../messaging/contract.js';
 import { WAKE_LIMITS } from './contract.js';
 import { excerptAt, findMentions, textOf } from './mentions.js';
 import { emit, type WakeSignal } from './signals.js';
+import { elricOnRoomPosted } from '../elric/hook.js';
 
 /**
  * In-transaction wake hooks (docs/WAKE.md), called by the messaging and rooms services
@@ -182,9 +183,10 @@ export async function roomPosted(
         owner_id: string;
         name: string;
         kind: string;
+        role: string;
         muted: boolean;
       }>(
-        `SELECT m.agent_id, m.owner_id, a->>'name' AS name, 'agent' AS kind,
+        `SELECT m.agent_id, m.owner_id, a->>'name' AS name, 'agent' AS kind, m.role,
             EXISTS (SELECT 1 FROM room_members x WHERE x.owner_id=m.owner_id
               AND x.room_id=m.room_id AND (x.muted_at IS NOT NULL OR x.notifications_muted)) AS muted FROM room_members m
           JOIN workspaces w ON w.operator_id=m.owner_id
@@ -192,7 +194,7 @@ export async function roomPosted(
           WHERE m.room_id=$1 AND m.removed_at IS NULL AND m.visible_from_seq < $2
             AND m.kind='agent' AND a->>'id'=m.agent_id AND (a->>'revokedAt') IS NULL
          UNION ALL
-         SELECT m.agent_id, m.owner_id, m.display_name AS name, 'person' AS kind,
+         SELECT m.agent_id, m.owner_id, m.display_name AS name, 'person' AS kind, m.role,
             EXISTS (SELECT 1 FROM room_members x WHERE x.owner_id=m.owner_id
               AND x.room_id=m.room_id AND (x.muted_at IS NOT NULL OR x.notifications_muted)) AS muted FROM room_members m
           WHERE m.room_id=$1 AND m.removed_at IS NULL AND m.visible_from_seq < $2
@@ -200,10 +202,21 @@ export async function roomPosted(
         [row.room_id, seq],
       )
     ).rows;
+    // Never mentioned: the sender, and the room-host agent of the sender's own owner (a person
+    // or another agent of the owner writing "@<their host>" is not a mention: no record, no
+    // wake-up, no auto-reply). Both stay candidates, so their names still resolve. Anyone else
+    // mentions that host normally.
+    const senderOwner = members.find((member) => member.agent_id === row.sender_agent_id)?.owner_id;
+    const ownHost = members
+      .filter(
+        (member) =>
+          member.role === 'host' && member.kind === 'agent' && member.owner_id === senderOwner,
+      )
+      .map((member) => member.agent_id);
     const found = findMentions(
       text,
       members.map((member) => ({ id: member.agent_id, name: member.name })),
-      { exclude: row.sender_agent_id },
+      { exclude: [row.sender_agent_id, ...ownHost] },
     );
     const owners = new Map(members.map((member) => [member.agent_id, member.owner_id]));
     const muted = new Set(members.filter((member) => member.muted).map((m) => m.agent_id));
@@ -230,6 +243,9 @@ export async function roomPosted(
       }
     }
   }
+  // Elric (docs/ELRIC.md, CITY_ELRIC=1): queues its owner's invocations and refuses the rest.
+  // No model call and no reservation here; a no-op when the flag is off.
+  if (mentioned.length) await elricOnRoomPosted(tx, row, mentioned);
   const event = {
     kind: 'room_post',
     room_id: row.room_id,

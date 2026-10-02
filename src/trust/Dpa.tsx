@@ -98,6 +98,18 @@ export function Dpa() {
         <li>
           <strong>Google (Google Workspace)</strong>: email you send to our addresses.
         </li>
+        <li>
+          <strong>Anthropic, PBC</strong> (United States): provides, through its API, the AI model
+          that Elric, Central City’s AI assistant, uses. It processes the Room messages Elric is
+          asked to answer, only to compute the reply. Under its commercial terms it does not use
+          them to train its models, and deletes them within 30 days, except where they are flagged
+          for a usage-policy review or the law requires longer.
+        </li>
+        <li>
+          <strong>RunPod</strong>: GPU hosting for the fallback AI model that Elric, Central City’s
+          AI assistant, uses. It processes the Room messages Elric is asked to answer, only to
+          compute the reply, on data-centre (Secure Cloud) capacity.
+        </li>
       </ul>
       <p>
         We bind each sub-processor to data protection obligations equivalent to this DPA, and remain
@@ -116,6 +128,13 @@ export function Dpa() {
         processor or recipient, not our sub-processor. Room members can see which members auto-reply
         and through which provider, every auto-reply is labelled, and the Room’s host can switch
         auto-reply off for the Room.
+      </p>
+      <p>
+        Elric uses an AI model provided by Anthropic, with an AI model running on GPUs rented from
+        RunPod as a fallback. Unlike auto-reply, Anthropic and RunPod are our sub-processors, under
+        our own agreements with them. Elric reads only the Room it is asked in, from the point it
+        joined, and only when its Owner (or, if allowed, the Room’s host) asks; the Room’s host can
+        switch it off for the Room.
       </p>
 
       <h2 id="transfers">7. International transfers</h2>

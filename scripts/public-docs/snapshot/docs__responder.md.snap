@@ -38,7 +38,7 @@ and JSON, like every console route.
 | Route | Purpose |
 | --- | --- |
 | `GET /api/responder/models?provider=` | Allowed models, with an estimated cost per reply and the default per provider. |
-| `GET /api/agents/:id/responder` | Settings view: `{agent_id, enabled, status: off\|active\|paused, pause_reason, paused_until, provider, model, instructions, daily_reply_cap, daily_spend_cap_usd, key, replies_available: false}`. |
+| `GET /api/agents/:id/responder` | Settings view: `{agent_id, enabled, status: off\|active\|paused, pause_reason, paused_until, provider, model, instructions, daily_reply_cap, daily_spend_cap_usd, key, replies_available}`. `replies_available` says whether this server delivers replies; it is `true` whenever the view is returned, since without a usable root key the route answers `503 responder_unavailable`. |
 | `POST /api/agents/:id/responder/key` | `{provider, model?, key}` validates and stores the key, and returns `{key: {provider, added_at, validated_at, status}}`. Replaces and revokes the previous key. A new key clears a key-related pause. |
 | `DELETE /api/agents/:id/responder/key` | Revokes the key, turns auto-reply off (`pause_reason: key_removed`), and returns `{agent_id, removed}`. |
 | `PUT /api/agents/:id/responder` | `{enabled?, model?, instructions? (≤ 2,000), daily_reply_cap? (1–1,000; default 100), daily_spend_cap_usd? (0.01–50; default 2)}`. Turning on needs an active key (`409 key_required`), and also resumes a pause. |

@@ -30,6 +30,8 @@ import {
   type Workspace,
 } from '../model.js';
 import { descendants, revokeStoredAgent } from '../agent-lifecycle.js';
+import { elricAgentIds } from '../elric/access.js';
+import { ELRIC_RESERVED_NAME_MESSAGE, reservedName } from '../elric/names.js';
 
 const sha = (value: string) => createHash('sha256').update(value).digest('hex');
 
@@ -419,6 +421,8 @@ export function createAutonomyService(caps: CityLimits) {
         description: manifest.metadata.description.slice(0, 300),
         capability: manifest.spec.capabilities[0] as StoredAgent['capability'],
       };
+      // Elric (docs/ELRIC.md): the name is reserved for first-party Elric agents.
+      if (reservedName(fields.name)) refuse(409, ELRIC_RESERVED_NAME_MESSAGE);
       if (item.action === 'create') {
         const place = planned.lineage.get(item.name) ?? { parentName: null, depth: 0 };
         const agent: StoredAgent = {
@@ -877,6 +881,18 @@ export function createAutonomyService(caps: CityLimits) {
         refuse(404, 'Agent not found.');
       const targets =
         values.cascade === false ? [target] : [target, ...descendants(workspace, target.id)];
+      // Elric (docs/ELRIC.md) answers only to its owner's console: a grant or key may pause it
+      // (the safe direction) but never resume or revoke it.
+      if (
+        values.action !== 'pause' &&
+        (
+          await elricAgentIds(
+            tx,
+            targets.map((agent) => agent.id),
+          )
+        ).size
+      )
+        refuse(403, 'Only its owner can control Elric, from the Central City console.');
       const affected = [];
       for (const agent of targets) {
         let changed = false;

@@ -1,3 +1,4 @@
+import { withoutElricAgents } from '../private.js';
 import type { Database, Transaction as Tx } from '../../database.js';
 import type { Workspace } from '../../model.js';
 import { roomNotFound, type RoomPrincipal } from '../service.js';
@@ -86,7 +87,8 @@ export function createRepoAccess(d: RepoDependencies) {
   async function findRoom(q: Pick<Tx, 'query'>, ref: string) {
     return (
       await q.query<RoomRow>(
-        'SELECT id,slug,host_owner_id,closed_at FROM rooms WHERE id=$1 OR slug=$1',
+        // A private Elric chat never has repo code (rooms/private.ts): the uniform 404 for all.
+        'SELECT id,slug,host_owner_id,closed_at FROM rooms WHERE (id=$1 OR slug=$1) AND NOT elric_private',
         [ref],
       )
     ).rows[0];
@@ -111,8 +113,10 @@ export function createRepoAccess(d: RepoDependencies) {
         [room.id, operatorId],
       )
     ).rows.filter((row) => agents.has(row.agent_id));
-    if (!members.length) return roomNotFound();
-    return { room, members, agents, workspace: data! };
+    // Elric never acts in room code, and nobody acts as an agent that is or was an Elric.
+    const acting = await withoutElricAgents(q, members, false);
+    if (!acting.length) return roomNotFound();
+    return { room, members: acting, agents, workspace: data! };
   }
 
   function actingAgent(members: MemberRow[], agentId: string | undefined): MemberRow {

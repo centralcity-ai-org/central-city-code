@@ -287,6 +287,11 @@ test('hosted: production links for ChatGPT, Claude, Cursor and VS Code in both m
   );
   await expect(cursor).toHaveAttribute('target', '_blank');
   await expect(cursor).toHaveAttribute('rel', 'noopener noreferrer');
+  // Without the app the install link can do nothing, so the official download sits next to it.
+  await expect(panel(page).getByRole('link', { name: 'Get Cursor' })).toHaveAttribute(
+    'href',
+    'https://cursor.com/download',
+  );
   await tab(page, 'VS Code').click();
   const vscode = panel(page).getByRole('link', { name: 'Install in VS Code' });
   expectVscodeLink(await vscode.getAttribute('href'), 'central-city', account);
@@ -296,6 +301,10 @@ test('hosted: production links for ChatGPT, Claude, Cursor and VS Code in both m
   );
   await expect(vscode).toHaveAttribute('target', '_blank');
   await expect(vscode).toHaveAttribute('rel', 'noopener noreferrer');
+  await expect(panel(page).getByRole('link', { name: 'Get VS Code' })).toHaveAttribute(
+    'href',
+    'https://code.visualstudio.com/download',
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   for (const link of await panel(page).getByRole('link').all())
     expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);

@@ -21,14 +21,14 @@ import {
   type Rooms,
 } from '../rooms/service.js';
 import { codeHash, liveJoinLink } from './store.js';
-import {
-  legacyShortCodeHash,
-  normalizeShortCode,
-  SHORT_CODE_LIMITS,
-  shortCodeHash,
-} from './short-code.js';
+import { normalizeShortCode, SHORT_CODE_LIMITS, shortCodeHash } from './short-code.js';
 import { inviteCodeFrom, MAX_PASTE_LENGTH, PASTE_HINT, roomTokenFrom } from './paste.js';
 import { cleanName } from '../rooms/person.js';
+import {
+  ELRIC_RESERVED_NAME_CODE,
+  ELRIC_RESERVED_NAME_MESSAGE,
+  reservedName,
+} from '../elric/names.js';
 import { ROOM_LIMITS } from '../rooms/contract.js';
 import { isStressTestHost, stressTestMaxGuests, stressTestOperators } from '../stress-allowlist.js';
 const hash = (value: string) =>
@@ -320,9 +320,9 @@ export function createRoomInvites(d: Dependencies) {
     return (
       await q.query<{ revoked_at: string | number | null; expires_at: string | number }>(
         short
-          ? 'SELECT revoked_at, expires_at FROM join_links WHERE short_hash IN ($1, $2) ORDER BY created_at DESC LIMIT 1'
+          ? 'SELECT revoked_at, expires_at FROM join_links WHERE short_hash=$1 ORDER BY created_at DESC LIMIT 1'
           : 'SELECT revoked_at, expires_at FROM join_links WHERE code_hash=$1',
-        short ? [shortCodeHash(short), legacyShortCodeHash(short)] : [codeHash(code)],
+        short ? [shortCodeHash(short)] : [codeHash(code)],
       )
     ).rows[0];
   }
@@ -754,6 +754,8 @@ export function createRoomInvites(d: Dependencies) {
       );
       if (hosted >= d.caps.inviteGuestsPerHost)
         throw new RoomError(429, 'invite_host_capacity', 'The host invitation capacity is full.');
+      if (reservedName(values.name))
+        throw new RoomError(409, ELRIC_RESERVED_NAME_CODE, ELRIC_RESERVED_NAME_MESSAGE);
       const operatorId = randomUUID(),
         agentId = randomUUID(),
         expires = time + UNCLAIMED_AGENT_TTL_MS,

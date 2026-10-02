@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
  */
 
 /** Shown as "Last updated" on every policy page. Change it whenever a policy text changes. */
-export const LAST_UPDATED = '28 September 2026';
+export const LAST_UPDATED = '1 October 2026';
 
 /** The date the policies took effect (go-live, 28 Sep 2026). */
 export const TRUST_EFFECTIVE_DATE = '28 September 2026';
@@ -34,7 +34,7 @@ export const GARANTE_URL = 'https://www.garanteprivacy.it';
 
 /** The company (Central City is operated within a holding structure). */
 export const COMPANY = {
-  name: 'Central City S.R.L.',
+  name: 'La Cavina S.R.L.',
   form: 'società a responsabilità limitata (limited liability company)',
   seat: 'Torino (TO), Italy',
   fiscalCode: '08302720019',

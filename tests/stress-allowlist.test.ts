@@ -7,6 +7,9 @@ import type { CityLimits } from '../server/limits.js';
 import {
   STRESS_TEST_MAX_GUESTS_DEFAULT,
   STRESS_TEST_MAX_GUESTS_ENV,
+  STRESS_TEST_MAX_ROOMS_DEFAULT,
+  STRESS_TEST_MAX_ROOMS_ENV,
+  stressTestMaxRooms,
   STRESS_TEST_OPERATORS_ENV,
   stressTestMaxGuests,
   isStressTestHost,
@@ -53,8 +56,16 @@ const headers = {
 /** Every guest joins from this one machine. */
 const GUEST_ADDRESS = '203.0.113.12';
 
-async function setup(t: TestContext, limits: Partial<CityLimits> = {}) {
-  for (const name of [STRESS_TEST_OPERATORS_ENV, STRESS_TEST_MAX_GUESTS_ENV]) {
+async function setup(
+  t: TestContext,
+  limits: Partial<CityLimits> = {},
+  rooms: Record<string, number> = {},
+) {
+  for (const name of [
+    STRESS_TEST_OPERATORS_ENV,
+    STRESS_TEST_MAX_GUESTS_ENV,
+    STRESS_TEST_MAX_ROOMS_ENV,
+  ]) {
     const previous = process.env[name];
     t.after(() => {
       if (previous === undefined) delete process.env[name];
@@ -70,6 +81,7 @@ async function setup(t: TestContext, limits: Partial<CityLimits> = {}) {
     },
     startWorkers: false,
     limits,
+    ...(Object.keys(rooms).length ? { rooms } : {}),
   });
   t.after(() => app.close());
   let hostAddress = 40;
@@ -97,8 +109,8 @@ async function setup(t: TestContext, limits: Partial<CityLimits> = {}) {
       { cookie },
       address,
     );
-    const room = async (cap?: number) => {
-      const created = await post(
+    const create = (cap?: number) =>
+      post(
         '/api/rooms',
         {
           name: `${name} room`,
@@ -109,6 +121,8 @@ async function setup(t: TestContext, limits: Partial<CityLimits> = {}) {
         { cookie },
         address,
       );
+    const room = async (cap?: number) => {
+      const created = await create(cap);
       assert.equal(created.statusCode, 201, created.body);
       const roomId = created.json().room.id as string;
       const link = await post(
@@ -123,7 +137,7 @@ async function setup(t: TestContext, limits: Partial<CityLimits> = {}) {
     const operatorId = (
       await app.city.db.query<{ id: string }>('SELECT id FROM operators WHERE name=$1', [name])
     ).rows[0]!.id;
-    return { operatorId, main: await room(memberCap), room };
+    return { operatorId, main: await room(memberCap), room, create };
   };
   let guest = 0;
   const bootstrap = (code: string) => post('/api/public/invites/bootstrap', { code });
@@ -249,4 +263,57 @@ test('guests of a stress-test host each get their own activity budget; others sh
   const own = await credentials(stress.main.code);
   for (let i = 0; i < 140; i++)
     assert.equal((await members(own[i % 2]!)).statusCode, 200, `stress call ${i + 1}`);
+});
+
+test('CITY_STRESS_TEST_MAX_ROOMS: default 1,000, read at call time, invalid values refused', () => {
+  assert.equal(STRESS_TEST_MAX_ROOMS_ENV, 'CITY_STRESS_TEST_MAX_ROOMS');
+  assert.equal(STRESS_TEST_MAX_ROOMS_DEFAULT, 1_000);
+  assert.equal(stressTestMaxRooms({}), 1_000);
+  assert.equal(stressTestMaxRooms({ CITY_STRESS_TEST_MAX_ROOMS: '' }), 1_000);
+  assert.equal(stressTestMaxRooms({ CITY_STRESS_TEST_MAX_ROOMS: '40' }), 40);
+  for (const bad of ['0', '-1', 'many', '1.5'])
+    assert.throws(() => stressTestMaxRooms({ CITY_STRESS_TEST_MAX_ROOMS: bad }));
+});
+
+test('a stress-test host skips the open-room cap up to its ceiling; other owners keep the cap', async (t) => {
+  // Each host already has one open room (main); the public cap here is 2.
+  const { stress, other } = await setup(t, {}, { activeRoomsPerOwner: 2 });
+  assert.equal((await other.create()).statusCode, 201);
+  const refused = await other.create();
+  assert.equal(refused.statusCode, 429);
+  assert.equal(refused.json().code, 'too_many_rooms');
+  assert.match(refused.body, /At most 2 open rooms/);
+
+  // The stress host goes past the public cap, up to CITY_STRESS_TEST_MAX_ROOMS (read per call).
+  process.env[STRESS_TEST_MAX_ROOMS_ENV] = '4';
+  for (let i = 0; i < 3; i++) assert.equal((await stress.create()).statusCode, 201);
+  // The fifth open room is past the ceiling (the daily create count uses the same ceiling).
+  assert.equal((await stress.create()).statusCode, 429);
+
+  // Off the allowlist (empty variable): the public cap applies again, to everyone.
+  process.env[STRESS_TEST_OPERATORS_ENV] = '';
+  assert.equal((await stress.create()).statusCode, 429);
+});
+
+test('a stress-test host is not held to the daily create limit; other owners are', async (t) => {
+  // The public create limit here is 3 a day (each host already created its main room).
+  const { stress, other } = await setup(t, {}, { createsPerOwnerPerDay: 3 });
+  for (let i = 0; i < 2; i++) assert.equal((await other.create()).statusCode, 201);
+  const limited = await other.create();
+  assert.equal(limited.statusCode, 429);
+  assert.ok(Number(limited.headers['retry-after']) > 0);
+  for (let i = 0; i < 6; i++) assert.equal((await stress.create()).statusCode, 201);
+});
+
+test('an invalid CITY_STRESS_TEST_MAX_ROOMS fails startup, like CITY_STRESS_TEST_MAX_GUESTS', async (t) => {
+  const previous = process.env[STRESS_TEST_MAX_ROOMS_ENV];
+  t.after(() => {
+    if (previous === undefined) delete process.env[STRESS_TEST_MAX_ROOMS_ENV];
+    else process.env[STRESS_TEST_MAX_ROOMS_ENV] = previous;
+  });
+  process.env[STRESS_TEST_MAX_ROOMS_ENV] = 'lots';
+  await assert.rejects(
+    createApp({ database: await PGlite.create('memory://'), startWorkers: false }),
+    /CITY_STRESS_TEST_MAX_ROOMS must be a positive integer/,
+  );
 });

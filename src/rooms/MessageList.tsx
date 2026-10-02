@@ -9,9 +9,12 @@ import {
 } from 'react';
 import { ArrowDown, Check, Copy, LoaderCircle, RotateCw } from 'lucide-react';
 import type { Member, RoomMessage } from './api';
-import { ownerNames } from './people';
+import { mentionNamesFor, ownerNames } from './people';
 import { messageFormat, NEW_POST_FORMAT, withoutBidiControls } from './markdown/format';
 import { MessageBoundary } from './markdown/Boundary';
+import { ELRIC_AI_TAG, ELRIC_NAME, elricReplyTag, elricTooltip } from '../../shared/elric-copy';
+import { ThinkingDots } from '../elric/ThinkingDots';
+import { ElricApprovalCard } from './elric';
 
 // The Markdown renderer (parser, GFM) is its own chunk, loaded only for Markdown messages; until
 // it arrives the message shows as plain text, so nothing waits on it.
@@ -192,9 +195,11 @@ function Message({
       {timeFormat.format(date)}
     </time>
   );
+  const isElric = message.auto_reply?.provider === 'elric';
   // Your own messages: a grey bubble on the right, no avatar or byline (the name stays for
   // assistive technology), the time small under the bubble.
-  if (message.own)
+  // Elric replies always render as Elric on the left with avatar, name and AI tag, even if own is true.
+  if (message.own && !isElric)
     return (
       <li
         className={`rm-message own${byline ? '' : ' grouped'}`}
@@ -224,6 +229,11 @@ function Message({
         <span className="rm-own-time">{time}</span>
       </li>
     );
+
+  const senderName = isElric ? ELRIC_NAME : message.sender;
+  const tag = isElric ? elricReplyTag(message.auto_reply?.model) : null;
+  const tooltip = isElric ? elricTooltip() : undefined;
+
   return (
     <li
       className={`rm-message${byline ? '' : ' grouped'}`}
@@ -232,24 +242,41 @@ function Message({
     >
       <span
         className="rm-avatar"
-        data-kind={message.sender_kind ?? 'agent'}
+        data-kind={isElric ? 'elric' : (message.sender_kind ?? 'agent')}
         aria-hidden="true"
         hidden={!byline}
       >
-        {initialOf(message.sender)}
+        {initialOf(senderName)}
       </span>
       {byline ? (
         <div className="rm-byline">
-          <strong>{message.sender}</strong>
-          {/* Role chip; shown capitalised ("Person"). */}
-          {host ? (
-            <span className="rm-role">Host</span>
-          ) : message.sender_kind === 'person' ? (
-            <span className="rm-role rm-person">person</span>
+          <strong>{senderName}</strong>
+          {isElric ? (
+            tag ? (
+              <span className="rm-badge-elric" title={tooltip}>
+                {tag}
+              </span>
+            ) : (
+              <span className="rm-server-label" title={tooltip}>
+                · automated
+              </span>
+            )
           ) : (
-            <span className="rm-role">Agent</span>
+            <>
+              {message.auto_reply?.label ? (
+                <span className="rm-badge-reply">{message.auto_reply.label}</span>
+              ) : null}
+              {/* Role chip; shown capitalised ("Person"). */}
+              {host ? (
+                <span className="rm-role">Host</span>
+              ) : message.sender_kind === 'person' ? (
+                <span className="rm-role rm-person">person</span>
+              ) : (
+                <span className="rm-role">Agent</span>
+              )}
+              <span title={message.sender_owner_label}>· {owner(message.sender_owner_label)}</span>
+            </>
           )}
-          <span title={message.sender_owner_label}>· {owner(message.sender_owner_label)}</span>
           {time}
         </div>
       ) : null}
@@ -272,6 +299,9 @@ function Message({
           ),
         )}
       </div>
+      {message.auto_reply?.pending_id ? (
+        <ElricApprovalCard pendingId={message.auto_reply.pending_id} />
+      ) : null}
     </li>
   );
 }
@@ -292,6 +322,7 @@ export function MessageList({
   onDiscard,
   onTrim,
   follow,
+  elricDraft = null,
   children,
 }: {
   messages: RoomMessage[];
@@ -306,6 +337,12 @@ export function MessageList({
   onTrim: (keep: number) => void;
   /** Changes when the viewer sends: always scroll to it. */
   follow: number;
+  /**
+   * Elric's answer while it forms (GET /api/rooms/:room/elric-drafts) after the viewer's own
+   * @Elric post: '' shows the thinking dots, text shows the forming answer; null shows nothing.
+   * The posted message replaces it.
+   */
+  elricDraft?: { text: string; since: number } | null;
   /** Shown above the first message (the room notice). */
   children?: ReactNode;
 }) {
@@ -316,7 +353,8 @@ export function MessageList({
     follow,
   });
   const [unseen, setUnseen] = useState(0);
-  const names = members.map((member) => member.name);
+  // Your own pending posts: "@<your own host>" is not a mention (people.ts mentionNamesFor).
+  const ownNames = mentionNamesFor(members, { own: true });
   const owner = ownerNames(members);
   const hostId = members.find((member) => member.role === 'host')?.id;
   const toBottom = () => {
@@ -357,6 +395,13 @@ export function MessageList({
     previous.current = { first, last, anchor: offsetOf(first) ?? 0, follow };
     if (pinned.current && messages.length > TRIM_AT) onTrim(KEEP);
   }, [messages, lastKey, follow, onTrim]);
+  // Elric's forming answer sits under the viewer's post: while the reader is at the bottom,
+  // keep it in view as it appears and grows (dots, then text), like a message.
+  const draftShown = elricDraft !== null;
+  const draftText = elricDraft?.text ?? '';
+  useLayoutEffect(() => {
+    if (draftShown && pinned.current) toBottom();
+  }, [draftShown, draftText]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const element = scroller.current;
     if (element && hasOlder && !loadingOlder && element.scrollHeight <= element.clientHeight)
@@ -390,7 +435,7 @@ export function MessageList({
         <Message
           key={message.id}
           message={message}
-          names={names}
+          names={mentionNamesFor(members, message)}
           owner={owner}
           byline={byline}
           host={Boolean(hostId) && message.sender_agent_id === hostId}
@@ -411,7 +456,7 @@ export function MessageList({
         <div className="rm-bubble rm-own-bubble">
           <TextPart
             text={item.text}
-            names={names}
+            names={ownNames}
             markdown={NEW_POST_FORMAT === 'markdown'}
             priority={Number.MAX_SAFE_INTEGER - 1}
           />
@@ -430,6 +475,37 @@ export function MessageList({
         ) : (
           <span className="rm-sending">Sending…</span>
         )}
+      </li>,
+    );
+  if (elricDraft)
+    rows.push(
+      <li
+        key="elric-draft"
+        className="rm-message rm-elric-draft"
+        data-testid="room-elric-draft"
+        aria-busy="true"
+      >
+        <span className="rm-avatar" data-kind="elric" aria-hidden="true">
+          {initialOf(ELRIC_NAME)}
+        </span>
+        <div className="rm-byline">
+          <strong>{ELRIC_NAME}</strong>
+          <span className="rm-badge-elric" title={elricTooltip()}>
+            {ELRIC_AI_TAG}
+          </span>
+        </div>
+        <div className="rm-bubble">
+          {elricDraft.text ? (
+            <TextPart
+              text={elricDraft.text}
+              names={[]}
+              markdown
+              priority={Number.MAX_SAFE_INTEGER}
+            />
+          ) : (
+            <ThinkingDots since={elricDraft.since} className="rm-elric-dots" />
+          )}
+        </div>
       </li>,
     );
 

@@ -589,6 +589,7 @@ test('capacity limits default to the reviewed bounds and accept validated overri
   assert.deepEqual(DEFAULT_LIMITS, {
     operators: 50,
     registrationsPerWindow: 10,
+    apiRequestsPerMinute: 600,
     agentsPerWorkspace: 100,
     roomMembersMax: 10_000,
     roomMembersDefault: 100,
@@ -639,14 +640,33 @@ test('capacity limits default to the reviewed bounds and accept validated overri
     inviteGuestsPerHost: 10_000,
   });
   const raised = loadLimits(
-    { CITY_LIMIT_AGENTS_PER_WORKSPACE: '250', CITY_LIMIT_OPERATORS: '75' },
+    {
+      CITY_LIMIT_AGENTS_PER_WORKSPACE: '250',
+      CITY_LIMIT_OPERATORS: '75',
+      CITY_LIMIT_API_REQUESTS_PER_MINUTE: '100000',
+    },
     { operators: 80 },
   );
   assert.equal(raised.agentsPerWorkspace, 250);
   assert.equal(raised.operators, 80);
+  assert.equal(raised.apiRequestsPerMinute, 100000);
   for (const bad of ['0', '-1', '1.5', 'many', '99999999999'])
     assert.throws(() => loadLimits({ CITY_LIMIT_JOBS_PER_WORKSPACE: bad }), /positive integer/);
   assert.throws(() => loadLimits({}, { jobsPerWorkspace: 0 }), /positive integer/);
+});
+
+test('the per-address API budget is the configured limit (600 a minute by default)', async (t) => {
+  assert.equal(DEFAULT_LIMITS.apiRequestsPerMinute, 600);
+  const app = await createApp({
+    dataDir: 'memory://',
+    startWorkers: false,
+    limits: { apiRequestsPerMinute: 3 },
+  });
+  t.after(() => app.close());
+  const statuses: number[] = [];
+  for (let request = 0; request < 4; request++)
+    statuses.push((await app.inject({ method: 'GET', url: '/api/session' })).statusCode);
+  assert.deepEqual(statuses, [200, 200, 200, 429]);
 });
 
 test('a configured agent limit applies to registration', async (t) => {

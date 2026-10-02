@@ -10,12 +10,22 @@ import {
   treeLevels,
   verifyInclusion,
   verifyAgentProof,
-  verifyChain,
-  verifyCheckpointSignature,
   type AgentProof,
   type ChainProblem,
   type Checkpoint,
 } from '../../shared/count-log/index';
+import {
+  SIGNATURE_WORDS,
+  count,
+  json,
+  load,
+  number,
+  plural,
+  short,
+  type Jwk,
+  type Loaded,
+  type SignatureState,
+} from './countLogClient';
 import './verify.css';
 
 /*
@@ -24,66 +34,6 @@ import './verify.css';
  * code the server uses (shared/count-log): the hash chain, the append-only proofs, the signatures,
  * and, on request, the root from every public leaf. A signed-in owner can check their own agent.
  */
-
-type Jwk = { kid: string; kty: string; crv: string; x: string };
-type SignatureState = 'valid' | 'invalid' | 'unsigned' | 'unsupported' | 'unknown-key';
-type Loaded = {
-  checkpoints: Checkpoint[];
-  problems: ChainProblem[];
-  signatures: Record<string, SignatureState>;
-  live: number | null;
-};
-
-const count = (cp: Pick<Checkpoint, 'tree_size' | 'withdrawn'>) => cp.tree_size - cp.withdrawn;
-const number = new Intl.NumberFormat('en-US');
-const short = (hex: string) => `${hex.slice(0, 12)}…${hex.slice(-6)}`;
-const plural = (n: number, one: string, many: string) =>
-  `${number.format(n)} ${n === 1 ? one : many}`;
-
-async function json<T>(path: string): Promise<T> {
-  const response = await fetch(path, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error(`${path} ${response.status}`);
-  return (await response.json()) as T;
-}
-
-async function ed25519Available(): Promise<boolean> {
-  try {
-    await crypto.subtle.importKey(
-      'jwk',
-      { kty: 'OKP', crv: 'Ed25519', x: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo' },
-      { name: 'Ed25519' },
-      false,
-      ['verify'],
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function load(): Promise<Loaded> {
-  const [{ checkpoints }, jwks, stats] = await Promise.all([
-    json<{ checkpoints: Checkpoint[] }>('/api/public/count-log/checkpoints'),
-    json<{ keys: Jwk[] }>('/.well-known/jwks.json').catch(() => ({ keys: [] as Jwk[] })),
-    json<{ ai_agents_total: number }>('/api/public/stats').catch(() => null),
-  ]);
-  const problems = await verifyChain(checkpoints);
-  const signatures: Record<string, SignatureState> = {};
-  const canVerify = await ed25519Available();
-  for (const cp of checkpoints) {
-    if (!cp.signature) signatures[cp.date] = 'unsigned';
-    else if (!canVerify) signatures[cp.date] = 'unsupported';
-    else {
-      const key = jwks.keys.find((k) => k.kid === cp.signature!.kid);
-      signatures[cp.date] = !key
-        ? 'unknown-key'
-        : (await verifyCheckpointSignature(cp.hash, cp.signature.sig, key))
-          ? 'valid'
-          : 'invalid';
-    }
-  }
-  return { checkpoints, problems, signatures, live: stats?.ai_agents_total ?? null };
-}
 
 function Mark({ ok, children }: { ok: boolean; children: React.ReactNode }) {
   return (
@@ -96,14 +46,6 @@ function Mark({ ok, children }: { ok: boolean; children: React.ReactNode }) {
     </li>
   );
 }
-
-const SIGNATURE_WORDS: Record<SignatureState, string> = {
-  valid: 'signed ✓',
-  invalid: 'signature does not verify',
-  unsigned: 'unsigned',
-  unsupported: 'signature not checked (this browser has no Ed25519)',
-  'unknown-key': 'signing key not published',
-};
 
 /** Recomputes the latest root from every public leaf, on request. */
 function LeavesCheck({ latest }: { latest: Checkpoint }) {
@@ -154,50 +96,48 @@ function LeavesCheck({ latest }: { latest: Checkpoint }) {
   );
 }
 
-/** Page size of the entry list (the leaves route serves up to 10,000 per request). */
-const ENTRY_PAGE = 50;
+/** How many of the newest entries the verify page previews; the Live log has them all. */
+const PREVIEW = 10;
 
 /**
- * The public log entries (leaves), for reading only: each row opens to its full fingerprint and
- * the raw page. Checking them against a checkpoint is LeavesCheck's job; this list verifies nothing.
+ * The 10 newest public log entries (leaves), newest first, and the way to the Live log, which
+ * lists every entry with paging, search and a proof per entry. This list verifies nothing.
  */
 function Entries() {
   const [page, setPage] = useState<{
     tree_size: number;
-    leaves: { idx: number; leaf_hash: string }[];
+    leaves: { idx: number; leaf_hash: string; day?: string }[];
   } | null>(null);
   const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState('');
-  const load = useCallback(async (from: number) => {
-    setLoading(true);
+  const load = useCallback(async () => {
     setError(false);
     try {
-      const next = await json<{ tree_size: number; leaves: { idx: number; leaf_hash: string }[] }>(
-        `/api/public/count-log/leaves?from=${from}&to=${from + ENTRY_PAGE}`,
-      );
-      setPage((current) => ({
-        tree_size: next.tree_size,
-        leaves: from === 0 ? next.leaves : [...(current?.leaves ?? []), ...next.leaves],
-      }));
+      const head = await json<{ tree_size: number }>('/api/public/count-log/leaves?from=0&to=1');
+      const from = Math.max(0, head.tree_size - PREVIEW);
+      const next = head.tree_size
+        ? await json<{
+            tree_size: number;
+            leaves: { idx: number; leaf_hash: string; day?: string }[];
+          }>(`/api/public/count-log/leaves?from=${from}&to=${head.tree_size}`)
+        : { tree_size: 0, leaves: [] };
+      setPage({ tree_size: next.tree_size, leaves: [...next.leaves].reverse() });
     } catch {
       setError(true);
-    } finally {
-      setLoading(false);
     }
   }, []);
   useEffect(() => {
-    void load(0);
+    void load();
   }, [load]);
+  const link = (
+    <a className="vf-log-link" href="/downtown/log">
+      See the live log →
+    </a>
+  );
   if (error)
     return (
       <p className="vf-bad-note" role="alert">
         The entries could not be loaded.{' '}
-        <button
-          type="button"
-          className="text-link"
-          onClick={() => void load(page?.leaves.length ?? 0)}
-        >
+        <button type="button" className="text-link" onClick={() => void load()}>
           Retry
         </button>
       </p>
@@ -212,54 +152,33 @@ function Entries() {
     return (
       <p className="vf-muted">
         No entries yet. Agents enter the log at the first daily checkpoint (00:10 UTC); from then on
-        every entry is listed here.
+        every entry is listed in the live log.
       </p>
     );
   return (
     <>
       <p className="vf-muted">
-        {plural(page.tree_size, 'entry', 'entries')} in the log. Open one to see its full
-        fingerprint.
+        {page.leaves.length === page.tree_size
+          ? `${page.tree_size === 1 ? 'The only entry' : `All ${plural(page.tree_size, 'entry', 'entries')}`}, newest first.`
+          : `The ${number.format(page.leaves.length)} newest of ${plural(page.tree_size, 'entry', 'entries')}.`}
       </p>
-      <input
-        className="vf-input vf-filter"
-        type="search"
-        aria-label="Search the entries shown"
-        placeholder="Search by fingerprint"
-        value={filter}
-        onChange={(event) => setFilter(event.target.value.trim().toLowerCase())}
-        spellCheck={false}
-      />
       <ol className="vf-entries">
-        {page.leaves
-          .filter((leaf) => !filter || leaf.leaf_hash.toLowerCase().includes(filter))
-          .map((leaf) => (
-            <li key={leaf.idx}>
-              <details>
-                <summary>
-                  <span className="vf-entry-number">#{number.format(leaf.idx + 1)}</span>
-                  <span className="vf-mono">{short(leaf.leaf_hash)}</span>
-                </summary>
-                <p className="vf-mono vf-entry-full">{leaf.leaf_hash}</p>
-                <a href={`/api/public/count-log/leaves?from=${leaf.idx}&to=${leaf.idx + 1}`}>
-                  This entry as data
-                </a>
-              </details>
-            </li>
-          ))}
+        {page.leaves.map((leaf) => (
+          <li key={leaf.idx}>
+            <details>
+              <summary>
+                <span className="vf-entry-number">#{number.format(leaf.idx + 1)}</span>
+                <span className="vf-mono">{short(leaf.leaf_hash)}</span>
+              </summary>
+              <p className="vf-mono vf-entry-full">{leaf.leaf_hash}</p>
+              <a href={`/api/public/count-log/leaves?from=${leaf.idx}&to=${leaf.idx + 1}`}>
+                This entry as data
+              </a>
+            </details>
+          </li>
+        ))}
       </ol>
-      {page.leaves.length < page.tree_size ? (
-        <button
-          type="button"
-          className="button secondary compact"
-          disabled={loading}
-          onClick={() => void load(page.leaves.length)}
-        >
-          {loading
-            ? 'Loading…'
-            : `Show the next ${number.format(Math.min(ENTRY_PAGE, page.tree_size - page.leaves.length))}`}
-        </button>
-      ) : null}
+      {link}
     </>
   );
 }
@@ -707,8 +626,8 @@ function DataPanels({ data }: { data: Loaded }) {
       </DataPanel>
       <ul className="vf-list">
         <li>
-          <a href="https://github.com/centralcity-ai/transparency">
-            The public copy on GitHub (centralcity-ai/transparency)
+          <a href="https://github.com/centralcity-ai-org/transparency">
+            The public copy on GitHub (centralcity-ai-org/transparency)
           </a>
           : every checkpoint is also committed there daily, an independent timestamped record.
         </li>
@@ -844,32 +763,6 @@ export function VerifyPage() {
                       </p>
                       <LeavesCheck latest={latest} />
                     </div>
-                    <dl className="vf-sub">
-                      <div>
-                        <dt>In a person’s account</dt>
-                        <dd>{number.format(latest.subcounts.in_person_accounts)}</dd>
-                      </div>
-                      <div>
-                        <dt>In an AI-owned workspace</dt>
-                        <dd>{number.format(latest.subcounts.in_ai_workspaces)}</dd>
-                      </div>
-                      <div>
-                        <dt>Unclaimed (created without an account)</dt>
-                        <dd>{number.format(latest.subcounts.unclaimed)}</dd>
-                      </div>
-                      <div>
-                        <dt>Of all these, revoked since</dt>
-                        <dd>{number.format(latest.subcounts.revoked)}</dd>
-                      </div>
-                      <div>
-                        <dt>Withdrawn from the count</dt>
-                        <dd>{number.format(latest.withdrawn)}</dd>
-                      </div>
-                    </dl>
-                    <p className="vf-muted">
-                      Unclaimed agents can be created by an AI without an account, so they are shown
-                      separately. Withdrawn agents stay in the log and are listed publicly.
-                    </p>
                   </>
                 ) : (
                   <>

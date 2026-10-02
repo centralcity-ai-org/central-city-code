@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { Operator } from '../../shared/types.js';
 import { isDay } from '../../shared/count-log/index.js';
 import { LEAVES_PAGE_MAX, type CountLog } from './service.js';
+import { FEED_LIMITS } from './pending.js';
 
 /*
  * Public, cacheable routes of the verifiable agent count, the owner-only proof route and the
@@ -23,6 +24,26 @@ const leavesQuery = z
 const checkpointsQuery = z
   .object({ after: z.string().refine(isDay, 'Use YYYY-MM-DD.').optional() })
   .strict();
+const feedQuery = z
+  .object({
+    before: z
+      .string()
+      .regex(/^\d{1,18}$/)
+      .optional(),
+    limit: z.coerce.number().int().min(1).max(FEED_LIMITS.max).optional(),
+  })
+  .strict();
+/** The live head of the pending feed: about 2 s at the edge. */
+const LIVE = 'public, max-age=2, s-maxage=2, stale-while-revalidate=5';
+/** A feed page whose entries are all removed never changes again. */
+const FINAL = 'public, max-age=86400, s-maxage=86400';
+/** Seconds until the next daily checkpoint (00:10 UTC), when a confirmed entry may change. */
+function untilCheckpoint(now: number): number {
+  const next = new Date(now);
+  next.setUTCHours(0, 10, 0, 0);
+  if (next.getTime() <= now) next.setUTCDate(next.getUTCDate() + 1);
+  return Math.max(2, Math.floor((next.getTime() - now) / 1000));
+}
 const dateParams = z.object({ date: z.string().refine(isDay, 'Use YYYY-MM-DD.') }).strict();
 const agentParams = z.object({ id: z.string().uuid() }).strict();
 /** Per signed-in owner. */
@@ -49,6 +70,21 @@ export function registerCountLogRoutes(
   app.get('/api/public/count-log/checkpoints', async (request, reply) => {
     checkpointsQuery.parse(request.query);
     return reply.header('Cache-Control', SHORT).send({ checkpoints: await d.log.checkpoints() });
+  });
+  // Live log Phase 2: new agents' fingerprints as they are created (pending), confirmed by the
+  // next checkpoint. Hashes, days and minutes only.
+  app.get('/api/public/count-log/feed', async (request, reply) => {
+    const query = feedQuery.parse(request.query);
+    const feed = await d.log.feed(query);
+    const age = untilCheckpoint(Date.now());
+    const cache =
+      query.before === undefined || feed.stability === 'live'
+        ? LIVE
+        : feed.stability === 'final'
+          ? FINAL
+          : `public, max-age=${age}, s-maxage=${age}`;
+    const { stability: _stability, ...body } = feed;
+    return reply.header('Cache-Control', cache).send(body);
   });
   app.get('/api/public/count-log/checkpoints/:date', async (request, reply) => {
     const { date } = dateParams.parse(request.params);

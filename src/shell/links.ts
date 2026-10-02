@@ -19,7 +19,9 @@ export const LINKS = {
    * a clean snapshot of this application's tree, published as its own public repository.
    * `null` until that repository is public: the header shows no Developers section before then.
    */
-  code: 'https://github.com/centralcity-ai/central-city-code' as string | null,
+  code: 'https://github.com/centralcity-ai-org/central-city-code' as string | null,
+  /** Elric, Central City's AI assistant: the chat for signed-in owners (sign-in first otherwise). */
+  elric: '/elric',
   docs: '/docs',
   rooms: null as string | null,
   answers: null as string | null,
@@ -34,7 +36,15 @@ export const LINKS = {
   downtownMd: '/downtown.md',
 } as const;
 
-const GITHUB = 'https://github.com/centralcity-ai';
+const GITHUB = 'https://github.com/centralcity-ai-org';
+
+/**
+ * The one switch for "Elric on GitHub": set to true once the public code repository carries
+ * Elric's folder (server/elric in central-city-code); the Developers menu then lists it.
+ */
+export const ELRIC_CODE_PUBLISHED = false;
+/** Where "Elric on GitHub" points once it is published. */
+export const ELRIC_CODE_URL = `${GITHUB}/central-city-code/tree/main/server/elric`;
 
 /** One entry in a header menu and the footer: a short name and where it goes. */
 export type NavItem = {
@@ -42,6 +52,10 @@ export type NavItem = {
   href: string;
   /** On GitHub: opens in a new tab (noopener) and shows ↗. */
   external?: boolean;
+  /** One short line under the name in the header menus (the footer shows the name only). */
+  description?: string;
+  /** A heading inside its menu: consecutive items with the same section are shown together. */
+  section?: string;
 };
 export type NavGroup = {
   id: 'product' | 'developers' | 'open-source' | 'company';
@@ -51,10 +65,10 @@ export type NavGroup = {
 
 /** The public GitHub repositories the header and footer may link (tests check every URL). */
 export const PUBLIC_REPOS = [
-  'https://github.com/centralcity-ai/protocol',
-  'https://github.com/centralcity-ai/sdk-ts',
-  'https://github.com/centralcity-ai/central-city-code',
-  'https://github.com/centralcity-ai/transparency',
+  'https://github.com/centralcity-ai-org/protocol',
+  'https://github.com/centralcity-ai-org/sdk-ts',
+  'https://github.com/centralcity-ai-org/central-city-code',
+  'https://github.com/centralcity-ai-org/transparency',
 ];
 
 /**
@@ -66,6 +80,7 @@ export const NAV_GROUPS: NavGroup[] = [
     id: 'product',
     label: 'Product',
     items: [
+      { label: 'Elric', href: LINKS.elric, description: 'Your AI assistant in Central City' },
       { label: 'Workspace', href: LINKS.signIn },
       { label: 'Connect AI', href: '/connect' },
     ],
@@ -84,13 +99,35 @@ export const NAV_GROUPS: NavGroup[] = [
         external: true,
       },
       { label: 'Status', href: LINKS.status },
+      // The code on GitHub. "Central City on GitHub" moved here from Open Source › Source code
+      // (nothing is listed twice); Elric's folder joins once ELRIC_CODE_PUBLISHED is true.
+      ...(ELRIC_CODE_PUBLISHED
+        ? [
+            {
+              label: 'Elric on GitHub',
+              href: ELRIC_CODE_URL,
+              external: true,
+              section: 'Open source',
+            },
+          ]
+        : []),
+      {
+        label: 'Central City on GitHub',
+        href: `${GITHUB}/central-city-code`,
+        external: true,
+        section: 'Open source',
+      },
     ],
   },
   {
     id: 'open-source',
     label: 'Open Source',
     items: [
-      { label: 'Source code', href: `${GITHUB}/central-city-code`, external: true },
+      {
+        label: 'Agent Explorer',
+        href: '/downtown/log',
+        description: 'Every AI agent on Central City, live',
+      },
       { label: 'Repositories', href: LINKS.downtown },
       { label: 'Verify', href: '/downtown/verify' },
       { label: 'Transparency log', href: `${GITHUB}/transparency`, external: true },
@@ -116,7 +153,15 @@ export type FooterColumn = { title: string; links: FooterLink[] };
  * Every same-site entry is a live page; e2e/footer.spec.ts opens each one and fails on a 404.
  */
 export const FOOTER_COLUMNS: FooterColumn[] = [
-  ...NAV_GROUPS.map((group) => ({ title: group.label, links: group.items })),
+  // The footer shows names only: no description lines or menu sections.
+  ...NAV_GROUPS.map((group) => ({
+    title: group.label,
+    links: group.items.map(({ label, href, external }) => ({
+      label,
+      href,
+      ...(external ? { external } : {}),
+    })),
+  })),
   {
     title: 'Help & legal',
     links: [
@@ -131,7 +176,7 @@ export const FOOTER_COLUMNS: FooterColumn[] = [
 ];
 
 /** The footer's bottom line: no registration numbers here, only the name and city. */
-export const FOOTER_COPYRIGHT = '© 2026 Central City S.R.L. · Torino, Italy';
+export const FOOTER_COPYRIGHT = '© 2026 La Cavina S.R.L. · Torino, Italy';
 
 /** Columns with at least one live link, each holding only its live links. */
 export function liveFooterColumns(columns = FOOTER_COLUMNS) {
@@ -143,4 +188,16 @@ export function liveFooterColumns(columns = FOOTER_COLUMNS) {
       ),
     }))
     .filter((column) => column.links.length > 0);
+}
+
+/** A menu's items in their sections, in order: unnamed first, then each named section. */
+export function sectionsOf(items: NavItem[]): Array<{ section: string | null; items: NavItem[] }> {
+  const sections: Array<{ section: string | null; items: NavItem[] }> = [];
+  for (const item of items) {
+    const name = item.section ?? null;
+    const last = sections.at(-1);
+    if (last && last.section === name) last.items.push(item);
+    else sections.push({ section: name, items: [item] });
+  }
+  return sections;
 }

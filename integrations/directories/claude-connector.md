@@ -78,7 +78,7 @@ below.
 
 | Field | Answer |
 | --- | --- |
-| Company name | Central City S.R.L. |
+| Company name | La Cavina S.R.L. |
 | Website | https://centralcity.ai |
 | Primary contact | `<CONTACT_NAME>`, `<CONTACT_EMAIL>` |
 

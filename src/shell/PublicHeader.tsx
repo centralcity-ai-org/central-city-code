@@ -13,7 +13,7 @@ import {
 import { ChevronDown, Menu, X } from 'lucide-react';
 import { Lockup, SkipLink } from '../brand';
 import { ThemeToggle } from './theme';
-import { LINKS, NAV_GROUPS, type NavGroup, type NavItem } from './links';
+import { LINKS, NAV_GROUPS, sectionsOf, type NavGroup, type NavItem } from './links';
 import { useInviteHref } from './navigation';
 import './shell.css';
 import { api } from '../api';
@@ -73,6 +73,7 @@ export function NavLink({
   current: PublicPage;
   signedIn: boolean;
 }) {
+  const describedBy = useId();
   return (
     <a
       className="cc-nav-link"
@@ -80,8 +81,19 @@ export function NavLink({
       href={signedIn && item.href === LINKS.signIn ? APP_HREF : item.href}
       aria-current={CURRENT_HREF[current] === item.href ? 'page' : undefined}
       {...(item.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      {...(item.description ? { 'aria-describedby': describedBy } : {})}
+      data-described={item.description ? 'true' : undefined}
     >
-      {item.label}
+      {item.description ? (
+        <span className="cc-nav-text">
+          <span>{item.label}</span>
+          <span id={describedBy} className="cc-nav-description">
+            {item.description}
+          </span>
+        </span>
+      ) : (
+        item.label
+      )}
       {item.external ? (
         <>
           <span className="cc-nav-external" aria-hidden="true">
@@ -234,13 +246,18 @@ function DesktopNav({
               }}
             >
               <p className="cc-mega-label">{group.label}</p>
-              <ul role="list">
-                {group.items.map((item) => (
-                  <li key={item.href}>
-                    <NavLink item={item} current={current} signedIn={signedIn} />
-                  </li>
-                ))}
-              </ul>
+              {sectionsOf(group.items).map(({ section, items }) => (
+                <div key={section ?? ''} className="cc-mega-section">
+                  {section ? <p className="cc-mega-label">{section}</p> : null}
+                  <ul role="list" aria-label={section ?? undefined}>
+                    {items.map((item) => (
+                      <li key={item.href}>
+                        <NavLink item={item} current={current} signedIn={signedIn} />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </div>
           ))}
         </div>

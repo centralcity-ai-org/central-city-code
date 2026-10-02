@@ -221,6 +221,54 @@
   outline: 2px solid var(--border-focus, var(--focus));
   outline-offset: 2px;
 }
+.auth-v8-alt {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.auth-v8-or {
+  font-size: 12.5px;
+  text-align: center;
+  color: var(--text-secondary, var(--text-muted));
+}
+/* Secondary action in the auth card (Continue with Google, Unlink), in the site font. */
+.auth-v8-google {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 12px;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text-primary, var(--text));
+  cursor: pointer;
+}
+.auth-v8-google:hover:not(:disabled) {
+  background: var(--bg-surface, var(--surface-sunken));
+}
+.auth-v8-google:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+.auth-v8-google:focus-visible {
+  outline: 2px solid var(--border-focus, var(--focus));
+  outline-offset: 2px;
+}
+.account-card {
+  display: grid;
+  gap: 12px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+.account-heading {
+  margin: 8px 0 0;
+  font-size: 15px;
+}
 .auth-v8-switch {
   margin: 20px 0 0;
   font-size: 13px;
@@ -258,4 +306,16 @@
   .auth-v8-card {
     padding: 28px 20px;
   }
+}
+
+/* Onboarding (accounts created with Google): the Terms/Privacy acceptance checkbox. */
+.auth-v8-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 400;
+}
+.auth-v8-check input {
+  width: auto;
+  margin-top: 3px;
 }

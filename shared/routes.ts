@@ -40,6 +40,7 @@ export const CLIENT_ROUTES: readonly ClientRoute[] = Object.freeze([
   route('/agents'),
   route('/agents/:id'),
   route('/answers'),
+  route('/elric'),
   // Result permalinks: the same shell for every id; nothing is revealed signed out (A6).
   route('/results/:id'),
   route('/settings'),
@@ -59,6 +60,8 @@ export const CLIENT_ROUTES: readonly ClientRoute[] = Object.freeze([
   route('/contact'),
   // The verifiable agent count ("Verify here" on the homepage ticker).
   route('/downtown/verify'),
+  // The Live log: the count log's entries, newest first.
+  route('/downtown/log'),
   // The docs site.
   route('/docs'),
   route('/docs/start'),

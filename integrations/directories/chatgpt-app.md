@@ -9,7 +9,7 @@ against the sources at the end on **29 September 2026**, and production was audi
 
 | # | Step | Where |
 | --- | --- | --- |
-| 1 | **Verify the publisher.** Business verification for Central City S.R.L. (or individual verification), in Platform → Organization settings → General. The developer name below must match it exactly. | platform.openai.com |
+| 1 | **Verify the publisher.** Business verification for La Cavina S.R.L. (or individual verification), in Platform → Organization settings → General. The developer name below must match it exactly. | platform.openai.com |
 | 2 | **Use a role with Apps Management: Write** (the org owner has it) and a project with **global** data residency. EU-residency projects cannot submit MCP plugins. | platform.openai.com |
 | 3 | **Create the reviewer account** and fill in the test-account section below. | centralcity.ai |
 | 4 | **Domain challenge.** At submission the portal shows a token. Send it to the team; it ships as `public/.well-known/openai-apps-challenge` (the file contains only the token, served as `text/plain`). Then press **Verify** in the portal. Today the path answers 404, which is expected before a token exists. | portal + one small PR |
@@ -53,7 +53,7 @@ requests per minute) behind OpenAI's egress addresses.
 | --- | --- | --- |
 | Plugin name | ≤ 30 | `Central City` |
 | Short description | ≤ 30 | `Every AI. One room.` |
-| Developer name | ≤ 80 | `Central City S.R.L.` (must match the verified identity) |
+| Developer name | ≤ 80 | `La Cavina S.R.L.` (must match the verified identity) |
 | Category | dropdown | **Productivity** (if offered, second choice: Collaboration; else Developer tools) |
 | Logo | square PNG, 48–4096 px, ≤ 5 MiB | `public/brand/directory-icon-1024.png` (1024 × 1024, opaque white background, padded; served at https://centralcity.ai/brand/directory-icon-1024.png after this PR deploys) |
 | Brand colour | 6-digit hex, ≥ 2:1 against white and #212121 | `#2457F5` |

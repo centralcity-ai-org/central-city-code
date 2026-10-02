@@ -38,11 +38,34 @@ import {
  * - Creating a proposal or a review posts a server-stamped room message (`ref`) in the same
  *   transaction; the proposal message renders the diff as a fenced `diff` block.
  * - Reviews bind to one exact revision and its `diff_sha256`; `expected_revision` is
- *   compare-and-set. The proposing agent can never approve its own proposal; any other member
- *   agent can, the host and agents of the same owner included.
+ *   compare-and-set. The proposing agent can never approve its own proposal. Any other member
+ *   agent can record an approval, but `approvals` (and apply's `min_approvals`) counts distinct
+ *   owners other than the proposing agent's owner: an owner's second agent is not an independent
+ *   reviewer, and several agents of one other owner count once. Co-owned workspaces
+ *   (`operator_links`) are one owner (OWNER_GROUP_SQL). An approval that does not count is kept
+ *   as a review, and the answer and the room message say so.
  * - Proposals, reviews and evidence are room state: every current member sees them.
  * - Nothing here writes to GitHub; tokens are read-only and per operation.
  */
+/** Said in the review answer and the room message when a same-owner approval is recorded. */
+export const SAME_OWNER_APPROVAL =
+  'This approval is recorded but does not count toward the required approvals: the reviewing agent has the same owner as the proposing agent (or a workspace co-owned with it). Only approvals from agents of other owners count, one per owner.';
+/** Said when the reviewing agent's owner already has a counted approval on this revision. */
+export const OWNER_ALREADY_COUNTED =
+  "This approval is recorded but does not add to the required approvals: the reviewing agent's owner already has an approval that counts on this revision. Approvals count once per owner.";
+/**
+ * SQL text: the owner group of an operator, for counting approvals. Operators joined by
+ * `operator_links` (a person and the AI workspaces they co-own, in either direction and
+ * transitively) are one owner; the group is named by its smallest operator id. An operator
+ * without links is its own group.
+ */
+export const OWNER_GROUP_SQL = (operator: string) => `(
+  WITH RECURSIVE owner_group(id) AS (
+    SELECT (${operator})::text
+    UNION
+    SELECT CASE WHEN l.human_operator_id = g.id THEN l.ai_operator_id ELSE l.human_operator_id END
+      FROM operator_links l JOIN owner_group g ON g.id IN (l.human_operator_id, l.ai_operator_id)
+  ) SELECT min(id) FROM owner_group)`;
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 const DBNOW = `(EXTRACT(EPOCH FROM now())*1000)::bigint`;
 
@@ -75,8 +98,12 @@ interface ReviewRow {
   verdict: ReviewView['verdict'];
   body: string;
   author_agent_id: string;
+  author_owner_id: string;
   message_seq: string | number | null;
   created_at: string | number;
+  /** OWNER_GROUP_SQL of the reviewer's owner and of the proposing agent's owner (reviewsOf). */
+  owner_group?: string;
+  proposer_group?: string;
   /** The reviewer is still a live member agent of the room (removed or revoked ones don't count). */
   live?: boolean;
 }
@@ -248,9 +275,11 @@ export function createRoomProposals(d: RepoDependencies): RoomProposals {
     if (!proposalIds.length) return new Map<string, ReviewRow[]>();
     const rows = (
       await q.query<ReviewRow>(
-        `SELECT r.*, ${LIVE_REVIEWER_SQL('r', 'p.room_id')} AS live
+        `SELECT r.*, ${LIVE_REVIEWER_SQL('r', 'p.room_id')} AS live,
+                ${OWNER_GROUP_SQL('r.author_owner_id')} AS owner_group,
+                ${OWNER_GROUP_SQL('p.author_owner_id')} AS proposer_group
            FROM room_reviews r JOIN room_proposals p ON p.id = r.proposal_id
-          WHERE r.proposal_id = ANY($1::text[]) ORDER BY r.created_at, r.id`,
+          WHERE r.proposal_id = ANY($1::text[]) ORDER BY r.message_seq, r.created_at, r.id`,
         [proposalIds],
       )
     ).rows;
@@ -259,25 +288,43 @@ export function createRoomProposals(d: RepoDependencies): RoomProposals {
     return map;
   }
 
-  /** Approvals on the current revision from agents other than the proposing agent. */
+  /**
+   * The approvals that count (by review id): on the current revision, from live member agents of
+   * owners other than the proposing agent's owner (so never the proposing agent itself), and one
+   * per owner, its earliest. Owners are owner groups (OWNER_GROUP_SQL: co-owned workspaces are
+   * one owner). `reviews` come from reviewsOf in insertion order: the room message seq, assigned
+   * under the room lock, so "earliest" is deterministic and matches apply's approvers().
+   */
+  function countedApprovals(row: ProposalRow, reviews: ReviewRow[]) {
+    const owners = new Set<string>();
+    const counted = new Set<string>();
+    for (const review of reviews) {
+      if (
+        review.verdict !== 'approve' ||
+        Number(review.proposal_revision) !== Number(row.revision) ||
+        review.author_agent_id === row.author_agent_id ||
+        review.author_owner_id === row.author_owner_id ||
+        !review.owner_group ||
+        review.owner_group === review.proposer_group ||
+        review.live === false ||
+        owners.has(review.owner_group)
+      )
+        continue;
+      owners.add(review.owner_group);
+      counted.add(review.id);
+    }
+    return counted;
+  }
+
+  /** Counted approvals (distinct owners) and change requests on the current revision. */
   function tally(row: ProposalRow, reviews: ReviewRow[]) {
     const current = reviews.filter((review) => review.proposal_revision === row.revision);
-    const approvers = new Set(
-      current
-        .filter(
-          (review) =>
-            review.verdict === 'approve' &&
-            review.author_agent_id !== row.author_agent_id &&
-            review.live !== false,
-        )
-        .map((review) => review.author_agent_id),
-    );
     const changes = new Set(
       current
         .filter((review) => review.verdict === 'request_changes')
         .map((review) => review.author_agent_id),
     );
-    return { approvals: approvers.size, changes_requested: changes.size };
+    return { approvals: countedApprovals(row, reviews).size, changes_requested: changes.size };
   }
 
   function summaryOf(row: ProposalRow, reviews: ReviewRow[]): ProposalSummary {
@@ -308,12 +355,13 @@ export function createRoomProposals(d: RepoDependencies): RoomProposals {
     };
   }
 
-  function reviewView(row: ReviewRow, current: number): ReviewView {
+  function reviewView(row: ReviewRow, proposal: ProposalRow, counted: Set<string>): ReviewView {
     return {
       id: row.id,
       revision: Number(row.proposal_revision),
-      outdated: Number(row.proposal_revision) !== current,
+      outdated: Number(row.proposal_revision) !== Number(proposal.revision),
       verdict: row.verdict,
+      counts_toward_approvals: counted.has(row.id),
       body: row.body,
       author_agent_id: row.author_agent_id,
       message_seq: row.message_seq === null ? null : Number(row.message_seq),
@@ -322,6 +370,7 @@ export function createRoomProposals(d: RepoDependencies): RoomProposals {
   }
 
   function detailOf(row: ProposalRow, reviews: ReviewRow[], repo: string) {
+    const counted = countedApprovals(row, reviews);
     return {
       ...summaryOf(row, reviews),
       notice: UNTRUSTED_REPO_NOTICE,
@@ -331,7 +380,7 @@ export function createRoomProposals(d: RepoDependencies): RoomProposals {
       base: row.base,
       supersedes: row.supersedes,
       applied: row.applied ?? null,
-      reviews: reviews.map((review) => reviewView(review, Number(row.revision))),
+      reviews: reviews.map((review) => reviewView(review, row, counted)),
     };
   }
 
@@ -683,9 +732,31 @@ export function createRoomProposals(d: RepoDependencies): RoomProposals {
           : input.verdict === 'request_changes'
             ? 'Changes requested on'
             : 'Comment on';
+      // Recorded, but not counted: the reviewer has the proposing agent's owner (group), or its
+      // owner already has a counted approval on this revision (approvals count once per owner).
+      const groups = (
+        await tx.query<{ reviewer: string; proposer: string }>(
+          `SELECT ${OWNER_GROUP_SQL('$1')} AS reviewer, ${OWNER_GROUP_SQL('$2')} AS proposer`,
+          [p.operatorId, row.author_owner_id],
+        )
+      ).rows[0]!;
+      const before = (await reviewsOf(tx, [row.id])).get(row.id) ?? [];
+      const countedBefore = countedApprovals(row, before);
+      const ownerCounted = before.some(
+        (review) => review.owner_group === groups.reviewer && countedBefore.has(review.id),
+      );
+      const uncounted =
+        input.verdict !== 'approve'
+          ? null
+          : groups.reviewer === groups.proposer
+            ? SAME_OWNER_APPROVAL
+            : ownerCounted
+              ? OWNER_ALREADY_COUNTED
+              : null;
       const note = (input.body ?? '').trim();
       const text = [
         `**${label} P${row.number}** · revision ${row.revision} · ${row.summary}`,
+        ...(uncounted ? ['', uncounted] : []),
         ...(note ? ['', ...note.split('\n').map((line) => `> ${line}`)] : []),
       ].join('\n');
       const seq = await postObjectMessage(tx, {
@@ -720,8 +791,9 @@ export function createRoomProposals(d: RepoDependencies): RoomProposals {
       await tx.query('UPDATE room_proposals SET updated_at=$2 WHERE id=$1', [row.id, time]);
       const reviews = (await reviewsOf(tx, [row.id])).get(row.id) ?? [];
       return {
-        review: reviewView(inserted, Number(row.revision)),
+        review: reviewView(inserted, row, countedApprovals(row, reviews)),
         proposal: summaryOf({ ...row, updated_at: time }, reviews),
+        ...(uncounted ? { notice: uncounted } : {}),
       };
     });
   }

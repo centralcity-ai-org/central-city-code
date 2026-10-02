@@ -344,8 +344,17 @@ const roomMessage = z.object({
   mentions_you: z.boolean().optional(),
   /** 'person': a person wrote it themselves; 'system': a line the server wrote. */
   sender_kind: z.enum(['agent', 'person', 'system']),
-  // Server-stamped label of an automatic reply (provider and model), else null.
-  auto_reply: z.object({ provider: z.enum(['openai', 'anthropic']), model: z.string() }).nullable(),
+  // Server-stamped label of an automatic reply (provider and model), else null. Elric stamps
+  // provider 'elric' and a public label "Elric · AI" (or "Elric · automated" for Tier 0) (docs/ELRIC.md).
+  auto_reply: z
+    .object({
+      provider: z.enum(['openai', 'anthropic', 'elric']),
+      model: z.string(),
+      label: z.string().optional(),
+      /** Elric: the pending action this reply waits on (the owner approves or rejects it). */
+      pending_id: z.string().optional(),
+    })
+    .nullable(),
 });
 
 export const openOnlyOutputSchemas = {
@@ -552,7 +561,7 @@ export const remoteOutputSchemas = {
         // Server-derived member status (docs/MEMBER_STATUS.md).
         status: z.enum(['active', 'idle', 'offline', 'access_expired']),
         last_active_at: z.string().nullable(),
-        auto_reply: z.object({ provider: z.enum(['openai', 'anthropic']) }).nullable(),
+        auto_reply: z.object({ provider: z.enum(['openai', 'anthropic', 'elric']) }).nullable(),
         // An invited AI that joined through an invite link without any account (not role 'guest').
         // Always sent; optional in the schema so answers of earlier servers stay valid.
         guest: z.boolean().optional(),

@@ -1,0 +1,235 @@
+/* The owner's Elric page (ElricActivity.tsx). Theme tokens only, so light and dark follow. */
+.elric-page {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+.elric-head,
+.elric-log {
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.elric-head {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+.elric-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.elric-state h2,
+.elric-log-head h2 {
+  margin: 0;
+}
+.elric-chip,
+.elric-result {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--neutral-tint);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.elric-chip.active,
+.elric-result.posted {
+  background: var(--success-tint);
+  color: var(--success);
+}
+.elric-chip.paused,
+.elric-result.limit,
+.elric-result.cancelled {
+  background: var(--warning-tint);
+  color: var(--warning);
+}
+.elric-chip.revoked,
+.elric-result.refused,
+.elric-result.error {
+  background: var(--error-tint);
+  color: var(--error);
+}
+.elric-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.elric-usage {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.elric-usage > div {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m, 8px);
+  padding: 12px 14px;
+  background: var(--surface-sunken);
+}
+.elric-usage dt,
+.elric-turn-facts dt,
+.elric-filters span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.elric-usage dd {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+/* Today's use per kind (U3): a thin meter under the count; amber from 80%, red at the limit. */
+.elric-meter {
+  display: block;
+  height: 6px;
+  margin-top: 8px;
+  border-radius: 9999px;
+  background: var(--border);
+  overflow: hidden;
+}
+.elric-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary, #0066ff);
+  transition: width 200ms ease;
+}
+.elric-meter[data-level='high'] > span {
+  background: var(--warning);
+}
+.elric-meter[data-level='full'] > span {
+  background: var(--error);
+}
+@media (prefers-reduced-motion: reduce) {
+  .elric-meter > span {
+    transition: none;
+  }
+}
+.elric-log-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.elric-filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.elric-filters label {
+  display: grid;
+  gap: 4px;
+}
+.elric-filters select {
+  min-height: 40px;
+  min-width: 160px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control, 8px);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 10px;
+}
+.elric-turns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.elric-turn {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m, 8px);
+  padding: 14px 16px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.elric-turn-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.elric-turn-main strong {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.elric-turn-main time {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.elric-turn-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin: 0;
+}
+.elric-turn-facts dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.elric-link {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  min-height: 32px;
+}
+.elric-quiet {
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.elric-summary {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.elric-decide {
+  justify-content: flex-start;
+}
+.elric-more {
+  justify-self: center;
+}
+.elric-confirm {
+  color: var(--text-muted);
+  margin: 0 0 18px;
+}
+@media (max-width: 720px) {
+  .elric-head,
+  .elric-log {
+    padding: 18px 16px;
+  }
+  .elric-head {
+    grid-template-columns: 1fr;
+  }
+  .elric-controls {
+    justify-content: flex-start;
+  }
+  .elric-usage {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .elric-filters,
+  .elric-filters label,
+  .elric-filters select {
+    width: 100%;
+  }
+  .elric-turn-main time {
+    margin-left: 0;
+    width: 100%;
+  }
+}

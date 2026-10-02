@@ -222,31 +222,6 @@
   display: none;
 }
 
-.vf-sub {
-  margin: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
-  gap: 14px;
-  padding-top: 18px;
-  border-top: 1px solid var(--v8-border);
-}
-.vf-sub div {
-  display: flex;
-  flex-direction: column-reverse;
-  justify-content: flex-end;
-  gap: 2px;
-}
-.vf-sub dt {
-  color: var(--v8-muted);
-  font-size: 12px;
-}
-.vf-sub dd {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
 .vf-table {
   overflow-x: auto;
   max-width: 100%;
@@ -482,4 +457,351 @@
 }
 .vf-filter {
   width: 100%;
+}
+
+/* The verify page's way to the Live log. */
+.vf-log-link {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  font-weight: 600;
+}
+
+/* The Live log (/downtown/log): stats, search and the entries, newest first. */
+.ll-main {
+  max-width: 1080px;
+}
+.ll-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 8px;
+}
+.ll-stats > div {
+  padding: 14px 16px;
+  border: 1px solid var(--v8-border);
+  border-radius: 12px;
+  background: var(--v8-card);
+}
+.ll-stats dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--v8-muted);
+  font-size: 12px;
+}
+.ll-stats dd {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ll-stats dd .vf-muted {
+  font-size: 13px;
+  font-weight: 400;
+}
+.ll-live {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--v8-live);
+  animation: ll-pulse 2s ease-in-out infinite;
+}
+@keyframes ll-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.ll-note {
+  margin: 0 0 16px;
+}
+.ll-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 560px;
+  color: var(--v8-muted);
+}
+.ll-search .vf-input {
+  flex: 1;
+  min-width: 0;
+}
+.ll-rows {
+  margin: 8px 0 16px;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--v8-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.ll-row {
+  display: grid;
+  grid-template-columns: 84px 88px 110px minmax(0, 1fr) 100px;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 14px;
+}
+.ll-row-head {
+  min-height: 36px;
+  color: var(--v8-muted);
+  font-size: 12px;
+  background: var(--v8-quiet);
+}
+.ll-item {
+  border-top: 1px solid var(--v8-border);
+}
+.ll-item[data-open='true'] {
+  background: var(--v8-quiet);
+}
+.ll-seq,
+.ll-day {
+  font-variant-numeric: tabular-nums;
+}
+.ll-fp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ll-fp .vf-mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ll-status[data-status='withdrawn'] {
+  color: var(--v8-muted);
+}
+.ll-copy {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--v8-muted);
+  cursor: pointer;
+}
+.ll-copy:hover {
+  background: var(--v8-inset);
+}
+.ll-older {
+  margin-bottom: 24px;
+}
+.ll-proof {
+  display: grid;
+  /* Long fingerprints and commands wrap or scroll inside; the panel never widens the page. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  padding: 4px 14px 18px;
+}
+.ll-proof > *,
+.ll-facts > div {
+  min-width: 0;
+}
+.ll-facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 0;
+}
+.ll-facts dt {
+  color: var(--v8-muted);
+  font-size: 12px;
+}
+.ll-facts dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+.ll-full {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  word-break: break-all;
+}
+.ll-check {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.ll-raw-title {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+.ll-raw ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.ll-raw li {
+  min-height: 28px;
+}
+.ll-code {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ll-code pre {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--v8-inset);
+  font-size: 12px;
+  overflow-x: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ll-live {
+    animation: none;
+  }
+}
+@media (max-width: 720px) {
+  .ll-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ll-row-head {
+    display: none;
+  }
+  .ll-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'seq day verify'
+      'fp fp status';
+    row-gap: 4px;
+    padding: 10px 14px;
+  }
+  .ll-verify {
+    grid-area: verify;
+  }
+  .ll-seq {
+    grid-area: seq;
+    font-weight: 600;
+  }
+  .ll-day {
+    grid-area: day;
+    color: var(--v8-muted);
+  }
+  .ll-fp {
+    grid-area: fp;
+  }
+  .ll-status {
+    grid-area: status;
+    font-size: 13px;
+  }
+}
+
+/* Live log Phase 2: the pending feed ("Just joined"), newest first, statuses flip in place. */
+.ll-feed {
+  margin: 0 0 20px;
+}
+.ll-feed-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.ll-feed-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+.ll-feed-row {
+  grid-template-columns: 110px minmax(0, 1fr) minmax(0, auto) 84px;
+}
+.ll-badge {
+  justify-self: start;
+  padding: 2px 10px;
+  border: 1px solid var(--v8-border);
+  border-radius: 9999px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.ll-badge[data-status='confirmed'] {
+  border-color: var(--v8-live);
+  color: var(--v8-text);
+}
+.ll-badge[data-status='removed'] {
+  color: var(--v8-muted);
+}
+.ll-item[data-fresh='true'] {
+  animation: ll-slide-in 600ms ease-out;
+}
+@keyframes ll-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+    background: var(--v8-inset);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ll-item[data-fresh='true'] {
+    animation: none;
+  }
+}
+@media (max-width: 720px) {
+  .ll-feed-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'day verify'
+      'fp fp'
+      'status status';
+  }
+  .ll-feed-row .ll-day {
+    grid-area: day;
+  }
+  .ll-feed-row .ll-fp {
+    grid-area: fp;
+  }
+  .ll-feed-row .ll-badge {
+    grid-area: status;
+    white-space: normal;
+  }
+  .ll-feed-row .ll-verify {
+    grid-area: verify;
+  }
+}
+
+/* Agent Explorer: a block-explorer layout (prominent search, stats bar, latest agents, log). */
+.ll-search-hero {
+  max-width: none;
+  margin: 0 0 16px;
+  padding: 6px 6px 6px 14px;
+  border: 1px solid var(--v8-border);
+  border-radius: 14px;
+  background: var(--v8-card);
+  box-shadow: var(--v8-shadow);
+}
+.ll-search-hero .vf-input {
+  border: 0;
+  background: transparent;
+  font-size: 16px;
+  min-height: 44px;
+}
+.ll-search-hero .vf-input:focus-visible {
+  outline: none;
+}
+.ll-search-hero:focus-within {
+  border-color: var(--v8-accent);
+}
+.ll-log-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 8px;
+}
+.ll-log-head h2 {
+  margin: 0;
+  font-size: 16px;
 }

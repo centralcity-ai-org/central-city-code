@@ -1,6 +1,7 @@
 import { randomBytes, sign } from 'node:crypto';
 import type { Database, Transaction as Tx } from '../database.js';
 import type { SigningKey } from '../manifest/keys.js';
+import { pendingFeed, pendingLeaves, type Feed } from './pending.js';
 import {
   agentLeafHash,
   checkpointHash,
@@ -76,6 +77,8 @@ export interface CountLog {
   /** Runs today's checkpoint (UTC day of the clock); a second run for the same day is a no-op. */
   checkpoint(): Promise<{ checkpoint: Checkpoint; created: boolean }>;
   checkpoints(): Promise<Checkpoint[]>;
+  /** The live pending feed (pending.ts), newest first. */
+  feed(options: { before?: string; limit?: number }): Promise<Feed>;
   checkpointOn(date: string): Promise<Checkpoint | null>;
   /** Public leaves under the latest checkpoint only, [from, to). */
   leaves(
@@ -187,29 +190,40 @@ export function createCountLog(deps: {
             )
           ).rows.map((row) => [row.agent_id, Number(row.idx)]),
         );
-        // 1. Append newly counted agents, in (created day, agent id) order.
+        // 1. Append newly counted agents by creation day and, within a day, in creation order. An
+        //    agent recorded in the pending feed (pending.ts) keeps that salt, day and leaf, so the
+        //    fingerprint shown as pending is exactly the leaf confirmed here.
+        const pending = await pendingLeaves(tx);
         const fresh = counted
           .filter((agent) => !known.has(agent.agent_id))
           .map((agent) => ({
             ...agent,
             created_day:
-              agent.created_at && !Number.isNaN(Date.parse(agent.created_at))
+              pending.get(agent.agent_id)?.created_day ??
+              (agent.created_at && !Number.isNaN(Date.parse(agent.created_at))
                 ? day(Date.parse(agent.created_at))
-                : today,
+                : today),
           }))
-          .sort((a, b) =>
-            a.created_day === b.created_day
-              ? a.agent_id < b.agent_id
-                ? -1
-                : 1
-              : a.created_day < b.created_day
-                ? -1
-                : 1,
-          );
+          // By day; within a day, agents in the pending feed first, in its creation order
+          // (minute, then sequence), so their provisional numbers become their idx; then any
+          // others by agent id.
+          .sort((a, b) => {
+            if (a.created_day !== b.created_day) return a.created_day < b.created_day ? -1 : 1;
+            const pa = pending.get(a.agent_id)?.order;
+            const pb = pending.get(b.agent_id)?.order;
+            if (pa && pb) {
+              if (pa[0] !== pb[0]) return pa[0] < pb[0] ? -1 : 1;
+              return pa[1] !== pb[1] ? pa[1] - pb[1] : pa[2] - pb[2];
+            }
+            if (pa || pb) return pa ? -1 : 1;
+            return a.agent_id < b.agent_id ? -1 : 1;
+          });
         let next = known.size;
         for (const agent of fresh) {
-          const salt = randomBytes(32);
-          const leaf = await agentLeafHash(agent.agent_id, salt, agent.created_day);
+          const recorded = pending.get(agent.agent_id);
+          const salt = recorded?.salt ?? randomBytes(32);
+          const leaf =
+            recorded?.leaf ?? (await agentLeafHash(agent.agent_id, salt, agent.created_day));
           await tx.query(
             'INSERT INTO count_log_leaves(idx,agent_id,salt,created_day,leaf_hash,appended_at) VALUES($1,$2,$3,$4,$5,$6)',
             [next, agent.agent_id, salt, agent.created_day, Buffer.from(leaf), now],
@@ -283,6 +297,9 @@ export function createCountLog(deps: {
       });
     },
 
+    async feed(options) {
+      return pendingFeed(deps.db, { ...options, excluded });
+    },
     async checkpoints() {
       return (
         await deps.db.query<CheckpointRow>('SELECT * FROM count_log_checkpoints ORDER BY date')

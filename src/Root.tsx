@@ -1,8 +1,10 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import type { Operator } from '../shared/types';
-import { api, selectedWorkspaceId } from './api';
+import { api, ApiError, selectedWorkspaceId } from './api';
 import { Auth } from './Auth';
+import type { OnboardingState } from './GoogleAccount';
+import { safeReturnPath } from '../shared/return-path';
 import { CityMark } from './brand';
 import { ErrorBoundary, markRendered } from './shell/ErrorBoundary';
 import { NotFound } from './shell/NotFound';
@@ -35,6 +37,10 @@ const InvitePage = lazy(() => loadInvite().then((module) => ({ default: module.I
 const Downtown = lazy(() => loadDowntown().then((module) => ({ default: module.Downtown })));
 const DocsPage = lazy(() => loadDocs().then((module) => ({ default: module.DocsPage })));
 const VerifyPage = lazy(() => loadVerify().then((module) => ({ default: module.VerifyPage })));
+// The Live log (/downtown/log): the count log's entries, newest first, with a proof per entry.
+const LiveLog = lazy(() =>
+  import('./verify/LiveLog').then((module) => ({ default: module.LiveLog })),
+);
 const ConnectPage = lazy(() => loadConnect().then((module) => ({ default: module.ConnectPage })));
 const Workspaces = lazy(() => loadApp().then((module) => ({ default: module.Workspaces })));
 // The Rooms experience (/rooms, /rooms/:id, /r/:slug) is its own chunk too.
@@ -82,11 +88,89 @@ const KNOWN_PATHS = new Set([
   '/signin',
   '/downtown',
   '/downtown/verify',
+  '/downtown/log',
   '/docs',
   '/docs/start',
   '/docs/rooms',
   '/docs/api',
+  // Account: the Google account link (docs/GOOGLE_SIGNIN.md).
+  '/settings/account',
+  // The Elric dashboard (behind CITY_ELRIC; ElricRoute below).
+  '/elric',
 ]);
+
+// The onboarding screen for accounts created with Google, loaded lazily like the account page.
+const OnboardingPage = lazy(() =>
+  import('./GoogleAccount').then((module) => ({ default: module.OnboardingPage })),
+);
+
+// The account page (Sign in with Google), loaded lazily: it is not part of the main bundle.
+const AccountPage = lazy(() =>
+  import('./GoogleAccount').then((module) => ({ default: module.AccountPage })),
+);
+
+// The Elric dashboard (src/elric/ElricDashboard.tsx, default export), loaded lazily. The glob
+// resolves to nothing while that file does not exist, so the route then answers Not found.
+const elricDashboard = import.meta.glob<{ default: ComponentType }>('./elric/ElricDashboard.tsx')[
+  './elric/ElricDashboard.tsx'
+];
+const ElricDashboard = elricDashboard ? lazy(elricDashboard) : null;
+
+/** /elric: the dashboard only when Elric is on for this server (GET /api/elric answers 200). */
+function ElricRoute() {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    let active = true;
+    api('/api/elric', undefined, 'GET')
+      .then(() => active && setOn(true))
+      .catch(() => active && setOn(false));
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (on === null) return <Boot />;
+  return on && ElricDashboard ? <ElricDashboard /> : <NotFound />;
+}
+// Signed-out /elric (src/elric/ElricSignedOut.tsx), loaded lazily like the dashboard.
+const ElricSignedOut = lazy(() =>
+  import('./elric/ElricSignedOut').then((module) => ({ default: module.ElricSignedOut })),
+);
+
+/**
+ * /elric signed out: Elric's chat screen with a sign-in sheet, when Elric is on for this server
+ * (GET /api/elric answers 401 for a visitor; 404 when Elric is off). Log in or Sign up opens the
+ * sign-in page here, so a successful sign-in comes straight back to the chat.
+ */
+function ElricSignedOutRoute({ onSignedIn }: { onSignedIn: (operator: Operator) => void }) {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [mode, setMode] = useState<'signin' | 'register' | null>(null);
+  useEffect(() => {
+    let active = true;
+    api('/api/elric', undefined, 'GET')
+      .then(() => active && setOn(true))
+      .catch((error) => active && setOn(error instanceof ApiError && error.status === 401));
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (on === null) return <Boot />;
+  if (!on) return <NotFound />;
+  if (mode)
+    return (
+      <Auth
+        key={mode}
+        initialRegister={mode === 'register'}
+        claimPending={false}
+        onSuccess={(operator) => onSignedIn(operator)}
+      />
+    );
+  return (
+    <Suspense fallback={<Boot />}>
+      <ElricSignedOut onAuth={setMode} />
+    </Suspense>
+  );
+}
+
 export function knownPath(pathname: string) {
   const path = pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname;
   return KNOWN_PATHS.has(path) || isRoomsPath(path);
@@ -170,6 +254,8 @@ export function Root() {
   const [session, setSession] = useState<{
     operator: Operator | null;
     setupRequired: boolean;
+    /** Onboarding of an account created with Google (docs/GOOGLE_SIGNIN.md "Onboarding"). */
+    onboarding?: OnboardingState;
   } | null>(null);
   const [sessionError, setSessionError] = useState('');
   const [sessionAttempt, setSessionAttempt] = useState(0);
@@ -231,7 +317,7 @@ export function Root() {
       timedOut = true;
       controller.abort();
     }, SESSION_DEADLINE_MS);
-    void api<{ operator: Operator | null; setupRequired: boolean }>(
+    void api<{ operator: Operator | null; setupRequired: boolean; onboarding?: OnboardingState }>(
       '/api/session',
       undefined,
       'GET',
@@ -305,6 +391,12 @@ export function Root() {
         <VerifyPage />
       </Screen>
     );
+  if (/^\/downtown\/log\/?$/.test(path))
+    return (
+      <Screen>
+        <LiveLog />
+      </Screen>
+    );
   // Hash routing still decides the view; any other path is a 404.
   if (!known) return <NotFound />;
   if (!session)
@@ -323,6 +415,51 @@ export function Root() {
       </Boot>
     ) : (
       <Boot />
+    );
+  // Onboarding gate: an account created with Google sees only the onboarding screen, on every
+  // route (Back included), until it has a name and has accepted the Terms. The server refuses
+  // every other API call (403 onboarding_required) as well.
+  if (session.operator && session.onboarding?.required)
+    return (
+      <Screen>
+        <OnboardingPage
+          state={session.onboarding}
+          onDone={(operator) => {
+            setSession({ ...session, operator, onboarding: undefined });
+            const next = safeReturnPath(new URLSearchParams(window.location.search).get('next'));
+            const here = window.location.pathname;
+            if (next && next !== here) window.location.assign(next);
+            else if (/^\/settings\/account\/?$/.test(here) || here === '/signin')
+              window.location.assign('/rooms');
+          }}
+        />
+      </Screen>
+    );
+  // Account (the Google account link) and the Elric dashboard: signed out, sign in first.
+  const elric = /^\/elric\/?$/.test(path);
+  if (elric || /^\/settings\/account\/?$/.test(path))
+    return (
+      <Screen>
+        {session.operator ? (
+          elric ? (
+            <ElricRoute />
+          ) : (
+            <AccountPage />
+          )
+        ) : elric ? (
+          <ElricSignedOutRoute
+            onSignedIn={(operator) => setSession({ operator, setupRequired: false })}
+          />
+        ) : (
+          <Auth
+            initialRegister={false}
+            claimPending={false}
+            onSuccess={(operator) => {
+              setSession({ operator, setupRequired: false });
+            }}
+          />
+        )}
+      </Screen>
     );
   if (!session.operator) {
     // Room pages handle signed-out visitors themselves (join screen, "Sign in to join").

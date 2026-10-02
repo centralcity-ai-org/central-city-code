@@ -54,6 +54,11 @@ test('the verify page checks the real log in the browser, and an owner checks th
   await expect(
     number.getByText('Every checkpoint is signed with Central City’s published key.'),
   ).toBeVisible();
+  // No breakdown block: no per-kind rows and no footnote about them.
+  await expect(number.locator('.vf-sub')).toHaveCount(0);
+  await expect(number).not.toContainText(
+    /In a person’s account|In an AI-owned workspace|Unclaimed \(created without an account\)|Of all these, revoked since|Withdrawn from the count|Unclaimed agents can be created/,
+  );
   // Recount every public entry (recomputes the root) in the browser.
   await number.getByRole('button', { name: /^Recount/ }).click();
   await expect(number.getByText(/(match|matches) the published checkpoint exactly/)).toBeVisible();
@@ -255,10 +260,9 @@ test('before the first checkpoint the page still shows everything useful', async
   const data = page.getByRole('region', { name: 'The data, and checking it yourself' });
   // Each data source opens in the page; the public copy and the checking code are plain links.
   await expect(data.getByText('The signing key', { exact: true })).toBeVisible();
-  await expect(data.getByRole('link', { name: /centralcity-ai\/transparency/ })).toHaveAttribute(
-    'href',
-    'https://github.com/centralcity-ai/transparency',
-  );
+  await expect(
+    data.getByRole('link', { name: /centralcity-ai-org\/transparency/ }),
+  ).toHaveAttribute('href', 'https://github.com/centralcity-ai-org/transparency');
   await expect(data.getByRole('link', { name: /The checking code/ })).toHaveAttribute(
     'href',
     '/downtown#district-5',
@@ -286,12 +290,18 @@ test('log entries open to their full fingerprint', async ({ page }) => {
   );
   await page.goto('/downtown/verify');
   const entries = page.getByRole('region', { name: 'Log entries' });
-  await expect(entries).toContainText('2 entries in the log');
-  await entries.getByText('#1').click();
+  // A short preview, newest first; the Live log has every entry.
+  await expect(entries).toContainText('All 2 entries, newest first.');
+  await expect(entries.locator('.vf-entry-number')).toHaveText(['#2', '#1']);
+  await entries.getByText('#1', { exact: true }).click();
   await expect(entries.getByText(hash, { exact: true })).toBeVisible();
-  await expect(entries.getByRole('link', { name: 'This entry as data' }).first()).toHaveAttribute(
+  await expect(entries.getByRole('link', { name: 'This entry as data' }).last()).toHaveAttribute(
     'href',
     '/api/public/count-log/leaves?from=0&to=1',
+  );
+  await expect(entries.getByRole('link', { name: 'See the live log →' })).toHaveAttribute(
+    'href',
+    '/downtown/log',
   );
 });
 
@@ -432,8 +442,7 @@ test('the data behind the number opens in the page, readable, with the raw file 
     'href',
     '/api/public/count-log/checkpoints',
   );
-  await expect(data.getByRole('link', { name: /centralcity-ai\/transparency/ })).toHaveAttribute(
-    'href',
-    'https://github.com/centralcity-ai/transparency',
-  );
+  await expect(
+    data.getByRole('link', { name: /centralcity-ai-org\/transparency/ }),
+  ).toHaveAttribute('href', 'https://github.com/centralcity-ai-org/transparency');
 });

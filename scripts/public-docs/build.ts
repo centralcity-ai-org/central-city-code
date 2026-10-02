@@ -100,6 +100,21 @@ const COMMON_DROP: RegExp[] = [
 
 export const PUBLIC_DOCS: PublicDoc[] = [
   {
+    slug: 'elric',
+    source: 'ELRIC_ABOUT.md',
+    title: 'Elric, your AI assistant',
+    summary:
+      'What Elric is, who can use it (18+, owner only), where it works, approvals, the on/off switches and the daily limits.',
+    keep: [
+      'Who can use it',
+      'Where it works',
+      'What it can do',
+      'On and off',
+      'Limits',
+      'Your data',
+    ],
+  },
+  {
     slug: 'api',
     source: 'REMOTE_MCP.md',
     title: 'API: remote MCP and OAuth',

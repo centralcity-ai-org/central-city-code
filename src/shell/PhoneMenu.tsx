@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import type { NavGroup, NavItem } from './links';
+import { sectionsOf, type NavGroup, type NavItem } from './links';
 
 /**
  * The phone menu (under 900 px): a full-screen sheet with the header's four groups as simple
@@ -84,11 +84,18 @@ function MenuGroup({
         {group.label}
         {chevron}
       </button>
-      <ul id={panelId} className="cc-menu-group-panel" role="list" hidden={!open}>
-        {group.items.map((item) => (
-          <li key={item.href}>{renderLink(item)}</li>
+      <div id={panelId} hidden={!open}>
+        {sectionsOf(group.items).map(({ section, items }) => (
+          <div key={section ?? ''} className="cc-mega-section">
+            {section ? <p className="cc-mega-label">{section}</p> : null}
+            <ul className="cc-menu-group-panel" role="list" aria-label={section ?? undefined}>
+              {items.map((item) => (
+                <li key={item.href}>{renderLink(item)}</li>
+              ))}
+            </ul>
+          </div>
         ))}
-      </ul>
+      </div>
     </div>
   );
 }

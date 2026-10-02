@@ -966,6 +966,7 @@ export function RoomsApp({
             onOpenMenu={openDrawer}
             onRoomChanged={() => void loadRooms()}
             onRead={onRead}
+            userId={workspaceId || accountName}
           />
         ) : rooms === null ? (
           <div className="rm-center" role="status">

@@ -59,6 +59,12 @@ export function registerWakeCron(
     cronSecret: string | undefined;
     /** The room-task lapse sweep (server/rooms/tasks-service.ts `sweepLapsedTasks`). */
     sweepTasks?: (limit: number) => Promise<{ lapsed: unknown[] }>;
+    /**
+     * Elric's drain (server/elric/service.ts), when Elric is on: deferred invocations (a cold
+     * model endpoint, or a run that ran out of time) are retried here every minute. It runs side
+     * by side with the wake drain under the same deadline and caps itself at its own run budget.
+     */
+    drainElric?: (budgetMs: number) => Promise<number>;
     /** The run's budget (defaults to the wake drain's). */
     budgetMs?: number;
     now?: () => number;
@@ -71,11 +77,19 @@ export function registerWakeCron(
       return reply.code(404).send({ error: 'Not found.' });
     const now = d.now ?? Date.now;
     const budget = d.budgetMs ?? CRON_DRAIN_BUDGET_MS;
-    // Both run side by side under one deadline; the sweep never throws into the drain.
-    const [handled, tasks] = await Promise.all([
+    // All run side by side under one deadline; neither the sweep nor Elric throws into the drain.
+    const [handled, tasks, elric] = await Promise.all([
       d.wake.drainNow(budget),
       d.sweepTasks ? sweepTaskLapses(d.sweepTasks, now() + budget, now) : Promise.resolve(null),
+      d.drainElric
+        ? d.drainElric(budget).then(
+            (count) => ({ handled: count, error: false }),
+            () => ({ handled: 0, error: true }),
+          )
+        : Promise.resolve(null),
     ]);
+    if (elric && (elric.handled || elric.error))
+      (d.log ?? console.warn)(`elric.cron_drain handled=${elric.handled} error=${elric.error}`);
     // The response shape stays the drain's counts; the sweep's result goes to the log line.
     if (tasks && (tasks.lapsed || tasks.error))
       (d.log ?? console.warn)(`room_tasks.lapse_sweep lapsed=${tasks.lapsed} error=${tasks.error}`);

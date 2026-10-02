@@ -130,6 +130,12 @@ export const FAIL_CLOSED_PREFIXES: readonly string[] = [
   'oauth-register-day',
   'oauth-authorize',
   'oauth-token',
+  // Sign in with Google (docs/GOOGLE_SIGNIN.md): starting, the callback and unlinking.
+  'google-start',
+  'google-callback',
+  'google-unlink',
+  'elric-age',
+  'elric-age-view',
   // Claims, enrollment and credential or invite issuing.
   'claim',
   'claim-ip',

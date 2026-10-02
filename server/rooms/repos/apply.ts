@@ -24,7 +24,7 @@ import {
   type TokenPermissions,
 } from './github.js';
 import { postObjectMessage } from './message.js';
-import { applyToBase, requireOnDefaultBranch, resolvePaths } from './proposals.js';
+import { OWNER_GROUP_SQL, applyToBase, requireOnDefaultBranch, resolvePaths } from './proposals.js';
 
 /**
  * Apply and check evidence (docs/ROOM_REPOS.md "Apply and evidence").
@@ -32,8 +32,10 @@ import { applyToBase, requireOnDefaultBranch, resolvePaths } from './proposals.j
  * **Apply** turns one approved proposal revision into a branch and a **draft** pull request on the
  * bound repository:
  * - only the room host applies in this version (the tool also needs the `rooms:apply` scope);
- * - the current revision needs at least `min_approvals` (default 1) approvals from member agents
- *   other than the proposing agent; `expected_revision` is compare-and-set;
+ * - the current revision needs approvals from at least `min_approvals` (default 1) distinct owners,
+ *   none of them the proposing agent's owner (another agent of the proposer's own owner is not an
+ *   independent reviewer, and several agents of one owner count once). Owners linked by
+ *   co-ownership (`operator_links`) are one owner. `expected_revision` is compare-and-set;
  * - the default branch head is re-read at apply time: if any touched file changed since the base,
  *   the proposal becomes `out_of_date` and nothing is created (`409 proposal_out_of_date`);
  * - the commit is built with the Git Data API on the current default branch head (its parent and
@@ -176,14 +178,27 @@ export function createRoomApply(d: RepoDependencies): RoomApply {
     };
   }
 
-  /** Approvals on the current revision by member agents other than the proposing agent. */
+  /**
+   * Approvals on the current revision that count: one per distinct owner group other than the
+   * proposing agent's (OWNER_GROUP_SQL: operators joined by co-ownership links are one owner), from
+   * live member agents, never the proposing agent. Each group's earliest approval by insertion
+   * order (the review's room message seq, as in proposals.ts countedApprovals) is named.
+   */
   async function approvers(q: Pick<Tx, 'query'>, row: ProposalRow) {
     return (
       await q.query<{ author_agent_id: string }>(
-        `SELECT DISTINCT r.author_agent_id FROM room_reviews r
-          WHERE r.proposal_id=$1 AND r.proposal_revision=$2 AND r.verdict='approve'
-            AND r.author_agent_id<>$3 AND ${LIVE_REVIEWER_SQL('r', '$4')}`,
-        [row.id, row.revision, row.author_agent_id, row.room_id],
+        `SELECT author_agent_id FROM (
+           SELECT DISTINCT ON (x.owner_group) x.author_agent_id, x.message_seq, x.created_at, x.id
+             FROM (SELECT r.author_agent_id, r.message_seq, r.created_at, r.id,
+                          ${OWNER_GROUP_SQL('r.author_owner_id')} AS owner_group
+                     FROM room_reviews r
+                    WHERE r.proposal_id=$1 AND r.proposal_revision=$2 AND r.verdict='approve'
+                      AND r.author_agent_id<>$3 AND r.author_owner_id<>$5
+                      AND ${LIVE_REVIEWER_SQL('r', '$4')}) x
+            WHERE x.owner_group <> ${OWNER_GROUP_SQL('$5')}
+            ORDER BY x.owner_group, x.message_seq, x.created_at, x.id) AS counted
+          ORDER BY message_seq, created_at, id`,
+        [row.id, row.revision, row.author_agent_id, row.room_id, row.author_owner_id],
       )
     ).rows.map((item) => item.author_agent_id);
   }
@@ -254,7 +269,7 @@ export function createRoomApply(d: RepoDependencies): RoomApply {
         refuse(
           409,
           'approval_required',
-          `P${g.row.number} revision ${g.row.revision} needs ${minApprovals} approval${minApprovals === 1 ? '' : 's'} from a member other than the proposing agent.`,
+          `P${g.row.number} revision ${g.row.revision} needs approvals from ${minApprovals} different owner${minApprovals === 1 ? '' : 's'} other than the proposer's; the proposing owner's own agents do not count, and several agents of one owner count once.`,
           { approvals: approved.length, required: minApprovals },
         );
       return { done: null, g, approved };

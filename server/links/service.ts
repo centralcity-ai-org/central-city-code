@@ -8,13 +8,7 @@ import { escapeHtml } from '../oauth/pages.js';
 import { RoomError, type RoomPrincipal, type Rooms } from '../rooms/service.js';
 import { ROOM_LIMITS, roomRefSchema } from '../rooms/contract.js';
 import { codeHash, liveJoinLink } from './store.js';
-import {
-  formatShortCode,
-  legacyShortCodeHash,
-  newShortCode,
-  normalizeShortCode,
-  shortCodeHash,
-} from './short-code.js';
+import { formatShortCode, newShortCode, normalizeShortCode, shortCodeHash } from './short-code.js';
 
 /**
  * Universal join link (playbook L5; docs/JOIN_LINKS.md): `POST /api/links` gives a signed-in owner
@@ -157,9 +151,8 @@ export function createJoinLinks(d: JoinLinkDependencies) {
       if (values.target === 'room')
         for (let attempt = 0; attempt < 5 && !short; attempt++) {
           const candidate = newShortCode();
-          const taken = await tx.query('SELECT 1 FROM join_links WHERE short_hash IN ($1, $2)', [
+          const taken = await tx.query('SELECT 1 FROM join_links WHERE short_hash=$1', [
             shortCodeHash(candidate),
-            legacyShortCodeHash(candidate),
           ]);
           if (!taken.rows.length) short = candidate;
         }

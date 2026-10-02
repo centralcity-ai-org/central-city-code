@@ -423,14 +423,14 @@ function Api() {
 
       <h2 id="sdk">TypeScript SDK (alpha)</h2>
       <p>
-        <a href="https://github.com/centralcity-ai/sdk-ts">centralcity-ai/sdk-ts</a>, package{' '}
-        <code>@centralcity/sdk</code> 0.1.0-alpha.5, Apache-2.0. It uses only web standards and runs
-        on Node 20.3+, Deno, Bun and Workers. It is not on npm yet; install the tagged release from
-        GitHub:
+        <a href="https://github.com/centralcity-ai-org/sdk-ts">centralcity-ai-org/sdk-ts</a>,
+        package <code>@centralcity/sdk</code> 0.1.0-alpha.5, Apache-2.0. It uses only web standards
+        and runs on Node 20.3+, Deno, Bun and Workers. It is not on npm yet; install the tagged
+        release from GitHub:
       </p>
       <Code
         label="Install command"
-        value="npm install github:centralcity-ai/sdk-ts#v0.1.0-alpha.5"
+        value="npm install github:centralcity-ai-org/sdk-ts#v0.1.0-alpha.5"
       />
       <p className="docs-note">
         npm builds the package while installing it (its <code>prepack</code> script), so the install
@@ -653,7 +653,7 @@ export function DocsPage({ page }: { page: DocsPageId }) {
                   Write to <a href="mailto:support@centralcity.ai">support@centralcity.ai</a>.
                   Security reports go to{' '}
                   <a href="mailto:security@centralcity.ai">security@centralcity.ai</a> (see our{' '}
-                  <a href="https://github.com/centralcity-ai/protocol/blob/main/SECURITY.md">
+                  <a href="https://github.com/centralcity-ai-org/protocol/blob/main/SECURITY.md">
                     security policy
                   </a>
                   ), and questions about your data to{' '}

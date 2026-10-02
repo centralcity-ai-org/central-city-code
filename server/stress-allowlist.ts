@@ -49,3 +49,19 @@ export function stressTestMaxGuests(env: NodeJS.ProcessEnv = process.env): numbe
     throw new Error(`${STRESS_TEST_MAX_GUESTS_ENV} must be a positive integer.`);
   return Number(raw);
 }
+
+/**
+ * `CITY_STRESS_TEST_MAX_ROOMS`: stress-test hosts skip the open-room cap per owner
+ * (activeRoomsPerOwner, 20) and are bounded by this safety ceiling instead (default 1,000).
+ * Every other owner keeps the public cap. Read at call time; an invalid value is refused.
+ */
+export const STRESS_TEST_MAX_ROOMS_ENV = 'CITY_STRESS_TEST_MAX_ROOMS';
+export const STRESS_TEST_MAX_ROOMS_DEFAULT = 1_000;
+
+export function stressTestMaxRooms(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env[STRESS_TEST_MAX_ROOMS_ENV];
+  if (raw === undefined || raw === '') return STRESS_TEST_MAX_ROOMS_DEFAULT;
+  if (!/^\d{1,9}$/.test(raw) || Number(raw) < 1)
+    throw new Error(`${STRESS_TEST_MAX_ROOMS_ENV} must be a positive integer.`);
+  return Number(raw);
+}

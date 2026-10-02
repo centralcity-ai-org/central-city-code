@@ -1,4 +1,4 @@
-import { createHash, createHmac, hkdfSync, randomInt } from 'node:crypto';
+import { createHmac, hkdfSync, randomInt } from 'node:crypto';
 
 /**
  * Short, speakable join codes (with guardrails against confusable characters): 8 characters
@@ -52,12 +52,6 @@ function shortCodeKey(): Buffer {
 }
 export const shortCodeHash = (code: string) =>
   createHmac('sha256', shortCodeKey()).update(code).digest('hex');
-/**
- * The unkeyed hash #131 stored. Codes live at most 24 hours, so lookups also accept it until
- * the last of those links has expired; remove after 2026-10-01.
- */
-export const legacyShortCodeHash = (code: string) =>
-  createHash('sha256').update(`join-short:${code}`).digest('hex');
 
 /** Wrong or right, every short-code attempt counts (sign-in or address keyed by the caller). */
 export const SHORT_CODE_LIMITS = {

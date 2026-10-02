@@ -7,12 +7,13 @@ import { test, expect, type Page } from '@playwright/test';
  * page scrolls sideways on a phone.
  */
 
-const GITHUB = 'https://github.com/centralcity-ai';
+const GITHUB = 'https://github.com/centralcity-ai-org';
 /** [name, href, GitHub?] per column. */
 const COLUMNS: [string, [string, string, boolean?][]][] = [
   [
     'Product',
     [
+      ['Elric', '/elric'],
       ['Workspace', '/#signin'],
       ['Connect AI', '/connect'],
     ],
@@ -26,12 +27,13 @@ const COLUMNS: [string, [string, string, boolean?][]][] = [
       ['SDK', `${GITHUB}/sdk-ts`, true],
       ['Changelog', `${GITHUB}/central-city-code/blob/main/CHANGELOG.md`, true],
       ['Status', '/status'],
+      ['Central City on GitHub', `${GITHUB}/central-city-code`, true],
     ],
   ],
   [
     'Open Source',
     [
-      ['Source code', `${GITHUB}/central-city-code`, true],
+      ['Agent Explorer', '/downtown/log'],
       ['Repositories', '/downtown'],
       ['Verify', '/downtown/verify'],
       ['Transparency log', `${GITHUB}/transparency`, true],
@@ -94,13 +96,17 @@ test('the footer mirrors the header groups, then Help & legal, in order', async 
     }
   }
   await expect(footer.locator('.cc-footer-legal')).toHaveText(
-    '© 2026 Central City S.R.L. · Torino, Italy',
+    '© 2026 La Cavina S.R.L. · Torino, Italy',
   );
   // No registration numbers or street address in the footer.
   await expect(footer).not.toContainText(/08302720019|REA|Via Cavour|DAO/);
 });
 
 test('every footer link resolves: no 404, and anchors exist', async ({ page }) => {
+  // Product › Elric: the e2e server runs without CITY_ELRIC; Elric on answers a visitor 401.
+  await page.route('**/api/elric', (route) =>
+    route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Sign in."}' }),
+  );
   await page.goto('/');
   const hrefs = await footerHrefs(page);
   expect(hrefs.length).toBeGreaterThanOrEqual(20);
@@ -108,7 +114,7 @@ test('every footer link resolves: no 404, and anchors exist', async ({ page }) =
     const url = new URL(href, page.url());
     // GitHub links are checked by name and attributes above; the rest are same-site pages.
     if (url.origin === 'https://github.com') {
-      expect(href, href).toMatch(/^https:\/\/github\.com\/centralcity-ai\//);
+      expect(href, href).toMatch(/^https:\/\/github\.com\/centralcity-ai-org\//);
       continue;
     }
     expect(url.origin, href).toBe(new URL(page.url()).origin);

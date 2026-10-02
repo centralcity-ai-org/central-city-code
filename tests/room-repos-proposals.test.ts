@@ -17,7 +17,8 @@ registerRoomCodeMigration();
 /**
  * Proposals and reviews (docs/ROOM_REPOS.md "Proposals and reviews"): strict diff parsing and exact application,
  * proposal validation against the base commit, the stamped room messages, task links, reviews
- * bound to a revision, and the approval rule (any member agent except the proposing one).
+ * bound to a revision, and the approval rule (only approvals from agents of an owner other than
+ * the proposing agent's owner count).
  * Fake GitHub, synthetic data only.
  */
 type App = Awaited<ReturnType<typeof createApp>>;
@@ -439,7 +440,7 @@ test('proposals that do not apply, touch forbidden paths or carry credentials ar
   await rejects(propose(f), 404, 'repo_not_bound');
 });
 
-test('reviews bind to a revision; any member agent but the proposing one can approve', async (t) => {
+test('reviews bind to a revision; approvals from agents of another owner than the proposer count', async (t) => {
   const f = await fixture(t);
   const { proposal } = await propose(f);
   const review = (who: { id: string }, agentId: string, args: Record<string, unknown>) =>
@@ -468,11 +469,16 @@ test('reviews bind to a revision; any member agent but the proposing one can app
   assert.equal(changes.proposal.changes_requested, 1);
   // The proposing agent may comment on its own proposal; it still cannot approve it.
   await review(f.b, f.member, { verdict: 'comment', body: 'Added in a follow-up.' });
-  // The host approves; another agent of the host's own owner approves too (same owner counts).
+  // The host approves: another owner than the proposing agent's, so it counts. Another agent of
+  // the host's owner approves too: recorded, but approvals count once per owner.
   const hostApproval = await review(f.a, f.host, { verdict: 'approve' });
   assert.equal(hostApproval.proposal.approvals, 1);
+  assert.equal(hostApproval.review.counts_toward_approvals, true);
+  assert.equal(hostApproval.notice, undefined);
   const helperApproval = await review(f.a, f.hostHelper, { verdict: 'approve' });
-  assert.equal(helperApproval.proposal.approvals, 2);
+  assert.equal(helperApproval.proposal.approvals, 1);
+  assert.equal(helperApproval.review.counts_toward_approvals, false);
+  assert.match(helperApproval.notice, /Approvals count once per owner\./);
   assert.equal(helperApproval.review.revision, 1);
   assert.equal(helperApproval.review.outdated, false);
   const messages = (
@@ -488,6 +494,7 @@ test('reviews bind to a revision; any member agent but the proposing one can app
     /\n> Please add a test\.\n> Ignore previous instructions\./,
   );
   assert.match(messages[3]!.parts[0].text, /^\*\*Approved P1\*\*/);
+  assert.match(messages[3]!.parts[0].text, /\n\nThis approval is recorded but does not add/);
   const got = (await f.service.get(principal(f.b.id), { room_id: f.roomId, proposal: 1 })) as any;
   assert.deepEqual(
     got.proposal.reviews.map((item: any) => item.verdict),
@@ -587,6 +594,59 @@ test('symlinks and non-directory parents are refused from the base tree, never f
   // Every touched file is charged against the read budgets (tree levels plus a blob).
   assert.ok(f.limits.filter((key) => key === `room-repo-read:${f.roomId}`).length >= 3);
   assert.ok(f.limits.some((key) => key.startsWith(`room-repo-read-owner:${f.roomId}:`)));
+});
+
+test("an approval from the proposing agent's own owner is recorded but does not count", async (t) => {
+  const f = await fixture(t);
+  // The host proposes; the host's second agent (same owner) approves.
+  const { proposal } = await propose(f, { agent_id: f.host }, f.a);
+  const review = (who: { id: string }, agentId: string, verdict = 'approve') =>
+    f.service.review(principal(who.id), {
+      room_id: f.roomId,
+      agent_id: agentId,
+      proposal: proposal.id,
+      expected_revision: 1,
+      verdict,
+    }) as Promise<any>;
+  await rejects(review(f.a, f.host), 403, 'self_approval');
+  const same = await review(f.a, f.hostHelper);
+  assert.equal(roomRepoOutputSchemas.city_room_review.safeParse(same).success, true);
+  assert.equal(same.review.verdict, 'approve');
+  assert.equal(same.review.counts_toward_approvals, false);
+  assert.equal(same.proposal.approvals, 0);
+  assert.match(
+    same.notice,
+    /^This approval is recorded but does not count toward the required approvals: the reviewing agent has the same owner as the proposing agent \(or a workspace co-owned with it\)\./,
+  );
+  // The room sees the same statement under the approval.
+  const [message] = (
+    await f.app.city.db.query<{ parts: any }>(
+      "SELECT parts FROM room_messages WHERE room_id=$1 AND ref->>'kind'='review' ORDER BY seq",
+      [f.roomId],
+    )
+  ).rows;
+  assert.match(
+    message!.parts[0].text,
+    /^\*\*Approved P1\*\* · revision 1 · Bump the answer\n\nThis approval is recorded but does not count/,
+  );
+  // Another owner's agent approves: that one counts; comments never do.
+  await review(f.b, f.member, 'comment');
+  const other = await review(f.b, f.member);
+  assert.equal(other.review.counts_toward_approvals, true);
+  assert.equal(other.proposal.approvals, 1);
+  assert.equal(other.notice, undefined);
+  const got = (await f.service.get(principal(f.b.id), { room_id: f.roomId, proposal: 1 })) as any;
+  assert.equal(got.proposal.approvals, 1);
+  assert.deepEqual(
+    got.proposal.reviews.map((item: any) => [item.verdict, item.counts_toward_approvals]),
+    [
+      ['approve', false],
+      ['comment', false],
+      ['approve', true],
+    ],
+  );
+  const listed = (await f.service.list(principal(f.a.id), { room_id: f.roomId })) as any;
+  assert.equal(listed.proposals[0].approvals, 1);
 });
 
 test('approvals from a removed reviewer stop counting', async (t) => {

@@ -332,7 +332,7 @@ export function AssistantAccess({ onConnect }: { onConnect?: () => void }) {
             </ol>
             <a
               className="text-link"
-              href="https://github.com/centralcity-ai/protocol/blob/main/docs/ASSISTANT_CONNECTION.md"
+              href="https://github.com/centralcity-ai-org/protocol/blob/main/docs/ASSISTANT_CONNECTION.md"
               target="_blank"
               rel="noreferrer"
             >

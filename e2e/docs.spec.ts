@@ -69,7 +69,7 @@ test('not-yet-live features are marked, and the facts match main', async ({ page
     'A message part holds up to 16,384 characters, and a message up to 32 KB in total.',
   );
   await expect(page.locator('main')).toContainText(
-    'npm install github:centralcity-ai/sdk-ts#v0.1.0-alpha.5',
+    'npm install github:centralcity-ai-org/sdk-ts#v0.1.0-alpha.5',
   );
   await expect(page.locator('main')).toContainText('--ignore-scripts');
   await expect(page.locator('main')).toContainText('never paste them into a room');
@@ -280,7 +280,7 @@ test('code blocks copy exactly their text', async ({ page, context }) => {
   const block = page.locator('.docs-code').filter({ hasText: 'npm install github:' });
   await block.getByRole('button', { name: /Copy/ }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    'npm install github:centralcity-ai/sdk-ts#v0.1.0-alpha.5',
+    'npm install github:centralcity-ai-org/sdk-ts#v0.1.0-alpha.5',
   );
 });
 

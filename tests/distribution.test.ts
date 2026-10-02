@@ -648,7 +648,7 @@ test('vercel.json keeps every existing route and serves the discovery files corr
   // in CI, before this step): /.vite/manifest.json is never public.
   assert.equal(vercel.buildCommand, 'pnpm build && rm -rf dist/.vite');
   assert.equal(vercel.outputDirectory, 'dist');
-  assert.deepEqual(vercel.functions, { 'api/index.ts': { maxDuration: 30 } });
+  assert.deepEqual(vercel.functions, { 'api/index.ts': { maxDuration: 60 } });
   const agent = randomUUID();
   for (const path of [
     '/api/session',

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { AtSign, CodeXml, Send, SquareCheckBig } from 'lucide-react';
 import type { Member } from './api';
-import { ownerNames, possessive } from './people';
+import { mentionNamesFor, ownerNames, ownHost, possessive } from './people';
 import { NEW_POST_FORMAT } from './markdown/format';
 import { MessageBoundary } from './markdown/Boundary';
 import './markdown/composer.css';
@@ -56,11 +56,17 @@ export function Composer({
   // Markdown is typed as text; Preview shows it rendered. No editor.
   const markdown = NEW_POST_FORMAT === 'markdown';
   const [preview, setPreview] = useState(false);
+  // Your own room-host agent is never offered: writing to it is not a mention (people.ts).
+  const mine = ownHost(members);
   const options = picker
-    ? members.filter((member) => member.name.toLowerCase().includes(picker.query)).slice(0, 8)
+    ? members
+        .filter((member) => member.id !== mine?.id)
+        .filter((member) => member.name.toLowerCase().includes(picker.query))
+        .slice(0, 8)
     : [];
   const owner = ownerNames(members);
-  const sender = own.find((member) => member.id === agentId) ?? own[0];
+  const postable = own.filter((member) => member.auto_reply?.provider !== 'elric');
+  const sender = postable.find((member) => member.id === agentId) ?? postable[0];
 
   // Auto-grow between 1 and 8 lines.
   useLayoutEffect(() => {
@@ -154,11 +160,11 @@ export function Composer({
       }}
     >
       <div className="rm-compose-card">
-        {own.length > 1 ? (
+        {postable.length > 1 ? (
           <label className="rm-post-as">
             <span>Post as</span>
             <select value={sender?.id ?? ''} onChange={(event) => setAgentId(event.target.value)}>
-              {own.map((member) => (
+              {postable.map((member) => (
                 <option key={member.id} value={member.id}>
                   {member.name}
                 </option>
@@ -198,7 +204,7 @@ export function Composer({
               {draft.trim() ? (
                 <MessageBoundary fallback={<p className="rm-text">{draft}</p>}>
                   <Suspense fallback={<p className="rm-text">{draft}</p>}>
-                    <Markdown text={draft} names={members.map((member) => member.name)} />
+                    <Markdown text={draft} names={mentionNamesFor(members, { own: true })} />
                   </Suspense>
                 </MessageBoundary>
               ) : (

@@ -216,7 +216,11 @@ export async function registerRemoteMcp(
                 : 'invalid_request',
           error_description: message,
         });
-      return reply.code(status).send({ error: message });
+      // Stable machine-readable codes (e.g. onboarding_required) accompany the message.
+      const code = (error as { errorCode?: unknown }).errorCode;
+      return reply
+        .code(status)
+        .send({ error: message, ...(status < 500 && typeof code === 'string' ? { code } : {}) });
     });
 
     oauth = await registerOAuthRoutes(scope, d);

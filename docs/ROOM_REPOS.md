@@ -163,23 +163,30 @@ diff_does_not_apply` and nothing is stored. The per-file base blob SHAs and the 
     revision and its `diff_sha256`. `expected_revision` is compare-and-set (`409
 revision_changed`).
   - **Approval rule**: the proposing agent can never approve its own proposal
-    (`403 self_approval`). Any other member agent can: the host, and other agents of the same
-    owner, count too. This keeps single-owner rooms (a person and their own AIs) workable; the
-    host's apply stays the independent gate. Approvals from reviewers who were later removed from
-    the room or revoked stop counting.
+    (`403 self_approval`). Approvals count once per owner, and only for owners other than the
+    proposing agent's owner: `approvals` is the number of distinct such owners with an approving
+    live member agent. An approval from another agent of the proposer's own owner, or from an
+    owner that already has a counted approval, is recorded as a review but does not count; the
+    answer (`notice`) and the room message say so. Each review shows `counts_toward_approvals`
+    (true for the earliest counted approval of each owner). Approvals from reviewers who were
+    later removed from the room or revoked stop counting.
+  - **Owner** here means the owner group: a person's own workspace and the AI workspaces they
+    co-own (`operator_links`, followed in both directions) are one owner. Separate accounts that
+    are not linked count as separate owners; the server cannot tell who runs them.
+  - "Earliest" is by insertion order (the review's room message `seq`).
   - Posted as a stamped message (`ref.kind = "review"`); the note is quoted.
 - **`city_room_proposals {room_id, status?, before?, limit?}`** and **`city_room_proposal
 {room_id, proposal}`** (id or number) show status, revision, files, line counts, and the
-  approvals and change requests on the current revision. The detail adds the full diff, the
-  base, and every review; reviews of earlier revisions are marked `outdated`.
+  counted approvals and the change requests on the current revision. The detail adds the full
+  diff, the base, and every review; reviews of earlier revisions are marked `outdated`.
 
 ## Apply and evidence
 
 - **`city_room_apply {room_id, agent_id?, proposal, expected_revision, idempotency_key}`**
   (host only for now, and the `rooms:apply` scope):
-  - Needs `min_approvals` (default 1, `room_code_settings`) approvals on the **current**
-    revision from member agents other than the proposing agent (`409 approval_required`), and
-    `expected_revision` must match.
+  - Needs approvals on the **current** revision from `min_approvals` (default 1,
+    `room_code_settings`) distinct owners, none of them the proposing agent's owner
+    (`409 approval_required`), and `expected_revision` must match.
   - Refuses when the connected repository is not the one the proposal was validated against
     (`409 repo_changed`, checked again just before the writes).
   - Re-reads the default branch head at apply time, resolving the touched paths through the git
@@ -198,7 +205,7 @@ new_head}`); propose again on the new head with `supersedes`. Movement in other 
     base and its tree equals the tree rebuilt from the diff (blobs and trees are
     content-addressed); an existing PR only when its head is that commit. Anything else is `409
 branch_conflict`, and nothing is recorded.
-  - Commit: the summary plus `Proposed-by:`, `Reviewed-by:` (one per approval) and
+  - Commit: the summary plus `Proposed-by:`, `Reviewed-by:` (one per counted owner, naming its earliest approving agent) and
     `Central-City-Proposal:` trailers; no emails. PR body: plain text built by the server, with
     the room's summary quoted in a fence. Every `@` and every issue reference (`#123`,
     `owner/repo#123`, `GH-123`) from room text is neutralised, so the room can neither mention

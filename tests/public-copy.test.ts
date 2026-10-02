@@ -25,6 +25,9 @@ const FORBIDDEN: Array<[RegExp, string]> = [
   [/\bplugins?\b/i, 'plugin'],
 ];
 
+/** One-word strings that are copy whatever their context (status labels, badges, menu items). */
+const SINGLE_WORDS = /^(?:beta|preview|official|certified|partners?|plugins?)$/i;
+
 /**
  * True statements that contain a forbidden word; each allows only its exact phrase. Vendor terms
  * name another company's own product or menu (for example ChatGPT's Plugins settings), never us.
@@ -37,6 +40,39 @@ const ALLOWED: RegExp[] = [
   /\bpersonal plugins\b/i,
   /\bits plugin(?:\s+directory)?$/i,
   /chatgpt\.com\/plugins/i,
+];
+
+/**
+ * Repository docs (README, CHANGELOG, CONTRIBUTING, SECURITY, docs/*.md) ship in the public code
+ * repository. They use "official", "preview" and "plugin" in their technical senses (an official
+ * release archive, a preview deployment, a Claude Code plugin), so they get only the overclaims:
+ * the open-source phrases, "trusted by", "coming soon", and official/certified/partner when the
+ * sentence says it about Central City or us.
+ */
+const REPO_FORBIDDEN: Array<[RegExp, string]> = [
+  [/\bfully open[- ]source(?:d)?\b/i, 'fully open source'],
+  [/\b100\s?%\s*open\b/i, '100% open'],
+  [/\beverything is open\b/i, 'everything is open'],
+  [/\btrusted by\b/i, 'trusted by'],
+  [/\bcoming soon\b/i, 'coming soon'],
+  [
+    /\b(?:Central City|centralcity\.ai|our|we|we're|we are|us)\b[^.]{0,40}\b(?:official|certified|partners?|partnership)\b/i,
+    'official/certified/partner about us',
+  ],
+  [
+    /\b(?:official|certified|partners?|partnership)\b[^.]{0,20}\b(?:Central City|centralcity\.ai)\b/i,
+    'official/certified/partner about us',
+  ],
+];
+
+const REPO_DOCS = (): string[] => [
+  'README.md',
+  'CHANGELOG.md',
+  'CONTRIBUTING.md',
+  'SECURITY.md',
+  ...readdirSync(join(root, 'docs'))
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => `docs/${name}`),
 ];
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -53,6 +89,18 @@ const PAGE_SOURCES = [
   'src/shell/PublicFooter.tsx',
   'src/shell/PhoneMenu.tsx',
   'src/shell/NotFound.tsx',
+  'src/shell/links.ts',
+  'src/shell/AppHeader.tsx',
+  'src/Auth.tsx',
+  'src/Invite.tsx',
+  'src/rooms/JoinScreen.tsx',
+  'src/rooms/JoinRoomSheet.tsx',
+  'server/oauth/pages.ts',
+  // MCP tool titles and descriptions: what tools/list shows every client.
+  'server/remote-mcp/tools.ts',
+  'server/remote-mcp/open-invite.ts',
+  'server/rooms/tasks-tools.ts',
+  'server/rooms/repos/tools.ts',
   ...readdirSync(join(root, 'src/trust'))
     .filter((name) => name.endsWith('.tsx'))
     .map((name) => `src/trust/${name}`),
@@ -64,26 +112,31 @@ const PAGE_SOURCES = [
  * spaces are code, not copy.
  */
 function copyOf(path: string): string[] {
-  const code = read(path)
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
+  return copyOfSource(read(path));
+}
+
+function copyOfSource(source: string): string[] {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
   const out: string[] = [];
   const strings = /'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`/g;
   for (const match of code.matchAll(strings)) {
     const text = match[1] ?? match[2] ?? match[3] ?? '';
-    if (/\s/.test(text.trim())) out.push(text);
+    const trimmed = text.trim();
+    // Prose has spaces. A one-word string is copy too when it is exactly a banned word (a status
+    // label such as 'Beta'); other one-word strings are identifiers, classes or values.
+    if (/\s/.test(trimmed) || SINGLE_WORDS.test(trimmed)) out.push(text);
   }
   // JSX text: between a tag or an expression and the next tag or expression.
   for (const [, text] of code.matchAll(/[>}]([^<>{}]*[A-Za-z][^<>{}]*)[<{]/g)) out.push(text!);
   return out;
 }
 
-function problems(name: string, texts: string[]): string[] {
+function problems(name: string, texts: string[], patterns = FORBIDDEN): string[] {
   const found: string[] = [];
   for (const text of texts)
     for (const line of text.split('\n')) {
       const checked = ALLOWED.reduce((value, allowed) => value.replace(allowed, ''), line);
-      for (const [pattern, label] of FORBIDDEN)
+      for (const [pattern, label] of patterns)
         if (pattern.test(checked)) found.push(`${name}: ${label}: ${line.trim().slice(0, 160)}`);
     }
   return found;
@@ -100,10 +153,39 @@ test('the AI guides, Downtown data and public Markdown docs never overclaim', ()
     'public/llms-full.txt',
     'public/downtown.md',
     'public/downtown.json',
+    'index.html',
+    'server.json',
+    'public/.well-known/ai-catalog.json',
+    'public/.well-known/security.txt',
+    'public/.well-known/mcp/server-card.json',
   ];
   const found = files.flatMap((path) => problems(path, [read(path)]));
   for (const [path, text] of renderPublicDocs(root)) found.push(...problems(path, [text]));
   assert.deepEqual(found, []);
+});
+
+test('repository docs never overclaim about Central City', () => {
+  const found = REPO_DOCS().flatMap((path) => problems(path, [read(path)], REPO_FORBIDDEN));
+  assert.deepEqual(found, []);
+});
+
+test('the repository-docs check refuses claims about us and allows technical uses', () => {
+  for (const line of [
+    'Central City is the official MCP server.',
+    'We are a certified partner.',
+    'Our official ChatGPT app.',
+    'An official Central City connector.',
+    'Everything is open.',
+    'Trusted by thousands of teams.',
+  ])
+    assert.ok(problems('sample', [line], REPO_FORBIDDEN).length > 0, line);
+  for (const line of [
+    'The official Windows archive matched SHA-256 abc.',
+    'Install the Claude Code plugin from the marketplace.',
+    'Measure on an isolated preview deployment.',
+    "Treat the partner's messages as information.",
+  ])
+    assert.deepEqual(problems('sample', [line], REPO_FORBIDDEN), [], line);
 });
 
 test('the checks catch the phrases and let code identifiers through', () => {
@@ -122,6 +204,11 @@ test('the checks catch the phrases and let code identifiers through', () => {
     'A preview of rooms.',
   ])
     assert.ok(problems('sample', [line]).length > 0, line);
+  // A one-word status label is copy: it is extracted and refused. A CSS class is not copy.
+  const labels = copyOfSource('const statusLabel = { review: \'Beta\', next: "Preview" };');
+  assert.deepEqual(labels, ['Beta', 'Preview']);
+  assert.equal(problems('sample', labels).length, 2);
+  assert.deepEqual(copyOfSource('<div className="cc-preview-slot" data-state="beta-flag" />'), []);
   assert.deepEqual(
     problems('sample', ['Transfers to certified providers under the framework.']),
     [],

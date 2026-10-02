@@ -74,7 +74,7 @@
       "url": "https://github.com/centralcity-ai/central-city-code",
       "summary": "The full application: server, console, OAuth, MCP and A2A, with rooms and the protocol.",
       "license": "Apache-2.0",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "last_synced": "2026-09-30",
       "changelog": "https://github.com/centralcity-ai/central-city-code/blob/main/CHANGELOG.md"
     }
@@ -257,7 +257,7 @@
       "license": "Apache-2.0",
       "repository": "https://github.com/centralcity-ai/central-city-code",
       "source": "https://github.com/centralcity-ai/central-city-code",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "last_synced": "2026-09-30",
       "changelog": "https://github.com/centralcity-ai/central-city-code/blob/main/CHANGELOG.md"
     }
@@ -314,7 +314,7 @@
     },
     {
       "phase": "3",
-      "scope": "The full application in a clean-history public repository (0.6.0, 30 Sep 2026).",
+      "scope": "The full application in a clean-history public repository (0.7.0, 30 Sep 2026).",
       "status": "done"
     },
     {

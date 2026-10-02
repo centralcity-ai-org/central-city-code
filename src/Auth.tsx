@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { lazy, Suspense, useState, type FormEvent } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import type { Operator } from '../shared/types';
 import { api } from './api';
@@ -12,6 +12,10 @@ import './auth.css';
  * rendered without a lazy boundary, so the form is on screen as soon as the session answers.
  * Layout: design v8 signin.html (product statement beside a card with Sign in / Sign up tabs).
  */
+
+const GoogleSignInOption = lazy(() =>
+  import('./GoogleAccount').then((module) => ({ default: module.GoogleSignInOption })),
+);
 
 export function FormError({ error }: { error: string }) {
   return error ? (
@@ -160,6 +164,10 @@ export function Auth({
                 {register ? 'Create account' : 'Sign in'}
               </button>
             </form>
+            {/* Sign in with Google (behind the server's flag), loaded apart from the main bundle. */}
+            <Suspense fallback={null}>
+              <GoogleSignInOption register={register} />
+            </Suspense>
             <p className="auth-v8-switch">
               {register ? 'Already have an account?' : 'New here?'}{' '}
               <button type="button" className="text-link" onClick={() => switchTo(!register)}>

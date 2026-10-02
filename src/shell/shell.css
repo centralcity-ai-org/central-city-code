@@ -253,6 +253,35 @@
   color: var(--accent-text, var(--primary));
 }
 
+/* A menu item with one line under its name (Product › Elric), and a heading inside a menu. */
+.cc-nav-text {
+  display: grid;
+  gap: 2px;
+  padding: 6px 0;
+}
+.cc-nav-description {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+/* A section inside a menu keeps the menu's rhythm: its heading sits like the group heading
+   (14 px above its links), and sections follow each other at the same 14 px. */
+.cc-mega-section {
+  display: grid;
+  gap: 14px;
+}
+/* Phone menu: a section heading lines up with the links; only the last list keeps the bottom
+   padding, so sections don't open a gap between them. */
+.cc-header-menu .cc-mega-section {
+  gap: 0;
+}
+.cc-header-menu .cc-mega-section > .cc-mega-label {
+  margin: var(--space-2) var(--space-3) 0;
+}
+.cc-header-menu .cc-mega-section:not(:last-child) > .cc-menu-group-panel {
+  padding-bottom: 0;
+}
+
 .cc-nav-external {
   color: var(--text-muted);
   font-size: 13px;

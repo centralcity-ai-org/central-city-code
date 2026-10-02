@@ -511,6 +511,15 @@
   gap: 6px;
   color: var(--text-muted);
   font: var(--type-meta);
+  /* "Offline · 2 d ago" stays on one line next to the host actions. */
+  white-space: nowrap;
+  max-width: 100%;
+  min-width: 0;
+}
+.rm-mstatus-seen {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .rm-mstatus-dot {
   width: 8px;
@@ -1754,6 +1763,462 @@
     height: 28px;
   }
   .rm-composer {
+    width: calc(100% - 2 * var(--space-2));
+    margin-bottom: var(--space-2);
+  }
+}
+
+/* ==========================================================================
+   Elric Room UI
+   ========================================================================== */
+
+/* One-line "Add Elric" card */
+.rm-elric-card-wrap {
+  width: min(var(--content-max), calc(100% - 2 * var(--space-4)));
+  margin: 0 auto var(--space-2);
+}
+.rm-elric-card {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+}
+.rm-elric-card-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+.rm-elric-card-text {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.rm-elric-card-disclosure {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+.rm-dob-disclosure {
+  font-size: 11.5px;
+  margin-top: 4px;
+  line-height: 1.3;
+}
+.rm-elric-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.rm-btn-sm {
+  height: 26px;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-s);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  text-decoration: none;
+  transition:
+    background var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+.rm-btn-sm:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.rm-btn-sm.rm-primary {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-color: var(--primary);
+}
+.rm-btn-sm.rm-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+.rm-btn-sm.rm-quiet {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+.rm-btn-sm.rm-quiet:hover:not(:disabled) {
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+}
+
+/* ELRIC AVATAR & BADGE */
+.rm-avatar[data-kind='elric'] {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-color: var(--primary);
+}
+.rm-badge-elric {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  border-radius: var(--radius-s);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+}
+.rm-badge-reply {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.rm-server-label {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: 2px;
+}
+.rm-elric-card-error {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.rm-dob-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+.rm-dob-field {
+  margin: 0;
+}
+.rm-dob-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-muted);
+}
+.rm-dob-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--error);
+}
+
+/* Members Panel: Add Elric action */
+.rm-members-add-elric {
+  display: flex;
+}
+/* Room header: the host's one-click Elric switch next to Members ("Elric", the track, On/Off). */
+.rm-head-elric {
+  display: inline-flex;
+  align-items: center;
+}
+.rm-head-elric .cc-switch {
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.rm-btn-add-elric {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 34px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-m);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: var(--type-ui);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out);
+}
+.rm-btn-add-elric:hover:not(:disabled) {
+  background: var(--surface-sunken);
+  border-color: var(--primary);
+}
+.rm-btn-add-elric:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .rm-elric-card {
+    padding: 6px 10px;
+    gap: 8px;
+  }
+  .rm-elric-card-text {
+    font-size: 12px;
+  }
+  .rm-elric-card-actions {
+    gap: 4px;
+  }
+  .rm-btn-sm {
+    height: 24px;
+    min-height: 24px;
+    padding: 0 8px;
+    font-size: 11.5px;
+  }
+}
+
+/* WAKING PILL */
+.rm-waking-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  width: fit-content;
+  animation: pulseOpacity 2s ease-in-out infinite;
+}
+.rm-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulseDot 1.4s ease-in-out infinite;
+}
+@keyframes pulseOpacity {
+  0%,
+  100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes pulseDot {
+  0%,
+  100% {
+    transform: scale(0.85);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rm-waking-pill,
+  .rm-pulse-dot {
+    animation: none;
+  }
+}
+
+/* LIMIT BANNER & EPHEMERAL NOTICE */
+.rm-limit-alert {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-s);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  box-shadow: var(--shadow-sm);
+}
+.rm-limit-content {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.rm-limit-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.rm-limit-text strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.rm-limit-text span {
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+.rm-limit-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.rm-limit-cta {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 11.5px;
+  font-weight: 500;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.rm-limit-cta:hover {
+  background: var(--bg-surface-hover);
+}
+
+.rm-ephemeral-notice {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-s);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.rm-ephemeral-content {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.rm-notice-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius-s);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.rm-notice-dismiss:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+.rm-elric-banner-wrap {
+  width: min(var(--content-max), calc(100% - 2 * var(--space-4)));
+  margin: 0 auto var(--space-2);
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* Inline Elric approval card under pending message */
+.rm-approval-card {
+  margin-top: var(--space-2);
+  max-width: 440px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rm-approval-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rm-approval-tool {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.rm-approval-countdown {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.rm-approval-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rm-approval-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+.rm-approval-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.rm-approval-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.rm-approval-decided {
+  margin-top: 2px;
+}
+.rm-approval-status {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: var(--radius-s);
+}
+.rm-approval-status.approved {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+.rm-approval-status.rejected {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+.rm-approval-error {
+  font-size: 11.5px;
+  margin: 0;
+}
+
+@media (max-width: 599px) {
+  .rm-elric-card {
+    padding: 6px 8px;
+  }
+  .rm-elric-card-text {
+    font-size: 11.5px;
+  }
+  .rm-limit-alert,
+  .rm-ephemeral-notice {
+    padding: 5px 8px;
+  }
+  .rm-elric-card-wrap {
+    width: calc(100% - 2 * var(--space-2));
+    margin-bottom: var(--space-2);
+  }
+  .rm-elric-banner-wrap {
     width: calc(100% - 2 * var(--space-2));
     margin-bottom: var(--space-2);
   }

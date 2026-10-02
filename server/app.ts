@@ -4,7 +4,7 @@ import type { PGlite } from '@electric-sql/pglite';
 import { openPostgres, type Database, type Transaction as Tx } from './database.js';
 import { runMigrations } from './migrations.js';
 import { loadLimits, type CityLimits } from './limits.js';
-import { stressTestMaxGuests } from './stress-allowlist.js';
+import { stressTestMaxGuests, stressTestMaxRooms } from './stress-allowlist.js';
 import {
   clientAddressKey,
   FAIL_CLOSED_RETRY_MS,
@@ -102,6 +102,33 @@ import { registerResponderRoutes } from './responder/routes.js';
 import type { ProviderPostTransport, ProviderTransport } from './responder/providers.js';
 import { createResponderDelivery } from './responder/deliver.js';
 import { RoomError } from './rooms/service.js';
+import { registerElricMigration } from './elric/schema.js';
+import { registerElricCeilingMigration } from './elric/budget.js';
+import {
+  registerGoogleMigration,
+  registerGoogleSignIn,
+  type GoogleSignInOptions,
+} from './google/index.js';
+import { GOOGLE_SALT_NO_PASSWORD, GOOGLE_SALT_PENDING_NAME } from './google/routes.js';
+import {
+  OnboardingRequiredError,
+  assertOnboarded as assertOnboardedIn,
+  onboardingOf as onboardingOfIn,
+  onboardingState,
+} from './onboarding.js';
+import { TERMS_VERSION } from '../shared/terms.js';
+import { registerElric } from './elric/index.js';
+import { unavailableAdapter, type ModelAdapter } from './elric/adapter.js';
+import {
+  elricEnabled,
+  elricRateConfig,
+  elricRates,
+  elricRunBudgetMs,
+  type ElricConfig,
+} from './elric/config.js';
+import { elricMockModels, elricModels, type ElricModelWiring } from './elric/endpoints.js';
+import { registerElricHealth } from './elric/health.js';
+import { ELRIC_RESERVED_NAME_MESSAGE, reservedName } from './elric/names.js';
 import { createResults, ResultError } from './results/service.js';
 import { registerResultRoutes } from './results/routes.js';
 import { pauseKey, syncResultSuspension } from './results/store.js';
@@ -202,6 +229,28 @@ export interface AppOptions {
      */
     delivery?: boolean;
   };
+  /**
+   * Elric (docs/ELRIC.md). Off unless CITY_ELRIC=1 (or `enabled`). Tests inject the model per tier
+   * (`adapterFor`, the MockAdapter); without it every model call is refused as model_unavailable.
+   */
+  elric?: {
+    enabled?: boolean;
+    adapterFor?: (tier: 1 | 2) => ModelAdapter;
+    config?: Partial<ElricConfig>;
+    /** false: no drain after responses (tests drive it). */
+    autoDrain?: boolean;
+    /** Tests only: awaited at fixed points of a run (server/elric/service.ts). */
+    probe?: (point: 'reserved' | 'before_tool' | 'before_post') => Promise<void>;
+    /**
+     * Tests only: the self-hosted model wiring (server/elric/endpoints.ts), instead of the one
+     * built from CITY_ELRIC_T{1,2}_URL / _MODEL; null for none.
+     */
+    models?: ElricModelWiring | null;
+    /** Tests only: the wall clock of the run budget (default Date.now). */
+    wallClock?: () => number;
+  };
+  /** Sign in with Google (docs/GOOGLE_SIGNIN.md); off unless CITY_GOOGLE_SIGNIN=1. */
+  google?: GoogleSignInOptions;
 }
 export interface CityServices {
   tick(): Promise<void>;
@@ -226,6 +275,14 @@ class ApiError extends Error {
     super(message);
   }
 }
+/** The only routes an account in onboarding may call with its session. */
+const ONBOARDING_ROUTES = new Set([
+  'GET /api/session',
+  'GET /api/auth/google',
+  'POST /api/auth/google/handle',
+  'POST /api/auth/onboarding',
+  'POST /api/auth/logout',
+]);
 function fail(code: number, message: string): never {
   throw new ApiError(code, message);
 }
@@ -385,6 +442,11 @@ async function createDatabaseApp(
   registerResponderExecutionMigration();
   // 29: the verifiable agent count's append-only log (docs: AGENT_COUNT_TRANSPARENCY spec).
   registerCountLogMigration();
+  // 39: Elric (first-party agent). The schema always exists; the feature is behind CITY_ELRIC=1.
+  registerElricMigration();
+  registerElricCeilingMigration();
+  // 41: Sign in with Google (flows, and the Workspace domain on Elric's verified identities).
+  registerGoogleMigration();
   await runMigrations(db);
   const caps = loadLimits(process.env, options.limits);
   // Number of trusted proxy hops nearest the socket; 0 disables X-Forwarded-For entirely.
@@ -517,7 +579,7 @@ async function createDatabaseApp(
           fail(403, 'Cross-origin requests are not allowed.');
       }
     }
-    await limit(`ip:${clientAddressKey(request.ip)}`, 600, 60_000);
+    await limit(`ip:${clientAddressKey(request.ip)}`, caps.apiRequestsPerMinute, 60_000);
     const runtime = request.url.startsWith('/api/runtime/');
     // Anonymous creation carries no cookie authority, so it needs no CSRF header.
     const cookieless = runtime || request.url.startsWith('/api/public/');
@@ -655,12 +717,29 @@ async function createDatabaseApp(
     const hash = sha(token),
       time = clock();
     const row = (
-      await db.query<Operator & { expires_at: string | number; created_at: string | number }>(
-        'SELECT o.id,o.name,s.expires_at,s.created_at FROM operators o JOIN sessions s ON s.operator_id=o.id WHERE s.token_hash=$1 AND s.expires_at>$2',
+      await db.query<
+        Operator & {
+          expires_at: string | number;
+          created_at: string | number;
+          salt: string;
+          terms_version: string | null;
+        }
+      >(
+        `SELECT o.id,o.name,o.salt,s.expires_at,s.created_at,a.version AS terms_version,
+                EXISTS (SELECT 1 FROM elric_verified_identities v WHERE v.operator_id=o.id)
+                  AS google_linked
+           FROM operators o JOIN sessions s ON s.operator_id=o.id
+           LEFT JOIN account_terms_acceptances a ON a.operator_id=o.id
+          WHERE s.token_hash=$1 AND s.expires_at>$2`,
         [hash, time],
       )
     ).rows[0];
     if (!row) return null;
+    // Onboarding gate (docs/GOOGLE_SIGNIN.md "Onboarding"): an account created with Google can
+    // only reach the onboarding routes until it has a name and has accepted the current Terms
+    // and Privacy Policy. Enforced here, where every session-authenticated route resolves.
+    if (onboardingState(row).pending && !ONBOARDING_ROUTES.has(routeKey(request)))
+      throw new OnboardingRequiredError();
     // Sliding renewal: activity extends the 24 h idle timeout, capped at 30 days after sign-in.
     // Throttled to one conditional UPDATE per hour per session, outside any transaction.
     const expiresAt = Number(row.expires_at),
@@ -678,6 +757,10 @@ async function createDatabaseApp(
       }
     }
     return { id: row.id, name: row.name };
+  }
+  /** The method and path (no query) of a request, as ONBOARDING_ROUTES lists them. */
+  function routeKey(request: FastifyRequest): string {
+    return `${request.method} ${request.url.split('?')[0]}`;
   }
   function sessionCookieOptions(maxAge: number) {
     return {
@@ -782,6 +865,9 @@ async function createDatabaseApp(
     ).rows[0];
     if (!credential || !constantEqual(credential.token_hash, sha(token)))
       fail(401, 'Invalid runtime credential.');
+    // An owner that has not finished onboarding (a Google account without a Terms acceptance)
+    // cannot act through its agents' existing credentials either.
+    await assertOnboarded(credential.operator_id);
     const identity: RuntimeIdentity = {
       operatorId: credential.operator_id,
       agentId: credential.agent_id,
@@ -819,14 +905,122 @@ async function createDatabaseApp(
     return identity;
   }
 
-  app.get('/api/session', async (request) => ({
-    operator: await optionalOperator(request),
-    setupRequired:
-      Number(
-        (await db.query<{ count: string }>("SELECT count(*) FROM operators WHERE kind='owner'"))
-          .rows[0]?.count,
-      ) === 0,
-  }));
+  /** 403 onboarding_required for an account that has not finished onboarding (bearer paths). */
+  const assertOnboarded = (operatorId: string) => assertOnboardedIn(db, operatorId);
+  /** Onboarding status of a signed-in account (for /api/session and the onboarding route). */
+  const onboardingOf = (operatorId: string) => onboardingOfIn(db, operatorId);
+  const onboardingInput = z
+    .object({
+      name: authSchema.shape.name.optional(),
+      terms_version: z.string().max(32),
+      accept_terms: z.literal(true),
+    })
+    .strict();
+  // Finish onboarding: the account name (if still needed) and the Terms/Privacy acceptance, with
+  // its version and time. Session only; one of the few routes open during onboarding.
+  app.post('/api/auth/onboarding', async (request) => {
+    const signedIn = (await optionalOperator(request)) ?? fail(401, 'Sign in to continue.');
+    await limit(`register:onboarding:${signedIn.id}`, 20, 15 * 60_000);
+    const input = onboardingInput.parse(request.body ?? {});
+    if (input.terms_version !== TERMS_VERSION)
+      throw Object.assign(
+        new ApiError(
+          409,
+          'The Terms were updated. Reload the page and accept the current version.',
+        ),
+        { errorCode: 'terms_version_outdated' },
+      );
+    const name = await db.transaction(async (tx) => {
+      const row = (
+        await tx.query<{ name: string; salt: string }>(
+          'SELECT name,salt FROM operators WHERE id=$1 FOR UPDATE',
+          [signedIn.id],
+        )
+      ).rows[0]!;
+      let current = row.name;
+      if (row.salt === GOOGLE_SALT_PENDING_NAME) {
+        if (!input.name) fail(400, 'Choose an account name.');
+        const taken = (
+          await tx.query('SELECT 1 FROM operators WHERE name_key=$1 AND id<>$2', [
+            input.name.toLowerCase(),
+            signedIn.id,
+          ])
+        ).rows.length;
+        if (taken) fail(409, 'That account name is unavailable.');
+        await tx.query('UPDATE operators SET name=$2, name_key=$3, salt=$4 WHERE id=$1', [
+          signedIn.id,
+          input.name,
+          input.name.toLowerCase(),
+          GOOGLE_SALT_NO_PASSWORD,
+        ]);
+        current = input.name;
+      }
+      await recordAcceptance(tx, signedIn.id);
+      return current;
+    });
+    return { operator: { id: signedIn.id, name }, onboarding: await onboardingOf(signedIn.id) };
+  });
+  app.get('/api/session', async (request) => {
+    const operator = await optionalOperator(request);
+    return {
+      operator,
+      // Present for a signed-in account; `required` sends the app to the onboarding screen.
+      ...(operator ? { onboarding: await onboardingOf(operator.id) } : {}),
+      setupRequired:
+        Number(
+          (await db.query<{ count: string }>("SELECT count(*) FROM operators WHERE kind='owner'"))
+            .rows[0]?.count,
+        ) === 0,
+    };
+  });
+  /**
+   * Creates an owner account and its workspace under the account cap (shared by the password
+   * sign-up and Continue with Google; a Google-only account's hash and salt: google/routes.ts).
+   */
+  async function createOwner(
+    tx: Tx,
+    id: string,
+    name: string,
+    hash: string,
+    salt: string,
+  ): Promise<'created' | 'limit' | 'name_taken'> {
+    await tx.query('LOCK TABLE operators IN SHARE ROW EXCLUSIVE MODE');
+    const count = Number(
+      (await tx.query<{ count: string }>("SELECT count(*) FROM operators WHERE kind='owner'"))
+        .rows[0]?.count,
+    );
+    if (count >= caps.operators) return 'limit';
+    if (
+      (await tx.query('SELECT id FROM operators WHERE name_key=$1', [name.toLowerCase()])).rows
+        .length
+    )
+      return 'name_taken';
+    await tx.query(
+      'INSERT INTO operators(id,name,name_key,password_hash,salt,created_at) VALUES($1,$2,$3,$4,$5,$6)',
+      [id, name, name.toLowerCase(), hash, salt, clock()],
+    );
+    const workspace = emptyWorkspace();
+    event(workspace, clock(), 'operator.created', 'Operator account created.');
+    await tx.query('INSERT INTO workspaces(operator_id,data) VALUES($1,$2::jsonb)', [
+      id,
+      JSON.stringify(workspace),
+    ]);
+    return 'created';
+  }
+  /** Records an acceptance of the current Terms/Privacy version (latest row and history). */
+  async function recordAcceptance(tx: Tx, operatorId: string): Promise<void> {
+    const acceptedAt = clock();
+    await tx.query(
+      `INSERT INTO account_terms_acceptances(operator_id,version,accepted_at) VALUES($1,$2,$3)
+       ON CONFLICT (operator_id) DO UPDATE SET version=EXCLUDED.version, accepted_at=EXCLUDED.accepted_at`,
+      [operatorId, TERMS_VERSION, acceptedAt],
+    );
+    // The history keeps every acceptance (append-only); the row above is only the latest.
+    await tx.query(
+      'INSERT INTO account_terms_acceptance_history(operator_id,version,accepted_at) VALUES($1,$2,$3)',
+      [operatorId, TERMS_VERSION, acceptedAt],
+    );
+  }
   app.post('/api/auth/register', async (request, reply) => {
     await limit(
       `register:${clientAddressKey(request.ip)}`,
@@ -838,27 +1032,11 @@ async function createDatabaseApp(
       hash = await passwordHash(password, salt);
     const operator = { id: randomUUID(), name };
     await db.transaction(async (tx) => {
-      await tx.query('LOCK TABLE operators IN SHARE ROW EXCLUSIVE MODE');
-      const count = Number(
-        (await tx.query<{ count: string }>("SELECT count(*) FROM operators WHERE kind='owner'"))
-          .rows[0]?.count,
-      );
-      if (count >= caps.operators) fail(409, 'Account limit reached.');
-      if (
-        (await tx.query('SELECT id FROM operators WHERE name_key=$1', [name.toLowerCase()])).rows
-          .length
-      )
-        fail(409, 'That account name is unavailable.');
-      await tx.query(
-        'INSERT INTO operators(id,name,name_key,password_hash,salt,created_at) VALUES($1,$2,$3,$4,$5,$6)',
-        [operator.id, name, name.toLowerCase(), hash, salt, clock()],
-      );
-      const workspace = emptyWorkspace();
-      event(workspace, clock(), 'operator.created', 'Operator account created.');
-      await tx.query('INSERT INTO workspaces(operator_id,data) VALUES($1,$2::jsonb)', [
-        operator.id,
-        JSON.stringify(workspace),
-      ]);
+      const created = await createOwner(tx, operator.id, name, hash, salt);
+      if (created === 'limit') fail(409, 'Account limit reached.');
+      if (created === 'name_taken') fail(409, 'That account name is unavailable.');
+      // The sign-up form states that creating the account accepts the Terms and Privacy Policy.
+      await recordAcceptance(tx, operator.id);
       await session(tx, reply, operator.id);
     });
     return reply.code(201).send({ operator });
@@ -953,6 +1131,20 @@ async function createDatabaseApp(
     });
     return { ok: true };
   });
+  registerGoogleSignIn(app, {
+    db,
+    clock,
+    limiter,
+    session,
+    currentPerson: optionalOperator,
+    signup: {
+      registrationsPerWindow: caps.registrationsPerWindow,
+      create: createOwner,
+    },
+    hosted: options.hosted,
+    secureCookies: options.secureCookies,
+    options: options.google,
+  });
   app.get('/api/snapshot', async (request) => {
     const operator = await owner(request);
     // Polling advances hosted demonstrations. Controls must apply without first
@@ -1022,6 +1214,8 @@ async function createDatabaseApp(
   app.post('/api/agents', async (request, reply) => {
     const operator = await owner(request),
       values = agentSchema.parse(request.body);
+    // Elric (docs/ELRIC.md): the name is reserved for first-party Elric agents.
+    if (reservedName(values.name)) fail(409, ELRIC_RESERVED_NAME_MESSAGE);
     const response = await mutate(operator.id, async (workspace, tx, time) => {
       if (workspace.agents.length >= caps.agentsPerWorkspace)
         fail(409, `Local workspace limit of ${caps.agentsPerWorkspace} agents reached.`);
@@ -1356,6 +1550,7 @@ async function createDatabaseApp(
     limit,
   });
   stressTestMaxGuests(); // fails startup on an invalid CITY_STRESS_TEST_MAX_GUESTS
+  stressTestMaxRooms(); // and on an invalid CITY_STRESS_TEST_MAX_ROOMS
   // "Verify here": the daily, hash-chained, signed checkpoints of the same count, public leaves,
   // owner-only inclusion proofs, and the Vercel Cron endpoint (CRON_SECRET).
   registerCountLogRoutes(app, {
@@ -1478,8 +1673,85 @@ async function createDatabaseApp(
       wake.attachResponder(delivery.handle, { budgetMs: options.responder?.drainBudgetMs });
     }
   }
+  // Elric (docs/ELRIC.md): Central City's own agent, owner-invoked, agent-bound room access.
+  if (options.elric?.enabled ?? elricEnabled()) {
+    // Per-tier cost rates from measured GPU time (CITY_ELRIC_GPU_USD_PER_HOUR and
+    // CITY_ELRIC_T{1,2}_GPU_S_PER_1K_{IN,OUT}); test config overrides them.
+    const elricConfig = {
+      ...elricRateConfig(elricRates()),
+      runBudgetMs: elricRunBudgetMs(),
+      ...options.elric?.config,
+    };
+    const elricProbe = options.elric?.probe;
+    const elricWallClock = options.elric?.wallClock;
+    // The self-hosted endpoints (docs/ELRIC_MODEL.md); none configured: model_unavailable.
+    const elricModelWiring =
+      options.elric?.models !== undefined
+        ? options.elric.models
+        : (elricMockModels(process.env, Boolean(options.hosted)) ??
+          elricModels(process.env, { hosted: Boolean(options.hosted) }));
+    registerElricHealth(app, {
+      models: elricModelWiring,
+      cronSecret: process.env.CRON_SECRET,
+      clock,
+    });
+    registerElric(app, {
+      db: wake.db,
+      clock,
+      mutate,
+      owner,
+      agentsPerWorkspace: caps.agentsPerWorkspace,
+      config: elricConfig,
+      ...(elricProbe ? { probe: elricProbe } : {}),
+      ...(elricWallClock ? { wallClock: elricWallClock } : {}),
+      adapterFor:
+        options.elric?.adapterFor ??
+        elricModelWiring?.adapterFor ??
+        ((tier) => unavailableAdapter(tier === 1 ? 'elric-small' : 'elric-large')),
+      tasksEnabled: () => roomTasksEnabled(process.env),
+      retryTimer: !options.hosted && options.startWorkers !== false,
+      autoDrain: options.elric?.autoDrain ?? true,
+      async postReply(args) {
+        try {
+          const result = await rooms.post(
+            { operatorId: args.ownerId, actor: 'Elric', origin: '', elric: true },
+            {
+              room_id: args.roomId,
+              agent_id: args.agentId,
+              text: args.text,
+              idempotency_key: args.idempotencyKey,
+            },
+            undefined,
+            // The public attribution (auto_reply provider 'elric', label from shared/elric-copy.ts).
+            { autoReply: args.stamp, precondition: args.precondition },
+          );
+          return { ok: true, seq: (result as { message: { seq: number } }).message.seq };
+        } catch (error) {
+          if (error instanceof RoomError) return { ok: false, code: error.errorCode };
+          return { ok: false, code: 'post_failed' };
+        }
+      },
+      async createTask(args) {
+        const { task } = await tasks.create(
+          { operatorId: args.ownerId, actor: 'Elric', origin: '', elric: true },
+          {
+            room_id: args.roomId,
+            agent_id: args.agentId,
+            title: args.title,
+            ...(args.body !== undefined ? { body: args.body } : {}),
+            idempotency_key: args.idempotencyKey,
+          },
+          // Elric's agent-bound recheck, inside the create transaction under the room lock.
+          { precondition: args.precondition },
+        );
+        return { id: task.id, number: task.number };
+      },
+    });
+  }
+  const elricService = app.elric;
   registerWakeRoutes(app, {
     wake,
+    ...(elricService ? { drainElric: (budgetMs: number) => elricService.drain(budgetMs) } : {}),
     db,
     messaging,
     rooms,

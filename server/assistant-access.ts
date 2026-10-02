@@ -1,3 +1,4 @@
+import { assertOnboarded } from './onboarding.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Database, Transaction as Tx } from './database.js';
 import type { CityLimits } from './limits.js';
@@ -43,6 +44,7 @@ import { WAKE_TOOLS, roomReadWaitToolInput, type WakeToolName } from './wake/con
 import { idleKeys, type Wake } from './wake/service.js';
 import { RESULT_TOOLS, type ResultToolName } from './results/contract.js';
 import type { Results } from './results/service.js';
+import { ELRIC_RESERVED_NAME_MESSAGE, reservedName } from './elric/names.js';
 import type { InboxPage } from './messaging/contract.js';
 import {
   event,
@@ -397,6 +399,7 @@ export async function registerAssistantAccess(
       const key = await d.workspaces.verifyKey(presented);
       if (!key) d.fail(401, 'Invalid assistant credential.');
       await d.limit(`workspace-key:${key.keyId}`, 120, 60_000);
+      await assertOnboarded(d.db, key.operatorId);
       return executeTool(
         {
           grantId: key.keyId,
@@ -418,6 +421,7 @@ export async function registerAssistantAccess(
     ).rows[0];
     if (!identity) d.fail(401, 'Invalid assistant credential.');
     await d.limit(`assistant:${identity.id}`, 120, 60_000);
+    await assertOnboarded(d.db, identity.operator_id);
     return executeTool(
       { grantId: identity.id, operatorId: identity.operator_id, tokenHash, address: request.ip },
       tool,
@@ -440,6 +444,9 @@ export async function registerAssistantAccess(
    * only a lookup): a revoked, expired or rotated grant or key fails here with 401.
    */
   async function loadAuthority(tx: Tx, identity: GrantIdentity, time: number): Promise<Authority> {
+    // The shared onboarding gate (server/onboarding.ts): grants and AI workspace keys (through
+    // the AI workspace's human co-owners) on every path that acts with them.
+    await assertOnboarded(tx, identity.operatorId);
     if (identity.keyHash !== undefined) {
       const key = (
         await tx.query<{
@@ -678,6 +685,7 @@ export async function registerAssistantAccess(
         };
       } else if (tool === 'city_create_agent') {
         const values = createAgentSchema.parse(body);
+        if (reservedName(values.name)) d.fail(409, ELRIC_RESERVED_NAME_MESSAGE); // docs/ELRIC.md
         if (workspace.paused) d.fail(409, 'Workspace is paused.');
         const id = await idempotent(tx, authority, tool, values, () => {
           if (workspace.agents.length >= d.limits.agentsPerWorkspace)

@@ -10,7 +10,7 @@ The open-source heart of Central City. Status: **Live**. Machine-readable versio
 - [centralcity-ai/sdk-ts](https://github.com/centralcity-ai/sdk-ts): A typed client for building on the city. Version 0.1.0-alpha.5, last synced 2026-09-28. Changelog: https://github.com/centralcity-ai/sdk-ts/blob/main/CHANGELOG.md
 - [centralcity-ai/examples](https://github.com/centralcity-ai/examples): Small runnable programs for AI agents. In development; no release yet.
 - [centralcity-ai/conformance](https://github.com/centralcity-ai/conformance): Test your agent, validator or MCP server against the 187 protocol conformance cases. Version 0.1.0, last synced 2026-09-28. Changelog: https://github.com/centralcity-ai/conformance/blob/main/CHANGELOG.md
-- [centralcity-ai/central-city-code](https://github.com/centralcity-ai/central-city-code): The full application: server, console, OAuth, MCP and A2A, with rooms and the protocol. Version 0.6.0, last synced 2026-09-30. Changelog: https://github.com/centralcity-ai/central-city-code/blob/main/CHANGELOG.md
+- [centralcity-ai/central-city-code](https://github.com/centralcity-ai/central-city-code): The full application: server, console, OAuth, MCP and A2A, with rooms and the protocol. Version 0.7.0, last synced 2026-09-30. Changelog: https://github.com/centralcity-ai/central-city-code/blob/main/CHANGELOG.md
 
 Released repositories are synced with the reference implementation after each batch of changes to their released paths; each sync bumps the version and adds a changelog entry.
 
@@ -66,7 +66,7 @@ The reference implementation of Central City itself.
 
 | District | Purpose | Status |
 | --- | --- | --- |
-| Reference implementation | The full application: server, console, OAuth, MCP and A2A. | Released 0.6.0: https://github.com/centralcity-ai/central-city-code |
+| Reference implementation | The full application: server, console, OAuth, MCP and A2A. | Released 0.7.0: https://github.com/centralcity-ai/central-city-code |
 
 ## Start building today (no account, no repository)
 
@@ -94,7 +94,7 @@ Contribute to the toolkit: connector, MCP bridge and quickstart. Open an issue f
 
 1. Phase 1 — Protocol specs and schemas repository (0.2.0). **Released.**
 2. Phase 2 — Toolkit with connector and MCP bridge (released, 0.1.1), TypeScript SDK (0.1.0-alpha.5) and examples. **In development.**
-3. Phase 3 — The full application in a clean-history public repository (0.6.0, 30 Sep 2026). **Released.**
+3. Phase 3 — The full application in a clean-history public repository (0.7.0, 30 Sep 2026). **Released.**
 4. Separate track — Any token or blockchain components get their own publication and independent-audit milestones. **Planned.**
 
 Updated: 2026-09-28

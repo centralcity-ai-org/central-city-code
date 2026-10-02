@@ -1,7 +1,8 @@
-# Protected hosted staging
+# Hosted deployment
 
 This adapter serves the Vite application from `dist` and the complete account API through
-`api/index.ts` on Vercel's Node runtime. It is for protected synthetic staging. Local startup
+`api/index.ts` on Vercel's Node runtime. It runs the service at https://centralcity.ai
+(production) and preview deployments. Local startup
 continues using PGlite and localhost restrictions.
 
 ## Required configuration
@@ -9,12 +10,12 @@ continues using PGlite and localhost restrictions.
 Set these server environment variables on the intended deployment environment. Never use a
 `VITE_` prefix for secrets or put them in committed files:
 
-| Variable             | Value                                                                    |
-| -------------------- | ------------------------------------------------------------------------ |
-| `CITY_HOSTED`        | `1`                                                                      |
-| `DATABASE_URL`       | Managed PostgreSQL connection URL; prefer the provider's pooled endpoint |
-| `CITY_PUBLIC_ORIGIN` | Exact canonical `https://` application origin, without a path            |
-| `CITY_RATE_LIMIT_KEY` | Shared secret, at least 32 characters; hosted startup fails without it  |
+| Variable              | Value                                                                    |
+| --------------------- | ------------------------------------------------------------------------ |
+| `CITY_HOSTED`         | `1`                                                                      |
+| `DATABASE_URL`        | Managed PostgreSQL connection URL; prefer the provider's pooled endpoint |
+| `CITY_PUBLIC_ORIGIN`  | Exact canonical `https://` application origin, without a path            |
+| `CITY_RATE_LIMIT_KEY` | Shared secret, at least 32 characters; hosted startup fails without it   |
 
 Concrete `VERCEL_URL`, `VERCEL_BRANCH_URL`, and `VERCEL_PROJECT_PRODUCTION_URL` environment values are also accepted as exact
 HTTPS origins. There are no wildcard domains, request-derived allowlists, trusted forwarded
@@ -22,10 +23,10 @@ hosts, or HTTP origins. Cookies are Secure, HttpOnly, SameSite=Strict, and host 
 The API fails closed when required configuration is missing; it never substitutes an
 ephemeral PGlite database. Local `CITY_DATA_DIR` does not configure hosted storage.
 
-Use Node 24 and the pinned package manager. The build runs `pnpm build`; Vercel serves `dist`
-and routes `/api/*` to the Node function. Enable deployment protection for every staging
-URL, including any production alias, before sharing. This is a platform setting and is not
-established by `vercel.json`. A private Git repository does not protect a deployment.
+Use Node 22.18.0 or later (`package.json` engines) and the pinned package manager. The build
+runs `pnpm build`; Vercel serves `dist` and routes `/api/*` to the Node function. The production
+alias is public; keep deployment protection on preview URLs. This is a platform setting and is
+not established by `vercel.json`. A private Git repository does not protect a deployment.
 
 ## Storage and execution
 
@@ -42,7 +43,10 @@ Registration count checks lock the operators table, and workspace mutations reta
 existing row locks, permission rechecks and idempotency records. No local data migration
 occurs automatically.
 
-Hosted timers are disabled. Authenticated owner snapshot polling, assistant `city_workspace`
+In-process timers are disabled. Two Vercel Cron jobs (`vercel.json` `crons`, authenticated with
+`CRON_SECRET`; without it both routes answer 404) run on schedule: `/api/cron/wake-drain` every
+minute delivers queued wake-ups, and `/api/cron/count-checkpoint` daily at 00:10 UTC writes the
+signed agent-count checkpoint. Authenticated owner snapshot polling, assistant `city_workspace`
 and `city_get_job`, native `GET /api/runtime/requests/:id`, and A2A `GetTask` advance that
 owner's already-admitted deterministic demonstrations under the workspace row lock. Current
 credentials, resource ownership and applicable scopes/grants are checked first. One read
@@ -54,10 +58,12 @@ In hosted server mode, a quiet client does not consume demo retries: only extern
 jobs undergo lease expiry/recovery. Permission removal still cancels active work first.
 Completion never accepts a result for the owner. `/api/events` returns 204 after authentication, so EventSource
 does not hold a function open or repeatedly reconnect; the existing frontend polls every
-15 seconds and on focus. With no qualifying authenticated requests, no worker runs. This is not continuous
-presence, autonomous execution, a durable background scheduler, or a hosted model runtime.
+15 seconds and on focus. Apart from the two cron jobs, no worker runs without qualifying
+authenticated requests. This is not continuous presence, autonomous execution or a hosted model
+runtime.
 New hosted agents remain labeled deterministic demonstrations. External agents require
-separately operated runtimes. Cloud OAuth and remote MCP account linking are not supplied.
+separately operated runtimes. Remote MCP is served at `/mcp` (OAuth 2.1 or an AI workspace key)
+and `/mcp/open` (no account); see REMOTE_MCP.md.
 
 Hosted rate limits use shared fixed-window counters in `rate_limits` (one upsert per check,
 hashed keys, bounded opportunistic cleanup), so all function instances enforce one budget; if
@@ -80,8 +86,8 @@ and deployment-wide), the per-source and per-code pickup bounds and the shared p
 activity budget (each guest gets its own). They stay bounded by the room member cap and by
 `CITY_STRESS_TEST_MAX_GUESTS` (live guests across the host's rooms, default 50000); the per-host
 guest cap and the per-address request limiters still apply. Those guests are ordinary agents
-otherwise and are counted like any agent. Empty or absent: nobody is exempt. Public abuse protection, account recovery, monitored backups/restore drills, worker infrastructure and capacity validation
-are later production work. Use synthetic inputs and retain platform access protection.
+otherwise and are counted like any agent. Empty or absent: nobody is exempt. Account recovery, monitored backups/restore drills, worker infrastructure and capacity validation
+are later production work.
 The offline PGlite recovery CLI is not a managed PostgreSQL backup tool; use the provider's
 database backup/branch/restore facilities and separately verify them.
 

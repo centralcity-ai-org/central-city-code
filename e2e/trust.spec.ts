@@ -13,7 +13,7 @@ const pages = [
   { path: '/terms', title: 'Terms of Service', text: '“as is” and “as available”' },
   { path: '/acceptable-use', title: 'Acceptable Use Policy', text: 'zero tolerance' },
   { path: '/dpa', title: 'Data Processing Addendum', text: 'Sub-processors' },
-  { path: '/imprint', title: 'Imprint', text: 'Central City S.R.L.' },
+  { path: '/imprint', title: 'Imprint', text: 'La Cavina S.R.L.' },
   {
     path: '/about',
     title: 'About Central City',
@@ -32,7 +32,7 @@ const OFFICIAL = new Set([
 
 /** The approved company line, verbatim. */
 const COMPANY_LINE =
-  'Central City is operated within a holding structure. Parent company: Central City S.R.L., Torino (TO), Italy · Fiscal code and VAT no. 08302720019 · REA TO-961798 · Share capital €50,000.00.';
+  'Central City is operated within a holding structure. Parent company: La Cavina S.R.L., Torino (TO), Italy · Fiscal code and VAT no. 08302720019 · REA TO-961798 · Share capital €50,000.00.';
 
 test('every trust and company page renders signed out in the public shell', async ({ page }) => {
   const errors: string[] = [];
@@ -78,7 +78,7 @@ test('policy pages carry their effective and last-updated dates', async ({ page 
   ]) {
     await page.goto(path);
     await expect(page.locator('.trust-status').first(), path).toHaveText(
-      'Effective date: 28 September 2026 · Last updated: 28 September 2026',
+      'Effective date: 28 September 2026 · Last updated: 1 October 2026',
     );
   }
 });
@@ -105,7 +105,7 @@ test('the company line is verbatim and low-key on terms, imprint, privacy and th
   await expect(page.getByRole('main').locator('p', { hasText: 'Via Cavour' })).toHaveCount(1);
   await page.goto('/privacy');
   const controller = page.locator('#controller + p');
-  await expect(controller).toContainText('Central City S.R.L.');
+  await expect(controller).toContainText('La Cavina S.R.L.');
   await expect(controller).toContainText('Torino (TO), Italy');
   await expect(page.getByRole('main')).toContainText('Data Protection Officer: Lauter Sonne');
   await page.goto('/dpa');
@@ -115,6 +115,9 @@ test('the company line is verbatim and low-key on terms, imprint, privacy and th
   await expect(law).toContainText('governed by Italian law');
   await expect(law).toContainText('courts of Torino');
   await expect(law).toContainText('courts of the EU member state where you live');
+  await expect(page.locator('#definitions + ul')).toContainText(
+    '“Elric”: Central City’s AI assistant.',
+  );
 });
 
 test('privacy covers the GDPR essentials and names the Garante', async ({ page }) => {
@@ -134,10 +137,16 @@ test('privacy covers the GDPR essentials and names the Garante', async ({ page }
     'at most 20 sessions per account',
   ])
     await expect(main, text).toContainText(text);
-  // No age gate and no stated minimum age.
-  await expect(main).not.toContainText(
-    /minimum age|years old|under (13|14|16|18)\b|not intended for children/i,
+  // Minimum age 18, no parental path; the date of birth only for 18+ and anonymous statistics.
+  await expect(main).toContainText('You must be 18 or older to use Elric');
+  await expect(main).toContainText(
+    'We store your date of birth to confirm you are 18+ and for anonymous age statistics.',
   );
+  await expect(main).toContainText('Each owner also has a private chat with Elric.');
+  await expect(main).toContainText('then confirm with a link we email you (double opt-in)');
+  await expect(main).toContainText('Resend, Inc. (United States): sending our emails');
+  await expect(main).toContainText('RunPod: GPU hosting for the fallback AI model Elric uses.');
+  await expect(main).toContainText('Anthropic, PBC (United States): the AI model Elric uses.');
   await expect(
     main.getByRole('link', { name: 'Garante per la protezione dei dati personali' }),
   ).toHaveAttribute('href', 'https://www.garanteprivacy.it');

@@ -1,0 +1,71 @@
+/* The one-click on/off switch (src/ui/Switch.tsx): 44px hit area, a visible focus ring. */
+.cc-switch {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.cc-switch:focus-visible {
+  outline: 2px solid var(--primary, #0066ff);
+  outline-offset: 2px;
+}
+.cc-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.cc-switch[aria-busy='true'] {
+  cursor: progress;
+  opacity: 1;
+}
+.cc-switch-track {
+  position: relative;
+  width: 40px;
+  height: 24px;
+  flex: none;
+  border-radius: 9999px;
+  background: var(--border-strong, #c4c4c4);
+  transition: background-color 150ms ease;
+}
+.cc-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 150ms ease;
+}
+.cc-switch[aria-checked='true'] .cc-switch-track {
+  background: var(--primary, #0066ff);
+}
+.cc-switch[aria-checked='true'] .cc-switch-thumb {
+  transform: translateX(16px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cc-switch-track,
+  .cc-switch-thumb {
+    transition: none;
+  }
+}
+.cc-switch-state {
+  min-width: 2em;
+  font-size: 14px;
+  color: inherit;
+}
+.cc-switch-toast-close {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
